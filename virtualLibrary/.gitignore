@@ -3,6 +3,7 @@
 
 # OAuth credentials
 queryGoogleDrive/googleOAuth.json
+auth/firebase_config.json
 
 # Python
 __pycache__/
