@@ -1,0 +1,17 @@
+# Environment variables
+.env
+
+# OAuth credentials
+queryGoogleDrive/googleOAuth.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+token.pickle
+
+# Virtual Environment
+venv/
+env/
