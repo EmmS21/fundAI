@@ -12,6 +12,7 @@ from typing import List, Dict
 import pickle
 from pathlib import Path
 from ..config import Config
+from .metadata_parser import BookMetadataParser
 
 # If modifying these scopes, delete the token.pickle file
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
@@ -20,6 +21,7 @@ class DriveScanner:
     def __init__(self, folder_id: str):
         self.folder_id = folder_id
         self.service = self._initialize_drive_service()
+        self.parser = BookMetadataParser()
 
     def _initialize_drive_service(self):
         """Initialize and return Google Drive service"""
@@ -87,9 +89,18 @@ def main():
         # List all files in the folder
         files = scanner.list_files()
         
-        # Print file information
+        # Print file information with parsed metadata
         for file in files:
-            print(f"Found file: {file['name']} ({file['id']})")
+            try:
+                metadata = scanner.parser.parse_drive_file(file)
+                print("\nFound file:")
+                print(f"Title: {metadata['title']}")
+                print(f"Author: {metadata['author']}")
+                print(f"Year: {metadata['year']}")
+                print(f"Drive ID: {metadata['drive_id']}")
+                print(f"Drive Link: {metadata['drive_link']}")
+            except ValueError as e:
+                print(f"\nError parsing file {file['name']}: {str(e)}")
             
     except Exception as e:
         print(f"Error: {str(e)}")
