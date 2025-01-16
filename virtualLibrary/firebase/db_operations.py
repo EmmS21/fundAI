@@ -75,9 +75,12 @@ class FirebaseManager:
         """
         try:
             # Add timestamps
-            book_metadata['added_date'] = datetime.utcnow()
-            book_metadata['updated_date'] = datetime.utcnow()
-            
+            book_metadata['added_date'] = datetime.now()
+            book_metadata['updated_date'] = datetime.now()
+
+            book_metadata['vector_embedding_link'] = ''
+            book_metadata['is_embedded'] = False
+
             # Add to Firestore
             doc_ref = self.books_collection.add(book_metadata)
             return doc_ref[1].id
