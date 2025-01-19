@@ -9,7 +9,8 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from typing import Dict, Optional
 from datetime import datetime
-from ..config import Config
+# from ..config import Config
+from config import Config
 
 class FirebaseManager:
     def __init__(self):
@@ -17,12 +18,14 @@ class FirebaseManager:
         # Replace \n with actual newlines in the private key
         private_key = Config.FIREBASE_PRIVATE_KEY.replace('\\n', '\n')
         
-        print("\nDebug - Config values:")
-        print(f"Project ID: {Config.FIREBASE_PROJECT_ID}")
-        print(f"Private Key (first 50 chars): {private_key[:50] if private_key else 'None'}")
-        print(f"Client Email: {Config.FIREBASE_CLIENT_EMAIL}")
-        
-        cred = credentials.Certificate({
+        print("\nDebug - Firebase Initialization:")
+        print(f"1. Project ID: {Config.FIREBASE_PROJECT_ID}")
+        print(f"2. Client Email: {Config.FIREBASE_CLIENT_EMAIL}")
+        print(f"3. Private Key ID: {Config.FIREBASE_PRIVATE_KEY_ID[:8]}..." if Config.FIREBASE_PRIVATE_KEY_ID else "None")
+        print(f"4. Auth URI: {Config.FIREBASE_AUTH_URI}")
+        print(f"5. Token URI: {Config.FIREBASE_TOKEN_URI}")
+
+        credentials_dict = {
             "type": "service_account",
             "project_id": Config.FIREBASE_PROJECT_ID,
             "private_key_id": Config.FIREBASE_PRIVATE_KEY_ID,
@@ -33,7 +36,25 @@ class FirebaseManager:
             "token_uri": Config.FIREBASE_TOKEN_URI,
             "auth_provider_x509_cert_url": Config.FIREBASE_AUTH_PROVIDER_CERT_URL,
             "client_x509_cert_url": Config.FIREBASE_CLIENT_CERT_URL
-        })
+        }
+
+        # cred = credentials.Certificate({
+        #     "type": "service_account",
+        #     "project_id": Config.FIREBASE_PROJECT_ID,
+        #     "private_key_id": Config.FIREBASE_PRIVATE_KEY_ID,
+        #     "private_key": private_key,
+        #     "client_email": Config.FIREBASE_CLIENT_EMAIL,
+        #     "client_id": Config.FIREBASE_CLIENT_ID,
+        #     "auth_uri": Config.FIREBASE_AUTH_URI,
+        #     "token_uri": Config.FIREBASE_TOKEN_URI,
+        #     "auth_provider_x509_cert_url": Config.FIREBASE_AUTH_PROVIDER_CERT_URL,
+        #     "client_x509_cert_url": Config.FIREBASE_CLIENT_CERT_URL
+        # })
+        missing_fields = [k for k, v in credentials_dict.items() if not v]
+        if missing_fields:
+            print(f"Warning: Missing credential fields: {missing_fields}")
+
+        cred = credentials.Certificate(credentials_dict)
         firebase_admin.initialize_app(cred)
         self.db = firestore.client()
         self.books_collection = self.db.collection('books')

@@ -10,18 +10,17 @@ import json
 import numpy as np
 from pathlib import Path
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, List
 from nomic import embed
+from nomic.cli import get_api_credentials  
 import zlib
 from googleapiclient.discovery import build
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.http import MediaIoBaseDownload
+from google.oauth2 import service_account
 import io
 import tempfile
 import os
-import pickle
+from config import Config
 
 class BookEmbedder:
     def __init__(self, 
@@ -44,30 +43,46 @@ class BookEmbedder:
         self.dimensionality = dimensionality
         self.drive_service = self._initialize_drive_service()
 
-    def _initialize_drive_service(self):
-        """Initialize Google Drive service with proper authentication"""
-        SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
-        creds = None
-        token_path = Path(__file__).parent / 'token.pickle'
-        
-        if token_path.exists():
-            with open(token_path, 'rb') as token:
-                creds = pickle.load(token)
-                
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    str(Path(__file__).parent.parent / 'queryGoogleDrive' / 'googleOAuth.json'), 
-                    SCOPES
-                )
-                creds = flow.run_local_server(port=0)
+        # Initialize Nomic credentials
+        nomic_token = os.environ.get('NOMIC_API_KEY')
+        if not nomic_token:
+            raise ValueError("NOMIC_API_KEY environment variable not set")
             
-            with open(token_path, 'wb') as token:
-                pickle.dump(creds, token)
+        # Create .nomic directory and credentials file
+        nomic_path = Path.home() / ".nomic"
+        nomic_path.mkdir(exist_ok=True)
         
-        return build('drive', 'v3', credentials=creds)
+        # Write credentials file
+        credentials = {
+            "token": nomic_token,
+            "tenant": "production",
+            "expires": None,
+            "refresh_token": None
+        }
+        
+        with open(nomic_path / "credentials", "w") as f:
+            json.dump(credentials, f)
+            
+        # Verify credentials
+        try:
+            get_api_credentials()
+            print("Nomic API credentials configured successfully")
+        except Exception as e:
+            raise Exception(f"Failed to configure Nomic credentials: {str(e)}")
+
+
+
+    def _initialize_drive_service(self):
+        """Initialize Google Drive service using service account"""
+        credentials = service_account.Credentials.from_service_account_info({
+            "type": "service_account",
+            "project_id": Config.FIREBASE_PROJECT_ID,
+            "private_key": Config.FIREBASE_PRIVATE_KEY,
+            "client_email": Config.FIREBASE_CLIENT_EMAIL,
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }, scopes=['https://www.googleapis.com/auth/drive.readonly'])
+        
+        return build('drive', 'v3', credentials=credentials)
 
     def extract_text_with_structure(self, pdf_path: str) -> Dict[str, str]:
         """
