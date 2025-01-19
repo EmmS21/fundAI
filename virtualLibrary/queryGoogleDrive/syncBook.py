@@ -11,7 +11,7 @@ from googleapiclient.discovery import build
 from typing import List, Dict
 import pickle
 from pathlib import Path
-from ..config import Config
+from config import Config
 from .metadata_parser import BookMetadataParser
 
 # If modifying these scopes, delete the token.pickle file

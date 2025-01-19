@@ -38,3 +38,6 @@ class Config:
     MODAL_TOKEN_ID = os.getenv('MODAL_TOKEN_ID')
     MODAL_TOKEN_SECRET = os.getenv('MODAL_TOKEN_SECRET')
 
+    # Nomic configs
+    NOMIC_API_KEY = os.getenv('NOMIC_API_KEY')
+
