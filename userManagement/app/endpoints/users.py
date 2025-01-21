@@ -72,3 +72,76 @@ async def create_user(user: UserCreate):
             status_code=500,
             detail=f"Failed to create user: {str(e)}"
         )
+
+@router.get("/users/{user_id}/status")
+async def get_user_status(user_id: int):
+    """Get comprehensive user status including history"""
+    try:
+        db = await get_db()
+        try:
+            # Get subscription status
+            cursor = await db.execute(
+                """
+                SELECT start_date, end_date 
+                FROM subscriptions 
+                WHERE user_id = ?
+                """,
+                (user_id,)
+            )
+            subscription = await cursor.fetchone()
+            
+            # Get device info
+            cursor = await db.execute(
+                """
+                SELECT hardware_id, is_active, registered_at
+                FROM devices 
+                WHERE user_id = ?
+                """,
+                (user_id,)
+            )
+            device = await cursor.fetchone()
+            
+            # Get subscription history
+            cursor = await db.execute(
+                """
+                SELECT start_date, end_date, action, created_at
+                FROM subscription_history
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                """,
+                (user_id,)
+            )
+            history = await cursor.fetchall()
+            
+            return {
+                "subscription": {
+                    "active": subscription and datetime.fromisoformat(subscription[1]) > datetime.utcnow(),
+                    "current": {
+                        "start_date": subscription and subscription[0],
+                        "end_date": subscription and subscription[1]
+                    } if subscription else None
+                },
+                "device": {
+                    "registered": bool(device),
+                    "hardware_id": device and device[0],
+                    "is_active": device and device[1],
+                    "registered_at": device and device[2]
+                } if device else None,
+                "history": [
+                    {
+                        "start_date": h[0],
+                        "end_date": h[1],
+                        "action": h[2],
+                        "timestamp": h[3]
+                    } for h in history
+                ]
+            }
+            
+        finally:
+            await db.close()
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get user status: {str(e)}"
+        )
