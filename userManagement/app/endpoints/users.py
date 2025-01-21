@@ -4,9 +4,9 @@ users.py
 Purpose: User management endpoints including registration and profile management.
 """
 from fastapi import APIRouter, HTTPException
-from ..core.security import get_password_hash
-from ..db.database import get_db
-from ..schemas.user import UserCreate, UserResponse
+from app.core.security import get_password_hash
+from app.db.database import get_db
+from app.schemas.user import UserCreate, UserResponse
 from datetime import datetime
 
 router = APIRouter()

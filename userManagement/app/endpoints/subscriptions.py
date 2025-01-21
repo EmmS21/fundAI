@@ -4,9 +4,9 @@ subscriptions.py
 Purpose: Manage user subscriptions, including creation, renewal, and status checks.
 """
 from fastapi import APIRouter, HTTPException
-from ..db.database import get_db
+from app.db.database import get_db
 from datetime import datetime, timedelta
-from .devices import refresh_device_token
+from app.endpoints.devices import refresh_device_token
 
 router = APIRouter()
 

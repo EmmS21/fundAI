@@ -6,21 +6,37 @@ Handles environment variables and app-wide settings.
 """
 from pydantic_settings import BaseSettings
 from urllib.parse import quote_plus
-import secrets  # for generating secure random string
+import secrets
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+def load_env_vars():
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    env_path = os.path.join(os.path.dirname(os.path.dirname(current_dir)), '.env')
+    if os.path.exists(env_path):
+        load_dotenv(env_path)
+        return {
+            "POSTGRES_SERVER": os.getenv("POSTGRES_SERVER"),
+            "POSTGRES_USER": os.getenv("POSTGRES_USER"),
+            "POSTGRES_PASSWORD": os.getenv("POSTGRES_PASSWORD"),
+            "POSTGRES_DB": os.getenv("POSTGRES_DB")
+        }
+    return {}
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "User Management API"
     API_V1_STR: str = "/api/v1"
     
     # Database settings (Supabase)
-    POSTGRES_USER: str
-    POSTGRES_PASSWORD: str
-    POSTGRES_SERVER: str
-    POSTGRES_DB: str
+    POSTGRES_USER: str = ""
+    POSTGRES_PASSWORD: str = ""
+    POSTGRES_SERVER: str = ""
+    POSTGRES_DB: str = ""
     DATABASE_URL: str | None = None
 
     # Local settings for device tokens
-    DEVICE_SECRET_KEY: str = secrets.token_urlsafe(32)  # Generate random secure key
+    DEVICE_SECRET_KEY: str = secrets.token_urlsafe(32)
     TOKEN_EXPIRE_DAYS: int = 30
 
     def compute_db_url(self) -> str:
@@ -36,4 +52,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
 
-settings = Settings()
+# Load environment variables
+env_vars = load_env_vars()
+settings = Settings(**env_vars)
