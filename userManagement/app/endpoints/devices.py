@@ -66,7 +66,8 @@ async def register_device(user_id: int):
             token_data = {
                 "hardware_id": hardware_id,
                 "user_id": user_id,
-                "exp": expiry.timestamp()
+                "exp": expiry.timestamp(),
+                "subscription_end": subscription[0]
             }
             token = jwt.encode(
                 token_data,
@@ -107,6 +108,7 @@ async def refresh_device_token(hardware_id: str):
     try:
         db = await get_db()
         try:
+            # Get device and user info
             cursor = await db.execute(
                 "SELECT user_id FROM devices WHERE hardware_id = ? AND is_active = true",
                 (hardware_id,)
@@ -118,12 +120,30 @@ async def refresh_device_token(hardware_id: str):
                     status_code=404,
                     detail="Device not found or inactive"
                 )
+
+            # Get subscription info
+            cursor = await db.execute(
+                """
+                SELECT end_date 
+                FROM subscriptions 
+                WHERE user_id = ?
+                """,
+                (device[0],)
+            )
+            subscription = await cursor.fetchone()
             
-            expiry = datetime.now() + timedelta(days=settings.TOKEN_EXPIRE_DAYS)
+            if not subscription:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No subscription found"
+                )
+            
+            expiry = datetime.utcnow() + timedelta(days=settings.TOKEN_EXPIRE_DAYS)
             token_data = {
                 "hardware_id": hardware_id,
                 "user_id": device[0],
-                "exp": expiry.timestamp()
+                "exp": expiry.timestamp(),
+                "subscription_end": subscription[0]  # Add subscription end date
             }
             new_token = jwt.encode(
                 token_data,

@@ -6,6 +6,7 @@ Purpose: Manage user subscriptions, including creation, renewal, and status chec
 from fastapi import APIRouter, HTTPException
 from ..db.database import get_db
 from datetime import datetime, timedelta
+from .devices import refresh_device_token
 
 router = APIRouter()
 
@@ -91,4 +92,73 @@ async def get_subscription_status(user_id: int):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to check subscription: {str(e)}"
+        )
+
+@router.post("/subscriptions/{user_id}/renew")
+async def renew_subscription(user_id: int):
+    """Renew user subscription for another month"""
+    try:
+        db = await get_db()
+        try:
+            # Get current subscription
+            cursor = await db.execute(
+                "SELECT end_date FROM subscriptions WHERE user_id = ?",
+                (user_id,)
+            )
+            current_sub = await cursor.fetchone()
+            
+            if not current_sub:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No subscription found"
+                )
+            
+            # Calculate new dates
+            current_end = datetime.fromisoformat(current_sub[0])
+            new_end = current_end + timedelta(days=30)
+            
+            # Update subscription
+            await db.execute(
+                """
+                UPDATE subscriptions 
+                SET end_date = ?
+                WHERE user_id = ?
+                """,
+                (new_end.isoformat(), user_id)
+            )
+            
+            # Record in history
+            await db.execute(
+                """
+                INSERT INTO subscription_history 
+                (user_id, start_date, end_date, action) 
+                VALUES (?, ?, ?, ?)
+                """,
+                (user_id, current_end.isoformat(), new_end.isoformat(), 'renewed')
+            )
+            
+            await db.commit()
+            
+            # Refresh device token if exists
+            cursor = await db.execute(
+                "SELECT hardware_id FROM devices WHERE user_id = ?",
+                (user_id,)
+            )
+            device = await cursor.fetchone()
+            if device:
+                # Update device token
+                await refresh_device_token(device[0])
+            
+            return {
+                "message": "Subscription renewed",
+                "new_end_date": new_end.isoformat()
+            }
+            
+        finally:
+            await db.close()
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to renew subscription: {str(e)}"
         )
