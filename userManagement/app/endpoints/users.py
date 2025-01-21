@@ -5,8 +5,9 @@ Purpose: User management endpoints including registration and profile management
 """
 from fastapi import APIRouter, HTTPException
 from ..core.security import get_password_hash
-from ..db.database import database
+from ..db.database import get_db
 from ..schemas.user import UserCreate, UserResponse
+from datetime import datetime
 
 router = APIRouter()
 
@@ -14,25 +15,60 @@ router = APIRouter()
 async def create_user(user: UserCreate):
     """Register a new user"""
     try:
-        # Check if user exists
-        query = "SELECT id FROM users WHERE email = :email"
-        existing_user = await database.fetch_one(query=query, values={"email": user.email})
-        
-        if existing_user:
-            raise HTTPException(status_code=400, detail="Email already registered")
-        
-        # Create new user
-        hashed_password = get_password_hash(user.password)
-        query = """
-            INSERT INTO users (email, hashed_password)
-            VALUES (:email, :hashed_password)
-            RETURNING id, email, is_active, created_at
-        """
-        values = {"email": user.email, "hashed_password": hashed_password}
-        
-        user_record = await database.fetch_one(query=query, values=values)
-        return UserResponse(**dict(user_record))
-        
+        db = await get_db()
+        try:
+            # Check if user exists
+            cursor = await db.execute(
+                "SELECT id FROM users WHERE email = ?",
+                (user.email,)
+            )
+            if await cursor.fetchone():
+                raise HTTPException(
+                    status_code=400,
+                    detail="Email already registered"
+                )
+            
+            # Create new user
+            cursor = await db.execute(
+                """
+                INSERT INTO users 
+                (email, hashed_password, full_name, address, city, country) 
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user.email,
+                    get_password_hash(user.password),
+                    user.full_name,
+                    user.address,
+                    user.city,
+                    user.country
+                )
+            )
+            await db.commit()
+            
+            # Get created user
+            user_id = cursor.lastrowid
+            cursor = await db.execute(
+                "SELECT * FROM users WHERE id = ?",
+                (user_id,)
+            )
+            user_data = await cursor.fetchone()
+            
+            return {
+                "id": user_id,
+                "email": user_data[1],
+                "full_name": user_data[3],
+                "address": user_data[4],
+                "city": user_data[5],
+                "country": user_data[6],
+                "created_at": user_data[7]
+            }
+            
+        finally:
+            await db.close()
+            
     except Exception as e:
-        print(f"Error creating user: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create user: {str(e)}"
+        )

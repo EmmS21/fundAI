@@ -32,6 +32,7 @@ async def register_device(user_id: int):
         hardware_id = str(uuid.getnode())
         db = await get_db()
         try:
+            # Check if device already registered
             cursor = await db.execute(
                 "SELECT * FROM devices WHERE hardware_id = ?",
                 (hardware_id,)
@@ -42,6 +43,22 @@ async def register_device(user_id: int):
                 raise HTTPException(
                     status_code=400,
                     detail="Device already registered"
+                )
+            
+            # Check subscription status
+            cursor = await db.execute(
+                """
+                SELECT s.end_date 
+                FROM subscriptions s 
+                WHERE s.user_id = ? AND s.end_date > datetime('now')
+                """,
+                (user_id,)
+            )
+            subscription = await cursor.fetchone()
+            if not subscription:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No active subscription found"
                 )
             
             # Use settings for token generation
