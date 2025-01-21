@@ -5,8 +5,8 @@ Purpose: Device registration and token management for offline authentication.
 Controls device registration, token generation, and verification for AI model access.
 """
 from fastapi import APIRouter, HTTPException
-from ..db.database import get_db
-from ..core.config import settings  # Import settings
+from app.db.database import get_db
+from app.core.config import settings  
 import uuid
 from datetime import datetime, timedelta
 import jwt
