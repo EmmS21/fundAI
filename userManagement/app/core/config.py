@@ -6,16 +6,22 @@ Handles environment variables and app-wide settings.
 """
 from pydantic_settings import BaseSettings
 from urllib.parse import quote_plus
+import secrets  # for generating secure random string
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "User Management API"
     API_V1_STR: str = "/api/v1"
     
+    # Database settings (Supabase)
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str
     POSTGRES_SERVER: str
     POSTGRES_DB: str
     DATABASE_URL: str | None = None
+
+    # Local settings for device tokens
+    DEVICE_SECRET_KEY: str = secrets.token_urlsafe(32)  # Generate random secure key
+    TOKEN_EXPIRE_DAYS: int = 30
 
     def compute_db_url(self) -> str:
         """Compute PostgreSQL database URL"""
