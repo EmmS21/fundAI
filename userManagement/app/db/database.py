@@ -1,33 +1,25 @@
+import aiosqlite
+import os
+
+DATABASE_URL = "app.db"
+
+# Simple connection function
+async def get_db():
+    return await aiosqlite.connect(DATABASE_URL)
+
+CREATE_USERS_TABLE = """
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE NOT NULL,
+    hashed_password TEXT NOT NULL
+);
 """
-database.py
 
-Purpose: Database connection management and session handling.
-Provides SQLAlchemy setup and connection pooling.
-"""
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy.pool import QueuePool
-from ..core.config import settings
-
-# Create SQLAlchemy engine with connection pooling
-engine = create_engine(
-    settings.compute_db_url(),
-    poolclass=QueuePool,
-    pool_size=5,
-    max_overflow=10,
-    pool_timeout=30
-)
-
-# Create sessionmaker
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Base class for SQLAlchemy models
-Base = declarative_base()
-
-def get_db():
-    """Dependency for FastAPI endpoints to get DB session"""
-    db = SessionLocal()
+# Initialize database
+async def init_db():
+    db = await get_db()
     try:
-        yield db
+        await db.execute(CREATE_USERS_TABLE)
+        await db.commit()
     finally:
-        db.close()
+        await db.close()
