@@ -6,19 +6,19 @@ and API documentation.
 """
 from pydantic import BaseModel, EmailStr
 from datetime import datetime
-from typing import Optional
 
 class UserBase(BaseModel):
     email: EmailStr
+    full_name: str
+    address: str
+    city: str
+    country: str
 
-class UserCreate(BaseModel):
-    email: EmailStr
+class UserCreate(UserBase):
     password: str
 
-class UserResponse(BaseModel):
+class UserResponse(UserBase):
     id: int
-    email: EmailStr
-    is_active: bool
     created_at: datetime
 
     class Config:
