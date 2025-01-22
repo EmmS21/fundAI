@@ -132,3 +132,29 @@ func (s *ContentStore) Delete(ctx context.Context, id uuid.UUID) error {
 	}
 	return nil
 }
+
+// Get retrieves a content record by ID
+func (s *ContentStore) Get(ctx context.Context, id uuid.UUID) (*Content, error) {
+	query := `
+		SELECT id, name, type, version, file_path, size, storage_key, content_type, created_at, updated_at 
+		FROM content 
+		WHERE id = $1`
+
+	var content Content
+	err := s.db.QueryRowContext(ctx, query, id).Scan(
+		&content.ID,
+		&content.Name,
+		&content.Type,
+		&content.Version,
+		&content.FilePath,
+		&content.Size,
+		&content.StorageKey,
+		&content.ContentType,
+		&content.CreatedAt,
+		&content.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &content, nil
+}
