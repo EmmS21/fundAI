@@ -92,70 +92,52 @@ func (h *ContentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ContentHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[Connection Start] RemoteAddr: %s", r.RemoteAddr)
-	log.Printf("[Headers] Content-Length: %d, Content-Type: %s", r.ContentLength, r.Header.Get("Content-Type"))
+	log.Printf("[Debug] Starting file upload handler")
 
-	log.Printf("[Request] Content-Length: %d bytes", r.ContentLength)
-	log.Printf("[Request] Transfer-Encoding: %s", r.TransferEncoding)
-
-	// Read the first few bytes of the body to see what we're getting
-	bodyBytes := make([]byte, 1024)
-	n, err := r.Body.Read(bodyBytes)
-	if err != nil && err != io.EOF {
-		log.Printf("Error reading request body: %v", err)
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
-		return
-	}
-	log.Printf("First %d bytes of request body: %s", n, bodyBytes[:n])
-
-	// Don't set Content-Type header here - let the multipart form set it
+	// Parse form data
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		log.Printf("Error parsing multipart form: %v", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "Could not parse form", http.StatusBadRequest)
 		return
 	}
 
+	// Get file
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		log.Printf("Error getting form file: %v", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "Could not read file", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
 
-	log.Printf("File received: %s, size: %d", header.Filename, header.Size)
-
-	// Upload file to storage
-	log.Println("Attempting to upload file to storage")
+	// Upload to storage
 	fileInfo, err := h.storage.Upload(r.Context(), file, header.Filename, header.Header.Get("Content-Type"))
 	if err != nil {
-		log.Printf("Storage upload error: %v", err)
-		http.Error(w, "Failed to upload file: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Upload failed", http.StatusInternalServerError)
 		return
 	}
-	log.Printf("Successfully uploaded file to storage with key: %s", fileInfo.Key)
 
-	// Create content record
+	// Create content record with metadata
 	content := &db.Content{
 		Name:        header.Filename,
-		Type:        "file",
-		Version:     "1.0",
+		Type:        "linux-app",
+		Version:     r.FormValue("version"),
+		Description: r.FormValue("description"),
+		AppVersion:  r.FormValue("app_version"),
+		AppType:     r.FormValue("app_type"),
+		FilePath:    fileInfo.Key,
+		Size:        int(header.Size),
 		StorageKey:  fileInfo.Key,
-		ContentType: fileInfo.ContentType,
-		Size:        int(fileInfo.Size),
-		FilePath:    fileInfo.Key, // Using storage key as file path
+		ContentType: header.Header.Get("Content-Type"),
 	}
 
+	// Automatically create/update database record
 	if err := h.store.Create(r.Context(), content); err != nil {
-		log.Printf("Database error: %v", err)
-		// Cleanup the uploaded file
+		// If database insert fails, clean up the uploaded file
 		h.storage.Delete(r.Context(), fileInfo.Key)
-		http.Error(w, "Failed to create content record: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Failed to create content record", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(content)
 }
 
@@ -196,4 +178,40 @@ func (h *ContentHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	if _, err := io.Copy(w, reader); err != nil {
 		log.Printf("Error streaming file: %v", err)
 	}
+}
+
+// List all content
+func (h *ContentHandler) ListContent(w http.ResponseWriter, r *http.Request) {
+	contents, err := h.store.List(r.Context())
+	if err != nil {
+		log.Printf("[Error] Failed to list content: %v", err)
+		http.Error(w, "Failed to list content", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(contents)
+}
+
+// Get content by ID
+func (h *ContentHandler) GetContent(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	content, err := h.store.Get(r.Context(), id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "Content not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(content)
 }

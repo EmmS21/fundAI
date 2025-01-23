@@ -158,3 +158,11 @@ func (s *ContentStore) Get(ctx context.Context, id uuid.UUID) (*Content, error) 
 	}
 	return &content, nil
 }
+
+// Exists checks if a record exists for the given storage key
+func (s *ContentStore) Exists(ctx context.Context, storageKey string) (bool, error) {
+	var exists bool
+	query := `SELECT EXISTS(SELECT 1 FROM content WHERE storage_key = $1)`
+	err := s.db.QueryRowContext(ctx, query, storageKey).Scan(&exists)
+	return exists, err
+}

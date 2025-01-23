@@ -1,0 +1,5 @@
+ALTER TABLE content
+ADD COLUMN description TEXT,
+ADD COLUMN app_version VARCHAR,
+ADD COLUMN release_date TIMESTAMP WITH TIME ZONE,
+ADD COLUMN app_type VARCHAR;
