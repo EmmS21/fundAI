@@ -1,6 +1,6 @@
-# EduVault - User & Device Management System
+# FundaVault - User & Device Management System
 
-EduVault is a backend system for managing user authentication, device registration, and subscription tracking for FundAIHub (a store of linux native EdTech apps leveraging local AI models to helps students in Africa prepare for exams and learn new skills). 
+FundaVault is a backend system for managing user authentication, device registration, and subscription tracking for FundAIHub (a store of linux native EdTech apps leveraging local AI models to helps students in Africa prepare for exams and learn new skills). 
 
 This is partof a broader platform that provides students with laptops preloaded with offline AI learning tools.
 
