@@ -1,11 +1,15 @@
 package storage
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"path"
+	"strings"
 	"time"
 )
 
@@ -36,8 +40,11 @@ func (s *SupabaseStorage) Upload(ctx context.Context, file io.Reader, filename s
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+s.apiKey)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.apiKey))
 	req.Header.Set("Content-Type", contentType)
+
+	log.Printf("[Storage] Uploading to URL: %s", url)
+	log.Printf("[Storage] Content-Type: %s", contentType)
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -45,12 +52,23 @@ func (s *SupabaseStorage) Upload(ctx context.Context, file io.Reader, filename s
 	}
 	defer resp.Body.Close()
 
+	body, _ := io.ReadAll(resp.Body)
+	log.Printf("[Storage] Response Status: %s, Body: %s", resp.Status, string(body))
+
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("upload failed: %s", resp.Status)
+		return nil, fmt.Errorf("upload failed with status %s: %s", resp.Status, string(body))
+	}
+
+	var response struct {
+		Key string `json:"Key"`
+		Id  string `json:"Id"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&response); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
 	}
 
 	return &FileInfo{
-		Key:         filename,
+		Key:         response.Key,
 		ContentType: contentType,
 		UpdatedAt:   time.Now(),
 	}, nil
@@ -58,10 +76,15 @@ func (s *SupabaseStorage) Upload(ctx context.Context, file io.Reader, filename s
 
 // Download retrieves a file from storage
 func (s *SupabaseStorage) Download(ctx context.Context, key string) (io.ReadCloser, *FileInfo, error) {
+	// Remove any bucket name prefix from the key if it exists
+	key = strings.TrimPrefix(key, s.bucketName+"/")
+
 	url := fmt.Sprintf("%s/storage/v1/object/%s/%s",
 		s.projectURL,
 		s.bucketName,
 		path.Clean(key))
+
+	log.Printf("[Debug] Downloading from: %s", url)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
