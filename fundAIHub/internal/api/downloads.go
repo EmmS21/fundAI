@@ -5,16 +5,21 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 )
 
 type DownloadHandler struct {
-	store *db.ContentStore
+	store        *db.ContentStore
+	urlGenerator *URLGenerator
 }
 
 func NewDownloadHandler(store *db.ContentStore) *DownloadHandler {
-	return &DownloadHandler{store: store}
+	return &DownloadHandler{
+		store:        store,
+		urlGenerator: NewURLGenerator(store),
+	}
 }
 
 // StartDownload initiates a new download
@@ -148,4 +153,39 @@ func (h *DownloadHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(downloads)
+}
+
+func (h *DownloadHandler) GetDownloadURL(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	contentID := r.URL.Query().Get("content_id")
+	if contentID == "" {
+		http.Error(w, "Missing content ID", http.StatusBadRequest)
+		return
+	}
+
+	id, err := uuid.Parse(contentID)
+	if err != nil {
+		http.Error(w, "Invalid content ID", http.StatusBadRequest)
+		return
+	}
+
+	// Generate URL with 1-hour expiration
+	url, err := h.urlGenerator.GenerateURL(id, time.Hour)
+	if err != nil {
+		log.Printf("[Error] Failed to generate download URL: %v", err)
+		http.Error(w, "Failed to generate download URL", http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]string{
+		"download_url": url,
+		"expires_in":   "1h",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }

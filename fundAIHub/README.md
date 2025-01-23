@@ -35,6 +35,8 @@ go test ./...
 # Run specific test suites
 go test -v ./internal/api -run TestDownloadStatusUpdates
 go test -v ./internal/api -run TestDownloadFlow
+# Test URL Generation and Validation
+go test -v ./internal/api -run TestURLGenerator
 ```
 
 ## Test Suites
@@ -73,6 +75,28 @@ go test -v ./internal/api -run TestDownloadFlow
 - Device authentication
 - User authorization
 - Content validation
+
+### 3. URL Generation and Validation (TestURLGenerator)
+Tests the secure download URL generation and validation system.
+
+```bash
+go test -v ./internal/api -run TestURLGenerator
+```
+
+#### Tests:
+- Generate secure, time-limited download URLs
+- Validate URL signatures
+- Handle URL expiration
+- Prevent URL tampering
+- Content existence verification
+
+**Expected Responses:**
+```json
+{
+    "download_url": "/download/content-uuid?expires=2024-01-23T20:00:00Z&signature=abc123...",
+    "expires_in": "1h"
+}
+```
 
 ## API Endpoints
 ### Content Upload

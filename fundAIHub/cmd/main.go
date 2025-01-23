@@ -269,6 +269,7 @@ func main() {
 	http.HandleFunc("/api/downloads/start", downloadHandler.StartDownload)
 	http.HandleFunc("/api/downloads/status", downloadHandler.UpdateStatus)
 	http.HandleFunc("/api/downloads/history", downloadHandler.GetHistory)
+	http.HandleFunc("/api/downloads/url", downloadHandler.GetDownloadURL)
 
 	log.Printf("Server starting on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
