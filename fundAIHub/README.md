@@ -1,5 +1,9 @@
 # FundAIHub - Content Distribution System
-A robust system for managing and distributing content updates, handling downloads, and version management.
+FundAIHub is a store for linux native applications. These are EdTech applications interfacing with local AI models as a part of a broader build to give students in Africa access to laptops preloaded with offline AI models.
+
+Students will be able to download different tools from this store. Downloads will go through a middleware checking if the user is subscribed based on their devide ID.
+
+The apps are stored in supabase.
 
 ## Core Features
 - Content upload and versioning
