@@ -12,6 +12,7 @@ import (
 	"path"
 	"time"
 
+	"FundAIHub/internal/api"
 	"FundAIHub/internal/db"
 
 	"github.com/joho/godotenv"
@@ -262,6 +263,12 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(contents)
 	})
+
+	// Add download endpoints
+	downloadHandler := api.NewDownloadHandler(store)
+	http.HandleFunc("/api/downloads/start", downloadHandler.StartDownload)
+	http.HandleFunc("/api/downloads/status", downloadHandler.UpdateStatus)
+	http.HandleFunc("/api/downloads/history", downloadHandler.GetHistory)
 
 	log.Printf("Server starting on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))

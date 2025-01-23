@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log"
 
 	"github.com/google/uuid"
@@ -165,4 +166,146 @@ func (s *ContentStore) Exists(ctx context.Context, storageKey string) (bool, err
 	query := `SELECT EXISTS(SELECT 1 FROM content WHERE storage_key = $1)`
 	err := s.db.QueryRowContext(ctx, query, storageKey).Scan(&exists)
 	return exists, err
+}
+
+type DownloadStore interface {
+	Create(ctx context.Context, download *Download) error
+	Update(ctx context.Context, download *Download) error
+	GetByID(ctx context.Context, id uuid.UUID) (*Download, error)
+	ListDownloadsByDeviceID(ctx context.Context, deviceID uuid.UUID) ([]*Download, error)
+}
+
+// Add these methods to your ContentStore struct
+func (s *ContentStore) CreateDownload(ctx context.Context, download *Download) error {
+	query := `
+        INSERT INTO downloads (device_id, user_id, content_id, status, bytes_downloaded, total_bytes)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, created_at`
+
+	return s.db.QueryRowContext(
+		ctx,
+		query,
+		download.DeviceID,
+		download.UserID,
+		download.ContentID,
+		download.Status,
+		download.BytesDownloaded,
+		download.TotalBytes,
+	).Scan(&download.ID, &download.StartedAt)
+}
+
+func (s *ContentStore) GetDownloadByID(ctx context.Context, id uuid.UUID) (*Download, error) {
+	log.Printf("[Debug] Looking for download with ID: %s", id)
+
+	query := `
+        SELECT id, device_id, user_id, content_id, status, bytes_downloaded, 
+               total_bytes, created_at, last_updated_at, completed_at, error_message, 
+               resume_position
+        FROM downloads 
+        WHERE id = $1`
+
+	download := &Download{}
+	err := s.db.QueryRowContext(ctx, query, id).Scan(
+		&download.ID,
+		&download.DeviceID,
+		&download.UserID,
+		&download.ContentID,
+		&download.Status,
+		&download.BytesDownloaded,
+		&download.TotalBytes,
+		&download.StartedAt,
+		&download.LastUpdatedAt,
+		&download.CompletedAt,
+		&download.ErrorMessage,
+		&download.ResumePosition,
+	)
+	if err != nil {
+		log.Printf("[Error] Database error: %v", err)
+		return nil, err
+	}
+	log.Printf("[Debug] Found download in database: %+v", download)
+	return download, nil
+}
+
+func (s *ContentStore) UpdateDownload(ctx context.Context, download *Download) error {
+	query := `
+		UPDATE downloads 
+		SET status = $1, 
+			bytes_downloaded = $2, 
+        	error_message = COALESCE($3::text, error_message),
+			last_updated_at = NOW(),
+			completed_at = CASE 
+				WHEN status = 'completed' 
+				THEN NOW() 
+				ELSE completed_at 
+			END
+		WHERE id = $4`
+
+	var errorMsg interface{}
+	if download.ErrorMessage != nil {
+		errorMsg = *download.ErrorMessage
+	} else {
+		errorMsg = nil
+	}
+
+	result, err := s.db.ExecContext(
+		ctx,
+		query,
+		download.Status,
+		download.BytesDownloaded,
+		errorMsg,
+		download.ID,
+	)
+	if err != nil {
+		return err
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("download not found")
+	}
+	return nil
+}
+
+func (s *ContentStore) ListDownloadsByDeviceID(ctx context.Context, deviceID uuid.UUID) ([]*Download, error) {
+	query := `
+        SELECT id, device_id, user_id, content_id, status, bytes_downloaded, 
+               total_bytes, created_at, last_updated_at, completed_at, error_message, 
+               resume_position
+        FROM downloads 
+        WHERE device_id = $1
+        ORDER BY created_at DESC`
+
+	rows, err := s.db.QueryContext(ctx, query, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var downloads []*Download
+	for rows.Next() {
+		download := &Download{}
+		err := rows.Scan(
+			&download.ID,
+			&download.DeviceID,
+			&download.UserID,
+			&download.ContentID,
+			&download.Status,
+			&download.BytesDownloaded,
+			&download.TotalBytes,
+			&download.StartedAt,
+			&download.LastUpdatedAt,
+			&download.CompletedAt,
+			&download.ErrorMessage,
+			&download.ResumePosition,
+		)
+		if err != nil {
+			return nil, err
+		}
+		downloads = append(downloads, download)
+	}
+	return downloads, nil
 }
