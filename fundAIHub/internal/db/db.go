@@ -309,3 +309,25 @@ func (s *ContentStore) ListDownloadsByDeviceID(ctx context.Context, deviceID uui
 	}
 	return downloads, nil
 }
+
+func (s *ContentStore) GetByID(ctx context.Context, id uuid.UUID) (*Content, error) {
+	query := `
+		SELECT id, name, type, version, file_path, size
+		FROM content
+		WHERE id = $1`
+
+	content := &Content{}
+	err := s.db.QueryRowContext(ctx, query, id).Scan(
+		&content.ID,
+		&content.Name,
+		&content.Type,
+		&content.Version,
+		&content.FilePath,
+		&content.Size,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return content, nil
+}
