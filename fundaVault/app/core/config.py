@@ -35,9 +35,17 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = ""
     DATABASE_URL: str | None = None
 
+    # Token settings
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    SECRET_KEY: str = secrets.token_urlsafe(32)
+
     # Local settings for device tokens
     DEVICE_SECRET_KEY: str = secrets.token_urlsafe(32)
     TOKEN_EXPIRE_DAYS: int = 30
+
+    # Admin credentials
+    ADMIN_EMAIL: str = ""
+    ADMIN_PASSWORD: str = ""
 
     def compute_db_url(self) -> str:
         """Compute PostgreSQL database URL"""

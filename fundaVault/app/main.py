@@ -5,7 +5,7 @@ Purpose: FastAPI application initialization and router configuration.
 """
 from fastapi import FastAPI
 from app.db.database import init_db, get_db
-from app.endpoints import devices, users, subscriptions
+from app.endpoints import devices, users, subscriptions, admin
 import logging
 
 logging.basicConfig(level=logging.DEBUG)
@@ -70,6 +70,7 @@ logger.debug("Including routers")
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(devices.router, prefix="/api/v1")
 app.include_router(subscriptions.router, prefix="/api/v1")
+app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
 logger.debug("Routers included")
 
 @app.get("/")
