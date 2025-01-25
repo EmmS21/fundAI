@@ -170,3 +170,100 @@ curl -X GET http://localhost:8080/api/downloads/history \
 - Database errors
 - Authentication failures
 
+
+
+# Integration Testing & Microservice Architecture
+## System Architecture
+FundAIHub works as a microservice architecture. The client is authenticated through FundaVault, the resultant JWT is decoded in FundAIHub to ascertain the user's subscription status and role. This determines the level of access the user has to the content in the FundAIHub store.
+
+FundAI Platform:
+1. FundaVault (Authentication Service)
+   - User/Device Management
+   - Subscription Tracking
+   - Token Generation/Validation
+   - Running on: Render (Python/FastAPI)
+
+2. FundAIHub (Content Distribution)
+   - App Store Management
+   - Download Control
+   - Content Versioning
+   - Running on: Render (Go)
+
+3. Storage Layer
+   - Supabase: App content storage
+   - PostgreSQL: User/content metadata
+
+## Integration Points
+### 1. Authentication Flow
+Device → FundaVault (Token) → FundAIHub (Content)
+
+Token Verification:
+1. Device requests content from FundAIHub
+2. FundAIHub verifies token with FundaVault
+3. FundaVault validates device/subscription
+4. FundAIHub serves/denies content
+
+### 2. Testing Strategy
+#### Local Testing Environment
+```bash
+# 1. Start FundaVault
+cd fundaVault
+uvicorn app.main:app --reload --port 8000
+
+# 2. Start FundAIHub
+cd fundAIHub
+go run cmd/main.go
+```
+
+### Test Scenarios
+#### 1. Public Access (No Auth)
+```bash
+# List available content
+curl -X GET "http://localhost:8080/api/content/list" \
+  -H "Content-Type: application/json"
+```
+
+#### 2. Subscribed User Flow
+```bash
+# 1. Register device with FundaVault
+curl -X POST "http://localhost:8000/api/v1/devices/register/1" \
+  -H "Content-Type: application/json"
+
+# 2. Use returned token for downloads
+curl -X POST "http://localhost:8080/api/downloads/start" \
+  -H "Authorization: Bearer <token>" \
+  -H "Device-ID: <device-id>" \
+  -d '{"content_id": "<content-id>"}'
+```
+
+#### 3. Admin Operations
+```bash
+# 1. Get admin token from FundaVault
+curl -X POST "http://localhost:8000/api/v1/admin/login" \
+  -d '{
+    "email": "admin@fundavault.com",
+    "password": "your-password"
+  }'
+
+# 2. Use admin token for management
+curl -X POST "http://localhost:8080/upload" \
+  -H "Authorization: Bearer <admin-token>" \
+  -F "file=@app.zip"
+```
+
+## Architecture Purpose
+This microservice architecture serves several key purposes for the FundAI platform:
+
+1. Offline Capability
+- Tokens contain subscription data
+- Local validation possible
+- Reduced server dependency
+
+2. Security Isolation
+- Authentication separate from content
+- Isolated failure domains
+
+3. Educational Access
+- Simplified device management
+- Subscription tracking
+- Content distribution control
