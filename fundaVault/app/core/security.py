@@ -20,10 +20,13 @@ def get_password_hash(password: str) -> str:
     """Generate password hash."""
     return pwd_context.hash(password)
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(data: dict, is_admin: bool = False, expires_delta: Optional[timedelta] = None) -> str:
     """Create JWT access token."""
     to_encode = data.copy()
-    
+
+    if is_admin:
+        to_encode.update({"is_admin": True})
+
     # Set expiration
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
@@ -37,3 +40,10 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         algorithm="HS256"
     )
     return encoded_jwt
+
+def verify_admin_credentials(email: str, password: str) -> bool:
+    """Verify if credentials match admin credentials."""
+    return (
+        email == settings.ADMIN_EMAIL and 
+        verify_password(password, get_password_hash(settings.ADMIN_PASSWORD))
+    )

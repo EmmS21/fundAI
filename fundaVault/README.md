@@ -18,13 +18,70 @@ The system handles user registration, device authentication, and subscription ma
 - PostgreSQL/SQLite database
 - Environment variables configured
 
-## Environment Setup
+
+## Local Development Setup
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd fundaVault
+```
+
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+3. Environment Setup
 ```bash
 # Required environment variables
 export POSTGRES_SERVER="localhost"
 export POSTGRES_USER="user"
 export POSTGRES_PASSWORD="password"
 export POSTGRES_DB="eduvault"
+
+# Admin Credentials
+ADMIN_EMAIL="admin@fundavault.com"
+ADMIN_PASSWORD="your-secure-admin-password"
+```
+
+4. Run the application:
+```bash
+uvicorn app.main:app --reload
+```
+
+The API will be available at http://localhost:8000
+
+## Admin Interface
+
+### Admin Authentication
+
+1. Login as admin:
+```bash
+curl -X POST http://localhost:8000/api/v1/admin/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@fundavault.com",
+    "password": "your-secure-admin-password"
+  }'
+```
+
+2. Use the returned token for admin endpoints:
+```bash
+# Get all users
+```bash
+curl -X GET http://localhost:8000/api/v1/admin/users \
+  -H "Authorization: Bearer <your-admin-token>"
+```
+# Get system stats
+```bash
+curl -X GET http://localhost:8000/api/v1/admin/stats \
+  -H "Authorization: Bearer <your-admin-token>"
+```
+
+# Deactivate a user
+```bash
+curl -X POST http://localhost:8000/api/v1/admin/users/1/deactivate \
+  -H "Authorization: Bearer <your-admin-token>"
 ```
 
 ## Database Schema
@@ -140,6 +197,103 @@ curl -X POST http://localhost:8000/api/v1/subscriptions/1
     "active": true,
     "end_date": "2024-02-23T20:00:00Z",
     "days_remaining": 30
+}
+```
+
+## Admin Interface Testing
+
+### 1. Admin Login
+Test admin authentication by sending a POST request:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/admin/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@fundavault.com",
+    "password": "your-secure-admin-password"
+  }'
+```
+
+**Expected Response:**
+```json
+{
+    "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+    "token_type": "bearer"
+}
+```
+
+### 2. Test Admin Endpoints
+Using the access_token from the login response:
+
+#### Get All Users
+```bash
+curl -X GET http://localhost:8000/api/v1/admin/users \
+  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+
+# Expected Response:
+{
+    "users": [
+        {
+            "id": 1,
+            "email": "student@example.com",
+            "full_name": "John Doe",
+            "created_at": "2024-01-23T20:00:00Z"
+        }
+        // ... more users
+    ]
+}
+```
+
+#### Get System Stats
+```bash
+curl -X GET http://localhost:8000/api/v1/admin/stats \
+  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+
+# Expected Response:
+{
+    "total_users": 10,
+    "total_devices": 8,
+    "active_subscriptions": 5,
+    "timestamp": "2024-01-23T20:00:00Z"
+}
+```
+#### Deactivate User
+```bash
+curl -X POST http://localhost:8000/api/v1/admin/users/1/deactivate \
+  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+
+# Expected Response:
+{
+    "message": "User 1 deactivated"
+}
+```
+
+### Common Admin API Errors
+
+#### Invalid Credentials
+```json
+{
+    "detail": "Invalid admin credentials"
+}
+```
+
+#### Missing Token
+```json
+{
+    "detail": "Not authenticated",
+    "headers": {
+        "WWW-Authenticate": "Bearer"
+    }
+}
+```
+
+#### Invalid Token
+```json
+{
+    "detail": "Could not validate credentials",
+    "headers": {
+        "WWW-Authenticate": "Bearer"
+    }
 }
 ```
 
