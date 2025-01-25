@@ -13,7 +13,10 @@ import (
 	"time"
 
 	"FundAIHub/internal/api"
+	"FundAIHub/internal/auth"
+	"FundAIHub/internal/config"
 	"FundAIHub/internal/db"
+	"FundAIHub/internal/middleware"
 
 	"github.com/joho/godotenv"
 )
@@ -149,6 +152,13 @@ func main() {
 		log.Printf("[Warning] Error loading .env file: %v", err)
 	}
 
+	// Load configuration
+	cfg := config.GetConfig()
+
+	// Log the environment and URL being used
+	log.Printf("Running in %s mode", cfg.Environment)
+	log.Printf("Using FundaVault URL: %s", cfg.FundaVaultURL)
+
 	// Add database initialization
 	dbConfig := db.Config{
 		ConnectionURL: os.Getenv("DATABASE_URL"),
@@ -169,6 +179,20 @@ func main() {
 	)
 
 	log.Printf("[Debug] Initialized storage with URL: %s", os.Getenv("SUPABASE_URL"))
+
+	// Initialize FundaVault client with config
+	fundaVault := auth.NewFundaVaultClient(cfg)
+
+	// Initialize auth middleware
+	authMiddleware := middleware.NewAuthMiddleware(fundaVault)
+
+	// Add download endpoints
+	downloadHandler := api.NewDownloadHandler(store)
+	http.HandleFunc("/api/downloads/start",
+		authMiddleware.ValidateToken(downloadHandler.StartDownload))
+	http.HandleFunc("/api/downloads/status", downloadHandler.UpdateStatus)
+	http.HandleFunc("/api/downloads/history", downloadHandler.GetHistory)
+	http.HandleFunc("/api/downloads/url", downloadHandler.GetDownloadURL)
 
 	http.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[Debug] Received upload request")
@@ -263,13 +287,6 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(contents)
 	})
-
-	// Add download endpoints
-	downloadHandler := api.NewDownloadHandler(store)
-	http.HandleFunc("/api/downloads/start", downloadHandler.StartDownload)
-	http.HandleFunc("/api/downloads/status", downloadHandler.UpdateStatus)
-	http.HandleFunc("/api/downloads/history", downloadHandler.GetHistory)
-	http.HandleFunc("/api/downloads/url", downloadHandler.GetDownloadURL)
 
 	log.Printf("Server starting on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
