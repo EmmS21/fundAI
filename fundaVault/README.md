@@ -158,19 +158,71 @@ curl -X POST http://localhost:8000/api/v1/users/ \
 
 #### Register Device
 ```bash
-curl -X POST http://localhost:8000/api/v1/devices/register/1 \
-  -H "Content-Type: application/json"
+# First get an admin or user token
+curl -X POST http://localhost:8000/api/v1/admin/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "******@******.com",
+    "password": "****"
+  }'
+
+# Then register a device
+curl -X POST http://localhost:8000/api/v1/devices/register \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-token>" \
+  -d '{
+    "user_id": 1
+  }'
 ```
 
 **Expected Response:**
 ```json
 {
-    "message": "Device registered successfully",
-    "hardware_id": "123456789",
     "user_id": 1,
-    "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
-    "token_expiry": "2024-02-23T20:00:00Z"
+    "hardware_id": "****",
+    "os_type": "macos",
+    "normalized_identifier": "*****",
+    "is_active": true,
+    "registered_at": "2025-01-25T16:23:23.942524",
+    "last_verified_at": "2025-01-25T16:23:23.942524"
 }
+```
+
+#### List Devices
+```bash
+curl -X GET http://localhost:8000/api/v1/devices/list \
+  -H "Authorization: Bearer <your-token>"
+```
+
+**Expected Response:**
+```json
+[
+    {
+        "user_id": 1,
+        "hardware_id": "97ae0be8-54e5-4f74-936e-9c434cd143be",
+        "os_type": "macos",
+        "normalized_identifier": "cdb74ce4-91cb-5774-b45d-5e8159a534a4",
+        "is_active": true,
+        "registered_at": "2025-01-25T16:23:23.942524",
+        "last_verified_at": "2025-01-25T16:23:23.942524"
+    }
+]
+```
+
+### Database Schema
+Update the devices table schema:
+```sql
+CREATE TABLE devices (
+    hardware_id TEXT PRIMARY KEY,
+    user_id INTEGER,
+    os_type TEXT NOT NULL,
+    raw_identifier TEXT NOT NULL,
+    normalized_identifier TEXT NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_verified_at TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);
 ```
 
 #### Verify Device Token
@@ -241,6 +293,28 @@ curl -X GET http://localhost:8000/api/v1/admin/users \
         }
         // ... more users
     ]
+}
+```
+
+#### Reset Devices Table
+```bash
+# First, get admin token
+curl -X POST http://localhost:8000/api/v1/admin/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@fundavault.com",
+    "password": "your-secure-admin-password"
+  }'
+
+# Then reset the devices table
+curl -X POST http://localhost:8000/api/v1/admin/reset-devices-table \
+  -H "Authorization: Bearer <your-admin-token>"
+```
+
+**Expected Response:**
+```json
+{
+    "message": "Devices table reset successfully"
 }
 ```
 
