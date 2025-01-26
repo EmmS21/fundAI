@@ -6,7 +6,6 @@ Purpose: Manage user subscriptions, including creation, renewal, and status chec
 from fastapi import APIRouter, HTTPException
 from app.db.database import get_db
 from datetime import datetime, timedelta
-from app.endpoints.devices import refresh_device_token
 
 router = APIRouter()
 
@@ -138,16 +137,6 @@ async def renew_subscription(user_id: int):
             )
             
             await db.commit()
-            
-            # Refresh device token if exists
-            cursor = await db.execute(
-                "SELECT hardware_id FROM devices WHERE user_id = ?",
-                (user_id,)
-            )
-            device = await cursor.fetchone()
-            if device:
-                # Update device token
-                await refresh_device_token(device[0])
             
             return {
                 "message": "Subscription renewed",

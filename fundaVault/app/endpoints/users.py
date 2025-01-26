@@ -3,8 +3,9 @@ users.py
 
 Purpose: User management endpoints including registration and profile management.
 """
-from fastapi import APIRouter, HTTPException
-from app.core.security import get_password_hash
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.security import OAuth2PasswordRequestForm
+from app.core.security import get_password_hash, verify_password, create_access_token
 from app.db.database import get_db
 from app.schemas.user import UserCreate, UserResponse
 from datetime import datetime
@@ -145,3 +146,56 @@ async def get_user_status(user_id: int):
             status_code=500,
             detail=f"Failed to get user status: {str(e)}"
         )
+
+@router.post("/users/login")
+async def login_user(form_data: OAuth2PasswordRequestForm = Depends()):
+    """User login endpoint"""
+    try:
+        db = await get_db()
+        try:
+            # Verify user exists and password is correct
+            cursor = await db.execute(
+                "SELECT id, email, hashed_password FROM users WHERE email = ?",
+                (form_data.username,)
+            )
+            user = await cursor.fetchone()
+            
+            if not user or not verify_password(form_data.password, user[2]):
+                raise HTTPException(
+                    status_code=401,
+                    detail="Incorrect email or password"
+                )
+            
+            # Create access token
+            access_token = create_access_token(
+                data={"sub": user[1], "id": user[0], "is_admin": False}
+            )
+            
+            return {
+                "access_token": access_token,
+                "token_type": "bearer"
+            }
+            
+        finally:
+            await db.close()
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Login failed: {str(e)}"
+        )
+
+@router.get("/users/list")
+async def list_users(db = Depends(get_db)):
+    """List all users (for testing)"""
+    cursor = await db.execute("SELECT id, email, full_name, created_at FROM users")
+    users = await cursor.fetchall()
+    return [
+        {
+            "id": user[0],
+            "email": user[1],
+            "full_name": user[2],
+            "created_at": user[3]
+        }
+        for user in users
+    ]

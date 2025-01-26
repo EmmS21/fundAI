@@ -190,9 +190,12 @@ func main() {
 	downloadHandler := api.NewDownloadHandler(store)
 	http.HandleFunc("/api/downloads/start",
 		authMiddleware.ValidateToken(downloadHandler.StartDownload))
-	http.HandleFunc("/api/downloads/status", downloadHandler.UpdateStatus)
-	http.HandleFunc("/api/downloads/history", downloadHandler.GetHistory)
-	http.HandleFunc("/api/downloads/url", downloadHandler.GetDownloadURL)
+	http.HandleFunc("/api/downloads/status",
+		authMiddleware.ValidateToken(downloadHandler.UpdateStatus))
+	http.HandleFunc("/api/downloads/history",
+		authMiddleware.ValidateToken(downloadHandler.GetHistory))
+	http.HandleFunc("/api/downloads/url",
+		authMiddleware.ValidateToken(downloadHandler.GetDownloadURL))
 
 	http.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[Debug] Received upload request")
