@@ -267,3 +267,129 @@ This microservice architecture serves several key purposes for the FundAI platfo
 - Simplified device management
 - Subscription tracking
 - Content distribution control
+
+
+
+
+
+
+
+
+
+
+FundAIHub - Content Distribution System Overview
+System Architecture
+
+Backend: Go server with PostgreSQL database
+Storage: Supabase for app content storage
+Authentication: FundaVault service (separate microservice)
+
+Authentication Flow
+1. Device authentication through FundaVault
+2. JWT tokens used for subsequent requests
+3. Token contains subscription status and user role information
+
+Available Endpoints
+Public Endpoints
+1. List Available Content
+GET /api/content/list
+Response: {
+  "id": "uuid",
+  "name": "string",
+  "type": "string",
+  "version": "string",
+  "description": "string",
+  "app_version": "string",
+  "app_type": "string",
+  "size": number
+}
+
+Authentication Required Endpoints
+All authenticated endpoints require:
+Header: Authorization: Bearer <token>
+Header: Device-ID: <device_id>
+
+2. Start Download
+POST /api/downloads/start
+Body: {
+  "content_id": "uuid",
+  "resume": boolean
+}
+Response: {
+  "id": "uuid",
+  "status": "started",
+  "bytes_downloaded": number,
+  "total_bytes": number
+}
+
+3. Update Download Status
+PUT /api/downloads/status?id=<download_id>
+Body: {
+  "status": "completed" | "paused" | "failed",
+  "bytes_downloaded": number,
+  "error_message": string?
+}
+
+4. Get Download History
+GET /api/downloads/history
+Response: [
+  {
+    "id": "uuid",
+    "content_id": "uuid",
+    "status": string,
+    "bytes_downloaded": number,
+    "total_bytes": number,
+    "started_at": string,
+    "completed_at": string?
+  }
+]
+
+Admin Only Endpoints
+Requires admin token from FundaVault:
+5. Upload Content
+POST /upload
+Form-Data:
+  - file: binary
+  - version: string
+  - description: string
+  - app_version: string
+  - app_type: string
+Response: {
+  "id": "uuid",
+  "name": string,
+  "storage_key": string
+}
+
+
+FundaVault Integration (Required for Frontend)
+The frontend needs to integrate with FundaVault for:
+1. Device Registration
+POST http://fundavault-url/api/v1/devices/register
+Response: {
+  "device_id": "uuid",
+  "token": "jwt-token"
+}
+
+2. Admin Login
+POST http://fundavault-url/api/v1/admin/login
+Body: {
+  "email": string,
+  "password": string
+}
+Response: {
+  "token": "jwt-token",
+  "is_admin": true
+}
+
+Required Frontend Features
+1. Public Features
+- App store listing page
+- App details view
+- User registration
+- Subscription plans display
+
+2. Authenticated User Features
+- Download management
+- Download progress tracking
+- Download history
+- Profile management
