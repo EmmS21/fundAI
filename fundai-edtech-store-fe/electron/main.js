@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const isDev = process.env.NODE_ENV === 'development';
 const Store = require('electron-store');
@@ -115,4 +115,107 @@ app.on('activate', () => {
 process.on('uncaughtException', (error) => {
   console.error('Uncaught exception:', error);
   app.quit();
+});
+
+const HUBSTORE_URL = isDev 
+  ? 'http://localhost:8080'
+  : 'https://fundaihubstore.onrender.com';
+
+const VAULT_URL = isDev
+  ? 'http://localhost:8000'
+  : 'https://fundai.onrender.com';
+
+// Add IPC handlers
+ipcMain.handle('store:getApps', async () => {
+  try {
+    console.log('Hub', HUBSTORE_URL);
+    const url = `${HUBSTORE_URL}/api/content/list`;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    // Only read the response body once
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Failed to fetch apps:', error);
+    throw error;
+  }
+});
+
+// Define schema for type safety and structure
+const schema = {
+  auth: {
+    type: 'object',
+    properties: {
+      token: { type: 'string' },
+      tokenType: { type: 'string' },
+      expiresAt: { type: 'number' }
+    }
+  }
+};
+
+// Initialize store once
+const store = new Store({ 
+  schema,
+  name: 'auth-store', // This creates a separate auth-store.json file
+  encryptionKey: 'your-encryption-key' // For securing sensitive data
+});
+
+// Update the admin login handler
+ipcMain.handle('auth:adminLogin', async (_, { email, password }) => {
+  try {
+    const response = await fetch(`${VAULT_URL}/api/v1/admin/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({ email, password })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // Store both auth and admin status
+    store.set('auth', {
+      token: data.access_token,
+      tokenType: data.token_type,
+      expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 hours from now
+      isAdmin: true
+    });
+    
+    return { 
+      success: true, 
+      isAdmin: true
+    };
+  } catch (error) {
+    console.error('Admin login failed:', error);
+    return { 
+      success: false, 
+      error: error.message
+    };
+  }
+});
+
+// Add a method to check if token exists and is valid
+ipcMain.handle('auth:checkToken', () => {
+  const auth = store.get('auth');
+  if (!auth) return { isValid: false };
+  
+  return {
+    isValid: auth.expiresAt > Date.now(),
+    isAdmin: true
+  };
+});
+
+// Update the checkAdmin handler
+ipcMain.handle('auth:checkAdmin', () => {
+  const auth = store.get('auth');
+  return auth?.isAdmin || false;
 });

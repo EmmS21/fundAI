@@ -1,22 +1,19 @@
-const { contextBridge } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  // Auth related
-  login: (credentials) => ipcRenderer.invoke('auth:login', credentials),
-  logout: () => ipcRenderer.invoke('auth:logout'),
-  
-  // Store related
+  // Store Operations
   getApps: () => ipcRenderer.invoke('store:getApps'),
   getAppDetails: (appId) => ipcRenderer.invoke('store:getAppDetails', appId),
+  downloadApp: (appId) => ipcRenderer.invoke('store:downloadApp', appId),
   
-  // Download related
-  startDownload: (appId) => ipcRenderer.invoke('download:start', appId),
-  pauseDownload: (appId) => ipcRenderer.invoke('download:pause', appId),
-  resumeDownload: (appId) => ipcRenderer.invoke('download:resume', appId),
+  // Auth Operations
+  login: (credentials) => ipcRenderer.invoke('auth:login', credentials),
+  adminLogin: (credentials) => ipcRenderer.invoke('auth:adminLogin', credentials),
+  checkAdmin: () => ipcRenderer.invoke('auth:checkAdmin'),
   
-  // Listeners
+  // Download Progress
   onDownloadProgress: (callback) => 
     ipcRenderer.on('download:progress', callback),
-  onUpdateAvailable: (callback) => 
-    ipcRenderer.on('update:available', callback)
+  onDownloadComplete: (callback) => 
+    ipcRenderer.on('download:complete', callback)
 });
