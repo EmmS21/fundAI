@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useAuth } from '@/hooks/useAuth';
 
 interface CategoryFilterProps {
   onCategoryChange?: (category: string) => void;
@@ -6,6 +7,7 @@ interface CategoryFilterProps {
 
 export const CategoryFilter: React.FC<CategoryFilterProps> = ({ onCategoryChange }) => {
   const [isAdminState, setIsAdminState] = useState(false);
+  const { isAdmin } = useAuth(); // Get admin status from Zustand store
 
   useEffect(() => {
     const checkAdmin = async () => {
@@ -13,8 +15,10 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ onCategoryChange
       console.log('CategoryFilter - Admin status:', adminStatus);
       setIsAdminState(adminStatus);
     };
+    
+    // Check when component mounts and when isAdmin changes
     checkAdmin();
-  }, []);
+  }, [isAdmin]); // Add isAdmin as dependency
 
   return (
     <div className="flex space-x-4 overflow-x-auto pb-2">

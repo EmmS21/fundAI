@@ -10,6 +10,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   login: (credentials) => ipcRenderer.invoke('auth:login', credentials),
   adminLogin: (credentials) => ipcRenderer.invoke('auth:adminLogin', credentials),
   checkAdmin: () => ipcRenderer.invoke('auth:checkAdmin'),
+  clearAuth: () => {
+    console.log('1. Preload: clearAuth called');
+    return ipcRenderer.invoke('auth:clearAuth');
+  },
   
   // Download Progress
   onDownloadProgress: (callback) => 

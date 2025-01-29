@@ -15,6 +15,7 @@ export interface ElectronAPI {
     error?: string;
   }>;
   checkAdmin: () => Promise<boolean>;
+  clearAuth: () => Promise<boolean>;
 }
 
 declare global {
