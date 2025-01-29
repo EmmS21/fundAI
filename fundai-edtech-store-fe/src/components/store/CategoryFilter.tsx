@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { useAuth } from '@/hooks/useAuth';
 
 interface CategoryFilterProps {
   onCategoryChange?: (category: string) => void;
+  onUploadClick: () => void;
 }
 
-export const CategoryFilter: React.FC<CategoryFilterProps> = ({ onCategoryChange }) => {
+export const CategoryFilter: React.FC<CategoryFilterProps> = ({ onCategoryChange, onUploadClick }) => {
   const [isAdminState, setIsAdminState] = useState(false);
-  const { isAdmin } = useAuth(); // Get admin status from Zustand store
 
   useEffect(() => {
     const checkAdmin = async () => {
@@ -15,10 +14,8 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ onCategoryChange
       console.log('CategoryFilter - Admin status:', adminStatus);
       setIsAdminState(adminStatus);
     };
-    
-    // Check when component mounts and when isAdmin changes
     checkAdmin();
-  }, [isAdmin]); // Add isAdmin as dependency
+  }, []);
 
   return (
     <div className="flex space-x-4 overflow-x-auto pb-2">
@@ -45,7 +42,10 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ onCategoryChange
       
       {isAdminState && (
         <button
-          onClick={() => console.log('Upload clicked')}
+          onClick={() => {
+            console.log('1. Upload button clicked in CategoryFilter');
+            onUploadClick();
+          }}
           className="px-4 py-2 text-sm font-medium text-white
             bg-blue-500 rounded-full hover:bg-blue-600 
             transition-colors flex items-center gap-2"

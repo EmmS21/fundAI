@@ -5,10 +5,12 @@ import { Header } from './components/layout/Header';
 import { ThemeProvider } from './context/ThemeContext';
 import LoginModal from './components/auth/LoginModal';
 import { useAuth } from './hooks/useAuth';
+import { UploadModal } from './components/admin/UploadModal';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'apps' | 'library'>('apps');
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
   const { isAdmin, clearAuth } = useAuth();
 
   useEffect(() => {
@@ -42,6 +44,8 @@ export default function App() {
     }
   };
 
+  console.log('4. App rendering, showUploadModal:', showUploadModal);
+
   return (
     <ThemeProvider>
       <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors">
@@ -63,7 +67,14 @@ export default function App() {
           </button>
         )}
         
-        <Header activeTab={activeTab} onTabChange={setActiveTab} />
+        <Header 
+          activeTab={activeTab} 
+          onTabChange={setActiveTab}
+          onUploadClick={() => {
+            console.log('5. Setting showUploadModal to true');
+            setShowUploadModal(true);
+          }}
+        />
         
         {showLoginModal && (
           <div 
@@ -78,6 +89,20 @@ export default function App() {
               />
             </div>
           </div>
+        )}
+        
+        {showUploadModal && (
+          console.log('6. Rendering UploadModal'),
+          <UploadModal 
+            onClose={() => {
+              console.log('7. Closing upload modal');
+              setShowUploadModal(false);
+            }}
+            onUpload={() => {
+              console.log('8. Upload submitted');
+              setShowUploadModal(false);
+            }}
+          />
         )}
         
         <main>
