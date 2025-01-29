@@ -8,11 +8,14 @@ import { useViewStore } from '../../stores/viewStore';
 interface HeaderProps {
   activeTab: 'apps' | 'library';
   onTabChange: (tab: 'apps' | 'library') => void;
+  onUploadClick: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
+export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, onUploadClick }) => {
   const { setIsLibraryView } = useViewStore();
   const [isShrunk, setShrunk] = useState(false);
+
+  console.log('2. Header rendering with onUploadClick:', !!onUploadClick);
 
   useEffect(() => {
     const handler = () => {
@@ -99,7 +102,10 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
       {/* Search and Categories */}
       <div className="container mx-auto px-6 py-4 space-y-4 bg-white dark:bg-gray-800">
         <SearchBar />
-        {activeTab === 'apps' && <CategoryFilter />}
+        {activeTab === 'apps' && <CategoryFilter onUploadClick={() => {
+          console.log('3. Upload click handled in Header');
+          onUploadClick();
+        }} />}
       </div>
     </div>
   );

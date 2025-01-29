@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import useDropzone from 'react-dropzone';
+import { useDropzone } from 'react-dropzone';
 
 interface UploadModalProps {
   onClose: () => void;
