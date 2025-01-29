@@ -93,8 +93,73 @@ const createWindow = () => {
   }
 };
 
-// App lifecycle handlers
-app.whenReady().then(createWindow).catch(error => {
+// Group all auth-related handlers together at the top of your IPC handlers
+const setupAuthHandlers = () => {
+  ipcMain.handle('auth:adminLogin', async (_, { email, password }) => {
+    try {
+      const response = await fetch(`${VAULT_URL}/api/v1/admin/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ email, password })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // Store both auth and admin status
+      store.set('auth', {
+        token: data.access_token,
+        tokenType: data.token_type,
+        expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 hours from now
+        isAdmin: true
+      });
+      
+      return { 
+        success: true, 
+        isAdmin: true
+      };
+    } catch (error) {
+      console.error('Admin login failed:', error);
+      return { 
+        success: false, 
+        error: error.message
+      };
+    }
+  });
+
+  ipcMain.handle('auth:checkToken', () => {
+    const auth = store.get('auth');
+    if (!auth) return { isValid: false };
+    
+    return {
+      isValid: auth.expiresAt > Date.now(),
+      isAdmin: true
+    };
+  });
+
+  ipcMain.handle('auth:checkAdmin', () => {
+    const auth = store.get('auth');
+    return auth?.isAdmin || false;
+  });
+
+  ipcMain.handle('auth:clearAuth', () => {
+    console.log('Clearing auth...');  // Debug log
+    store.delete('auth');
+    return true;
+  });
+};
+
+// Call this after store initialization
+app.whenReady().then(() => {
+  createWindow();
+  setupAuthHandlers();
+}).catch(error => {
   console.error('Failed to initialize app:', error);
   app.quit();
 });
@@ -162,60 +227,4 @@ const store = new Store({
   schema,
   name: 'auth-store', // This creates a separate auth-store.json file
   encryptionKey: 'your-encryption-key' // For securing sensitive data
-});
-
-// Update the admin login handler
-ipcMain.handle('auth:adminLogin', async (_, { email, password }) => {
-  try {
-    const response = await fetch(`${VAULT_URL}/api/v1/admin/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({ email, password })
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
-    // Store both auth and admin status
-    store.set('auth', {
-      token: data.access_token,
-      tokenType: data.token_type,
-      expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 hours from now
-      isAdmin: true
-    });
-    
-    return { 
-      success: true, 
-      isAdmin: true
-    };
-  } catch (error) {
-    console.error('Admin login failed:', error);
-    return { 
-      success: false, 
-      error: error.message
-    };
-  }
-});
-
-// Add a method to check if token exists and is valid
-ipcMain.handle('auth:checkToken', () => {
-  const auth = store.get('auth');
-  if (!auth) return { isValid: false };
-  
-  return {
-    isValid: auth.expiresAt > Date.now(),
-    isAdmin: true
-  };
-});
-
-// Update the checkAdmin handler
-ipcMain.handle('auth:checkAdmin', () => {
-  const auth = store.get('auth');
-  return auth?.isAdmin || false;
 });
