@@ -44,70 +44,67 @@ export default function App() {
     }
   };
 
-  console.log('4. App rendering, showUploadModal:', showUploadModal);
-
   return (
     <ThemeProvider>
-      <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors">
-        {!isAdmin ? (
-          <button
-            onClick={handleLoginClick}
-            className="fixed top-4 left-4 z-50 px-4 py-2 bg-blue-500 text-white rounded-full 
-              hover:bg-blue-600 transition-colors text-sm font-medium"
-          >
-            Login
-          </button>
-        ) : (
-          <button
-            onClick={handleSignOut}
-            className="fixed top-4 left-4 z-50 px-4 py-2 bg-red-500 text-white rounded-full 
-              hover:bg-red-600 transition-colors text-sm font-medium"
-          >
-            Sign Out
-          </button>
-        )}
-        
-        <Header 
-          activeTab={activeTab} 
-          onTabChange={setActiveTab}
-          onUploadClick={() => {
-            console.log('5. Setting showUploadModal to true');
-            setShowUploadModal(true);
-          }}
-        />
-        
-        {showLoginModal && (
-          <div 
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 
-              flex items-center justify-center"
-            onClick={() => setShowLoginModal(false)}
-          >
-            <div onClick={e => e.stopPropagation()}>
-              <LoginModal 
-                onLoginSuccess={handleLoginSuccess} 
-                onClose={() => setShowLoginModal(false)}
-              />
+      <div className="min-h-screen w-full bg-white dark:bg-gray-900 transition-colors overflow-auto">
+        <div className="w-full h-full bg-white dark:bg-gray-900">
+          <header className="sticky top-0 w-full bg-white dark:bg-gray-800 shadow-sm z-50">
+            <Header 
+              activeTab={activeTab} 
+              onTabChange={setActiveTab}
+              onUploadClick={() => setShowUploadModal(true)}
+            />
+          </header>
+
+          <main>
+            {activeTab === 'apps' ? <Store /> : <Library />}
+          </main>
+
+          {!isAdmin && (
+            <button
+              onClick={handleLoginClick}
+              className="fixed top-4 left-4 z-50 px-4 py-2 bg-blue-500 text-white rounded-full 
+                hover:bg-blue-600 transition-colors text-sm font-medium"
+            >
+              Login
+            </button>
+          )}
+          
+          {isAdmin && (
+            <button
+              onClick={handleSignOut}
+              className="fixed top-4 left-4 z-50 px-4 py-2 bg-red-500 text-white rounded-full 
+                hover:bg-red-600 transition-colors text-sm font-medium"
+            >
+              Sign Out
+            </button>
+          )}
+          
+          {showLoginModal && (
+            <div 
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 
+                flex items-center justify-center"
+              onClick={() => setShowLoginModal(false)}
+            >
+              <div onClick={e => e.stopPropagation()}>
+                <LoginModal 
+                  onLoginSuccess={handleLoginSuccess} 
+                  onClose={() => setShowLoginModal(false)}
+                />
+              </div>
             </div>
-          </div>
-        )}
-        
-        {showUploadModal && (
-          console.log('6. Rendering UploadModal'),
-          <UploadModal 
-            onClose={() => {
-              console.log('7. Closing upload modal');
-              setShowUploadModal(false);
-            }}
-            onUpload={() => {
-              console.log('8. Upload submitted');
-              setShowUploadModal(false);
-            }}
-          />
-        )}
-        
-        <main>
-          {activeTab === 'apps' ? <Store /> : <Library />}
-        </main>
+          )}
+          
+          {showUploadModal && (
+            <UploadModal 
+              onClose={() => setShowUploadModal(false)}
+              onUpload={() => {
+                console.log('Upload clicked');
+                setShowUploadModal(false);
+              }}
+            />
+          )}
+        </div>
       </div>
     </ThemeProvider>
   );
