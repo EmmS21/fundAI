@@ -6,11 +6,13 @@ import { ThemeProvider } from './context/ThemeContext';
 import LoginModal from './components/auth/LoginModal';
 import { useAuth } from './hooks/useAuth';
 import { UploadModal } from './components/admin/UploadModal';
+import UsersModal from './components/admin/UsersModal';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'apps' | 'library'>('apps');
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showUsersModal, setShowUsersModal] = useState(false);
   const { isAdmin, clearAuth } = useAuth();
 
   useEffect(() => {
@@ -53,6 +55,7 @@ export default function App() {
               activeTab={activeTab} 
               onTabChange={setActiveTab}
               onUploadClick={() => setShowUploadModal(true)}
+              onUsersClick={() => setShowUsersModal(true)}
             />
           </header>
 
@@ -98,10 +101,15 @@ export default function App() {
           {showUploadModal && (
             <UploadModal 
               onClose={() => setShowUploadModal(false)}
-              onUpload={() => {
-                console.log('Upload clicked');
+              onUpload={async (formData) => {
                 setShowUploadModal(false);
               }}
+            />
+          )}
+
+          {showUsersModal && (
+            <UsersModal 
+              onClose={() => setShowUsersModal(false)}
             />
           )}
         </div>

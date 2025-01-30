@@ -9,9 +9,10 @@ interface HeaderProps {
   activeTab: 'apps' | 'library';
   onTabChange: (tab: 'apps' | 'library') => void;
   onUploadClick: () => void;
+  onUsersClick: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, onUploadClick }) => {
+export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, onUploadClick, onUsersClick }) => {
   const { setIsLibraryView } = useViewStore();
   const [isShrunk, setShrunk] = useState(false);
 
@@ -102,10 +103,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, onUpload
       {/* Search and Categories */}
       <div className="container mx-auto px-6 py-4 space-y-4 bg-white dark:bg-gray-800">
         <SearchBar />
-        {activeTab === 'apps' && <CategoryFilter onUploadClick={() => {
-          console.log('3. Upload click handled in Header');
-          onUploadClick();
-        }} />}
+        {activeTab === 'apps' && <CategoryFilter onUploadClick={onUploadClick} onUsersClick={onUsersClick} />}
       </div>
     </div>
   );
