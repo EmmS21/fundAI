@@ -16,6 +16,9 @@ export interface ElectronAPI {
   }>;
   checkAdmin: () => Promise<boolean>;
   clearAuth: () => Promise<boolean>;
+  updateUserStatus: (userId: string, status: 'active' | 'inactive') => Promise<boolean>;
+  deleteUser: (userId: string) => Promise<boolean>;
+  getUsers: () => Promise<User[]>;
 }
 
 declare global {

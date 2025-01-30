@@ -87,13 +87,15 @@ const createWindow = () => {
     mainWindow.on('closed', () => {
       mainWindow = null;
     });
+
+    // Setup all handlers
+    setupAuthHandlers();
   } catch (error) {
     console.error('Failed to create window:', error);
     app.quit();
   }
 };
 
-// Group all auth-related handlers together at the top of your IPC handlers
 const setupAuthHandlers = () => {
   ipcMain.handle('auth:adminLogin', async (_, { email, password }) => {
     try {
@@ -112,11 +114,13 @@ const setupAuthHandlers = () => {
       
       const data = await response.json();
       
-      // Store both auth and admin status
+      // Store credentials along with token
       store.set('auth', {
+        email,           // Store admin email
+        password,        // Store admin password
         token: data.access_token,
-        tokenType: data.token_type,
-        expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 hours from now
+        tokenType: 'Bearer',
+        expiresAt: Date.now() + (24 * 60 * 60 * 1000),
         isAdmin: true
       });
       
@@ -149,16 +153,122 @@ const setupAuthHandlers = () => {
   });
 
   ipcMain.handle('auth:clearAuth', () => {
-    console.log('Clearing auth...');  // Debug log
+    console.log('Clearing auth...');
     store.delete('auth');
     return true;
+  });
+
+  ipcMain.handle('user:get-all', async () => {
+    try {
+      const auth = store.get('auth');
+      if (!auth || !auth.token) {
+        throw new Error('Not authenticated');
+      }
+
+      let response = await fetch(`${VAULT_URL}/api/v1/admin/users`, {
+        headers: {
+          'Authorization': `Bearer ${auth.token}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      // If token is invalid (403), try to get new token
+      if (response.status === 403) {
+        console.log('Token invalid, getting new token...');
+        
+        const loginResponse = await fetch(`${VAULT_URL}/api/v1/admin/login`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            email: auth.email,
+            password: auth.password
+          })
+        });
+
+        if (!loginResponse.ok) {
+          console.error('Failed to refresh token:', {
+            status: loginResponse.status,
+            statusText: loginResponse.statusText
+          });
+          throw new Error('Failed to refresh admin token');
+        }
+
+        const newAuth = await loginResponse.json();
+        
+        // Update stored token
+        store.set('auth', {
+          ...auth,
+          token: newAuth.access_token
+        });
+
+        // Retry request with new token
+        response = await fetch(`${VAULT_URL}/api/v1/admin/users`, {
+          headers: {
+            'Authorization': `Bearer ${newAuth.access_token}`,
+            'Accept': 'application/json'
+          }
+        });
+      }
+
+      if (!response.ok) {
+        const errorData = await response.text();
+        console.error('API Error Response:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorData
+        });
+        throw new Error(`API Error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      if (data && data.users && Array.isArray(data.users)) {
+        const transformedUsers = data.users.map(user => ({
+          id: user[0],
+          email: user[1],
+          // Skip index 2 as it's the password
+          full_name: user[3],
+          address: user[4],
+          city: user[5],
+          country: user[6],
+          created_at: user[7],
+          // Default values for status fields
+          status: 'inactive',
+          subscription_status: 'inactive'
+        }));
+        return transformedUsers;
+      }
+
+      return [];
+    } catch (error) {
+      console.error('Failed to get users:', {
+        message: error.message,
+        stack: error.stack,
+        type: error.constructor.name
+      });
+      throw error;
+    }
+  });
+
+  ipcMain.handle('user:update-status', async (_, userId, status) => {
+    return makeAdminRequest(`/api/v1/admin/users/${userId}/${status}`, {
+      method: 'POST'
+    });
+  });
+
+  ipcMain.handle('user:delete', async (_, userId) => {
+    return makeAdminRequest(`/api/v1/admin/users/${userId}`, {
+      method: 'DELETE'
+    });
   });
 };
 
 // Call this after store initialization
 app.whenReady().then(() => {
   createWindow();
-  setupAuthHandlers();
 }).catch(error => {
   console.error('Failed to initialize app:', error);
   app.quit();
