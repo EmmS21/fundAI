@@ -99,6 +99,17 @@ const createWindow = () => {
 const setupAuthHandlers = () => {
   ipcMain.handle('auth:adminLogin', async (_, { email, password }) => {
     try {
+      // Log the request details (but mask the password)
+      console.log('Attempting admin login with:', {
+        url: `${VAULT_URL}/api/v1/admin/login`,
+        email: email,
+        password: password, // Show only last 4 chars
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+
       const response = await fetch(`${VAULT_URL}/api/v1/admin/login`, {
         method: 'POST',
         headers: {
@@ -292,13 +303,8 @@ process.on('uncaughtException', (error) => {
   app.quit();
 });
 
-const HUBSTORE_URL = isDev 
-  ? 'http://localhost:8080'
-  : 'https://fundaihubstore.onrender.com';
-
-const VAULT_URL = isDev
-  ? 'http://localhost:8000'
-  : 'https://fundai.onrender.com';
+const HUBSTORE_URL = 'https://fundaihubstore.onrender.com';
+const VAULT_URL = 'https://fundai.onrender.com';
 
 // Add IPC handlers
 ipcMain.handle('store:getApps', async () => {

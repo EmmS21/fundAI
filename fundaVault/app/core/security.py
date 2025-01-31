@@ -43,7 +43,9 @@ def create_access_token(data: dict, is_admin: bool = False, expires_delta: Optio
 
 def verify_admin_credentials(email: str, password: str) -> bool:
     """Verify if credentials match admin credentials."""
-    return (
-        email == settings.ADMIN_EMAIL and 
-        verify_password(password, get_password_hash(settings.ADMIN_PASSWORD))
-    )
+    if email != settings.ADMIN_EMAIL:
+        return False
+        
+    # Store this hashed password in an environment variable instead
+    admin_password_hash = get_password_hash(settings.ADMIN_PASSWORD)
+    return verify_password(password, admin_password_hash)
