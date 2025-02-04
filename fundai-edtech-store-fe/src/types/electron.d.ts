@@ -19,10 +19,11 @@ export interface ElectronAPI {
   updateUserStatus: (userId: string, status: 'active' | 'inactive') => Promise<boolean>;
   deleteUser: (userId: string) => Promise<boolean>;
   getUsers: () => Promise<User[]>;
+  syncApps: () => Promise<{ updated: boolean; count?: number; error?: string }>;
 }
 
 declare global {
   interface Window {
-    electronAPI: ElectronAPI;
+    electronAPI: ElectronAPI | jest.Mocked<ElectronAPI>;
   }
 }

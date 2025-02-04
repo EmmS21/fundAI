@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getApps: () => ipcRenderer.invoke('store:getApps'),
   getAppDetails: (appId) => ipcRenderer.invoke('store:getAppDetails', appId),
   downloadApp: (appId) => ipcRenderer.invoke('store:downloadApp', appId),
+  syncApps: () => ipcRenderer.invoke('store:syncApps'),
   
   // Auth Operations
   login: (credentials) => ipcRenderer.invoke('auth:login', credentials),
