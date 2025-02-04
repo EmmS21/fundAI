@@ -20,28 +20,11 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, onUpload
 
   useEffect(() => {
     const handler = () => {
-      setShrunk((isShrunk) => {
-        if (
-          !isShrunk &&
-          (document.body.scrollTop > 20 ||
-            document.documentElement.scrollTop > 20)
-        ) {
-          return true;
-        }
-
-        if (
-          isShrunk &&
-          document.body.scrollTop < 4 &&
-          document.documentElement.scrollTop < 4
-        ) {
-          return false;
-        }
-
-        return isShrunk;
-      });
+      const currentScroll = window.scrollY || document.documentElement.scrollTop;
+      setShrunk(currentScroll > 20);
     };
 
-    window.addEventListener("scroll", handler);
+    window.addEventListener("scroll", handler, { passive: true });
     return () => window.removeEventListener("scroll", handler);
   }, []);
 
@@ -51,21 +34,22 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, onUpload
   };
 
   return (
-    <div className={`bg-white dark:bg-gray-800 transition-all duration-200 sticky top-0 z-40
-      ${isShrunk ? 'bg-opacity-90 backdrop-blur-md' : ''}`}>
-      {/* Logo and Title Section */}
-      <div className={`border-b border-gray-200 dark:border-gray-700 relative transition-all duration-200
+    <div className={`bg-white dark:bg-gray-800 transition-all duration-300 ease-out
+      ${isShrunk ? 'bg-opacity-95 shadow-md' : ''}`}>
+      
+      <div className={`border-b border-gray-200 dark:border-gray-700 transition-all duration-300
         ${isShrunk ? 'py-2' : 'py-4'}`}>
         <div className="container mx-auto px-6">
           <ThemeToggle />
-          <div className="flex flex-col items-center space-y-4">
+          <div className="flex flex-col items-center space-y-2">
             <img 
               src={logoImage}
               alt="FundaAI"
-              className={`transition-all duration-200 ${isShrunk ? 'h-36' : 'h-72'}`}
+              className={`transition-all duration-300 ease-out
+                ${isShrunk ? 'h-16' : 'h-72'}`}
             />
-            <p className={`text-sm text-gray-600 dark:text-gray-300 text-center max-w-2xl transition-all
-              ${isShrunk ? 'hidden' : 'block'}`}>
+            <p className={`text-gray-600 dark:text-gray-300 text-center max-w-2xl transition-all duration-300
+              ${isShrunk ? 'text-sm' : 'text-base'}`}>
               A store of linux native edtech apps using local AI models to help you learn new skills
             </p>
           </div>
@@ -102,7 +86,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, onUpload
 
       {/* Search and Categories */}
       <div className="container mx-auto px-6 py-4 space-y-4 bg-white dark:bg-gray-800">
-        <SearchBar />
+        <SearchBar activeTab={activeTab} />
         {activeTab === 'apps' && <CategoryFilter onUploadClick={onUploadClick} onUsersClick={onUsersClick} />}
       </div>
     </div>

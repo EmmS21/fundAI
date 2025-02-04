@@ -14,6 +14,7 @@ export default function App() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showUsersModal, setShowUsersModal] = useState(false);
   const { isAdmin, clearAuth } = useAuth();
+  const [headerHeight, setHeaderHeight] = useState(0);
 
   useEffect(() => {
     const checkAdminStatus = async () => {
@@ -21,6 +22,17 @@ export default function App() {
       useAuth.getState().setAuth(null, adminStatus);
     };
     checkAdminStatus();
+  }, []);
+
+  useEffect(() => {
+    const header = document.querySelector('header');
+    if (header) {
+      const observer = new ResizeObserver(entries => {
+        setHeaderHeight(entries[0].contentRect.height);
+      });
+      observer.observe(header);
+      return () => observer.disconnect();
+    }
   }, []);
 
   const handleLoginClick = () => {
@@ -49,8 +61,11 @@ export default function App() {
   return (
     <ThemeProvider>
       <div className="min-h-screen w-full bg-white dark:bg-gray-900 transition-colors overflow-auto">
-        <div className="w-full h-full bg-white dark:bg-gray-900">
-          <header className="sticky top-0 w-full bg-white dark:bg-gray-800 shadow-sm z-50">
+        <div className="w-full min-h-screen bg-white dark:bg-gray-900">
+          {/* Placeholder div that maintains the header's space in document flow */}
+          <div style={{ height: headerHeight }} />
+          
+          <header className="fixed top-0 left-0 right-0 w-full bg-white dark:bg-gray-800 shadow-sm z-50">
             <Header 
               activeTab={activeTab} 
               onTabChange={setActiveTab}
