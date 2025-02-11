@@ -1,7 +1,8 @@
-from PySide6.QtWidgets import QMainWindow, QStackedWidget
+from PySide6.QtWidgets import QMainWindow, QStackedWidget, QMessageBox
 from PySide6.QtCore import Qt
 from .step_widget import StepWidget
 from src.data.database.operations import UserOperations
+from src.utils.hardware_identifier import HardwareIdentifier
 
 class OnboardingWindow(QMainWindow):
     def __init__(self):
@@ -23,7 +24,7 @@ class OnboardingWindow(QMainWindow):
         # Define steps
         self.total_steps = 4
         self.steps = [
-            StepWidget("What's your full name?", "name", 0, self.total_steps),
+            StepWidget("What's your full name?", "full_name", 0, self.total_steps),
             StepWidget("When's your birthday?", "birthday", 1, self.total_steps),
             StepWidget("Which country are you from?", "country", 2, self.total_steps),
             StepWidget("Are you in high school or primary school?", "school_level", 3, self.total_steps)
@@ -50,9 +51,26 @@ class OnboardingWindow(QMainWindow):
             self.stacked_widget.setCurrentIndex(self.current_step)
         
     def save_user_data(self):
-        user_data = {}
-        for step in self.steps:
-            user_data[step.field_name] = step.get_value()
-        
-        # Save to database
-        UserOperations.create_user(user_data)
+        try:
+            user_data = {}
+            for step in self.steps:
+                user_data[step.field_name] = step.get_value()
+            
+            # Save to database and queue for sync
+            user = UserOperations.create_user(user_data)
+            
+            QMessageBox.information(
+                self,
+                "Success",
+                "Your profile has been saved and will be synced when online."
+            )
+            
+            # Close the onboarding window
+            self.close()
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to save user data: {str(e)}"
+            )
