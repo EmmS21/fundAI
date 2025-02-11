@@ -114,6 +114,10 @@ class StepWidget(QWidget):
         self.continue_btn.setEnabled(False)  # Disabled by default
         buttons_layout.addWidget(self.continue_btn)
         
+        # Change button text to "Save" on last step
+        if current_step == total_steps - 1:
+            self.continue_btn.setText("Save")
+        
         # Add all widgets to main layout
         main_layout.addLayout(progress_layout)
         main_layout.addWidget(steps_remaining, alignment=Qt.AlignRight)

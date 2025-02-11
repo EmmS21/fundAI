@@ -625,3 +625,10 @@ class SchoolLevelInput(QWidget):
         else:
             value = f"High School: {self.high_school_form.currentText()}"
         self.textChanged.emit(value)
+
+    def text(self):
+        # Return current selection based on active tab
+        if self.tabs.currentIndex() == 0:
+            return f"Primary: {self.primary_grade.currentText()}"
+        else:
+            return f"High School: {self.high_school_form.currentText()}"
