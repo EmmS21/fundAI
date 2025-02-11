@@ -26,7 +26,7 @@ class OnboardingWindow(QMainWindow):
             StepWidget("What's your full name?", "name", 0, self.total_steps),
             StepWidget("When's your birthday?", "birthday", 1, self.total_steps),
             StepWidget("Which country are you from?", "country", 2, self.total_steps),
-            StepWidget("What grade are you in?", "grade", 3, self.total_steps)
+            StepWidget("Are you in high school or primary school?", "school_level", 3, self.total_steps)
         ]
         
         # Add steps to stacked widget and connect signals

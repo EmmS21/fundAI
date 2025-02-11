@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QProgressBar)
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QIcon
-from ..common.styled_widgets import StyledButton, StyledInput, AnimatedButton, DateInput
+from ..common.styled_widgets import StyledButton, StyledInput, AnimatedButton, DateInput, CountryInput, SchoolLevelInput
 from datetime import datetime, date
 import re
 
@@ -76,8 +76,9 @@ class StepWidget(QWidget):
             }
         """)
         
-        # Question label
+        # Question label with centered text
         question_label = QLabel(question)
+        question_label.setAlignment(Qt.AlignCenter)  # Center the question text
         question_label.setStyleSheet("""
             QLabel {
                 font-size: 32px;
@@ -90,6 +91,10 @@ class StepWidget(QWidget):
         # Input field with validation
         if field_name == "birthday":
             self.input = DateInput()
+        elif field_name == "country":
+            self.input = CountryInput()
+        elif field_name == "school_level":
+            self.input = SchoolLevelInput()
         else:
             self.input = StyledInput()
             self.input.setPlaceholderText(f"Enter your {field_name}")
