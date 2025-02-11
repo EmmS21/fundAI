@@ -1,8 +1,9 @@
-from PySide6.QtWidgets import QPushButton, QLineEdit, QCalendarWidget, QDialog, QVBoxLayout, QLabel, QWidget, QHBoxLayout, QSpinBox, QToolButton
-from PySide6.QtCore import Qt, QPropertyAnimation, QPoint, Property, QEasingCurve, QRect, QDate, QSize
+from PySide6.QtWidgets import QPushButton, QLineEdit, QCalendarWidget, QDialog, QVBoxLayout, QLabel, QWidget, QHBoxLayout, QSpinBox, QToolButton, QMenu, QCompleter, QTabWidget, QComboBox
+from PySide6.QtCore import Qt, QPropertyAnimation, QPoint, Property, QEasingCurve, QRect, QDate, QSize, QEvent, Signal
 from PySide6.QtGui import QPainter, QPen, QColor, QPalette, QPixmap
 from datetime import datetime
 import os
+from src.utils.constants import COUNTRIES
 
 class AnimatedButton(QPushButton):
     def __init__(self, text, is_primary=True, direction="forward"):
@@ -256,15 +257,33 @@ class StyledInput(QLineEdit):
             }
         """)
 
+class YearMenu(QMenu):
+    def event(self, event):
+        if event.type() == QEvent.Show:
+            # Move menu down by adding a vertical offset
+            pos = self.parent().mapToGlobal(QPoint(0, self.parent().height()))
+            self.move(pos)
+        return super().event(event)
+
 class CustomCalendarWidget(QCalendarWidget):
     def __init__(self):
         super().__init__()
         self.setMinimumSize(QSize(400, 400))
         
-        # Set the minimum and maximum dates for year range
+        # Set the minimum and maximum dates
         min_date = QDate(1950, 1, 1)
         max_date = QDate.currentDate()
         self.setDateRange(min_date, max_date)
+        
+        # Find the year button and set up its menu
+        year_button = self.findChild(QToolButton, "qt_calendar_yearbutton")
+        if year_button:
+            menu = YearMenu(year_button)  # Use our custom menu
+            for year in range(max_date.year(), 1949, -1):
+                action = menu.addAction(str(year))
+                action.triggered.connect(lambda checked, y=year: self.setSelectedYear(y))
+            year_button.setMenu(menu)
+            year_button.setPopupMode(QToolButton.InstantPopup)
         
         self.setStyleSheet("""
             /* Main calendar widget */
@@ -350,6 +369,13 @@ class CustomCalendarWidget(QCalendarWidget):
             QCalendarWidget QAbstractItemView::item:disabled {
                 color: #cccccc;
             }
+
+            /* Just hide the spinbox without affecting layout */
+            QCalendarWidget QSpinBox#qt_calendar_yearedit {
+                background: transparent;
+                border: none;
+                color: transparent;
+            }
         """)
         
         # Create and set a small down arrow icon programmatically
@@ -364,24 +390,6 @@ class CustomCalendarWidget(QCalendarWidget):
         
         # Set selection mode
         self.setSelectionMode(QCalendarWidget.SelectionMode.SingleSelection)
-        
-        # Find and modify the navigation bar
-        nav_bar = self.findChild(QWidget, "qt_calendar_navigationbar")
-        if nav_bar:
-            layout = nav_bar.layout()
-            
-            # Find and hide the spinbox
-            year_spinbox = self.findChild(QSpinBox, "qt_calendar_yearedit")
-            if year_spinbox and layout:
-                # Get the spinbox's position in the layout
-                index = layout.indexOf(year_spinbox)
-                if index >= 0:
-                    # Hide spinbox
-                    year_spinbox.hide()
-                    # Create and insert year button at same position
-                    year_button = QToolButton(nav_bar)
-                    year_button.setObjectName("qt_calendar_yearbutton")
-                    layout.insertWidget(index, year_button)
         
     def create_down_arrow_icon(self):
         """Create a small down arrow icon and save it as a temporary file"""
@@ -402,6 +410,11 @@ class CustomCalendarWidget(QCalendarWidget):
         # Save the arrow icon temporarily
         temp_path = os.path.join(os.path.dirname(__file__), 'down_arrow.png')
         pixmap.save(temp_path)
+
+    def setSelectedYear(self, year):
+        current_date = self.selectedDate()
+        new_date = QDate(year, current_date.month(), current_date.day())
+        self.setSelectedDate(new_date)
 
 class DateInput(QLineEdit):
     def __init__(self):
@@ -524,3 +537,91 @@ class DateInput(QLineEdit):
             return datetime.strptime(self.text(), "%B %d, %Y").date()
         except ValueError:
             return None
+
+class CountryInput(StyledInput):
+    def __init__(self):
+        super().__init__()
+        # Create completer with country list
+        completer = QCompleter(COUNTRIES)
+        completer.setCaseSensitivity(Qt.CaseInsensitive)
+        completer.setCompletionMode(QCompleter.InlineCompletion)  # Set inline completion
+        self.setCompleter(completer)
+
+class SchoolLevelInput(QWidget):
+    textChanged = Signal(str)
+    
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        
+        # Create and style tab widget
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet("""
+            QTabWidget::pane { 
+                border: none;
+            }
+            QTabBar::tab {
+                background: white;
+                border: none;
+                padding: 8px 16px;
+                margin-right: 4px;
+                border-radius: 8px;
+                color: black;
+            }
+            QTabBar::tab:selected {
+                background: #4285f4;
+                color: white;
+            }
+            QTabBar::tab:!selected {
+                background: white;
+                border: 1px solid #e0e0e0;
+            }
+            QTabBar::tab:hover:!selected {
+                background: #f5f5f5;
+            }
+        """)
+        layout.addWidget(self.tabs)
+        
+        # Primary School tab
+        primary_tab = QWidget()
+        primary_layout = QVBoxLayout()
+        primary_tab.setLayout(primary_layout)
+        
+        self.primary_grade = QComboBox()
+        self.primary_grade.addItems([f"Grade {i}" for i in range(1, 8)])
+        self.primary_grade.setStyleSheet("""
+            QComboBox {
+                color: black;
+            }
+        """)
+        self.primary_grade.currentTextChanged.connect(self._on_value_changed)
+        primary_layout.addWidget(self.primary_grade)
+        
+        # High School tab
+        high_school_tab = QWidget()
+        high_school_layout = QVBoxLayout()
+        high_school_tab.setLayout(high_school_layout)
+        
+        self.high_school_form = QComboBox()
+        self.high_school_form.addItems([f"Form {i}" for i in range(1, 7)])
+        self.high_school_form.setStyleSheet("""
+            QComboBox {
+                color: black;
+            }
+        """)
+        self.high_school_form.currentTextChanged.connect(self._on_value_changed)
+        high_school_layout.addWidget(self.high_school_form)
+        
+        # Add tabs
+        self.tabs.addTab(primary_tab, "Primary School")
+        self.tabs.addTab(high_school_tab, "High School")
+        self.tabs.currentChanged.connect(self._on_value_changed)
+    
+    def _on_value_changed(self):
+        # Emit current selection when anything changes
+        if self.tabs.currentIndex() == 0:
+            value = f"Primary: {self.primary_grade.currentText()}"
+        else:
+            value = f"High School: {self.high_school_form.currentText()}"
+        self.textChanged.emit(value)
