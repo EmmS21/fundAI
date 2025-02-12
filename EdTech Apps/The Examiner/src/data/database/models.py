@@ -22,6 +22,12 @@ class User(Base):
     school_level = Column(String)  
     grade = Column(String)  
     
+    # New fields for profile
+    profile_picture = Column(String, nullable=True)  
+    city = Column(String, nullable=True)
+    subjects = Column(JSON, default=dict) 
+    medals = Column(JSON, default={'gold': 0, 'silver': 0, 'bronze': 0})
+    
     # Sync-related columns
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

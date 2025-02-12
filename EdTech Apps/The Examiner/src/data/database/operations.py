@@ -42,3 +42,11 @@ class UserOperations:
             )
             
             return user
+
+    @staticmethod
+    def get_current_user():
+        """Get the current user based on hardware ID"""
+        _, _, hardware_id = HardwareIdentifier.get_hardware_id()
+        
+        with get_db_session() as session:
+            return session.query(User).filter_by(hardware_id=hardware_id).first()

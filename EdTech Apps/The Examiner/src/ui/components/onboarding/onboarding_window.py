@@ -1,8 +1,9 @@
-from PySide6.QtWidgets import QMainWindow, QStackedWidget, QMessageBox
+from PySide6.QtWidgets import QMainWindow, QStackedWidget, QMessageBox, QWidget, QVBoxLayout
 from PySide6.QtCore import Qt
 from .step_widget import StepWidget
 from src.data.database.operations import UserOperations
 from src.utils.hardware_identifier import HardwareIdentifier
+from src.ui.components.profile.profile_header import ProfileHeader
 
 class OnboardingWindow(QMainWindow):
     def __init__(self):
@@ -57,13 +58,33 @@ class OnboardingWindow(QMainWindow):
                 user_data[step.field_name] = step.get_value()
             
             # Save to database and queue for sync
-            user = UserOperations.create_user(user_data)
+            UserOperations.create_user(user_data)
             
             QMessageBox.information(
                 self,
                 "Success",
                 "Your profile has been saved and will be synced when online."
             )
+            
+            # Get fresh user data
+            fresh_user = UserOperations.get_current_user()
+            
+            # Clear existing widgets
+            self.stacked_widget.setParent(None)
+            
+            # Create and set new central widget with profile content
+            central_widget = QWidget()
+            layout = QVBoxLayout(central_widget)
+            layout.setContentsMargins(20, 20, 20, 20)
+            
+            # Add profile header
+            profile_header = ProfileHeader(fresh_user)
+            layout.addWidget(profile_header)
+            layout.addStretch()
+            
+            # Set as central widget
+            self.setCentralWidget(central_widget)
+            self.setWindowTitle("Student Profile")  # Update window title
             
         except Exception as e:
             QMessageBox.critical(
