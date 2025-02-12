@@ -6,6 +6,7 @@ import time
 from enum import Enum
 from datetime import datetime
 import logging
+from threading import Thread, Event
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -13,35 +14,47 @@ logger = logging.getLogger(__name__)
 class NetworkStatus(Enum):
     ONLINE = "online"
     OFFLINE = "offline"
+    UNKNOWN = "unknown"
 
 class NetworkMonitor:
-    def __init__(self, check_interval: int = 300):  # 5 minutes default
-        self._status = NetworkStatus.OFFLINE
-        self._check_interval = check_interval
-        self._callbacks: List[Callable[[NetworkStatus], None]] = []
-        self._stop_flag = threading.Event()
+    def __init__(self):
+        self._callbacks = []
+        self._status = NetworkStatus.UNKNOWN
+        self._stop_flag = Event()
         self._monitor_thread = None
-        self._last_check = None
-        
+        self.CHECK_INTERVAL = 300  # 5 minutes default
+
     def start(self):
-        """Start network monitoring"""
-        if self._monitor_thread is None:
+        """Start monitoring only when needed"""
+        if not self._stop_flag.is_set():
             self._stop_flag.clear()
-            self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+            self._monitor_thread = Thread(target=self._monitor_loop)
+            self._monitor_thread.daemon = True
             self._monitor_thread.start()
             logger.info("Network monitoring started")
 
     def stop(self):
-        """Stop network monitoring"""
-        if self._monitor_thread is not None:
-            self._stop_flag.set()
-            self._monitor_thread.join()
-            self._monitor_thread = None
-            logger.info("Network monitoring stopped")
+        """Stop monitoring gracefully"""
+        self._stop_flag.set()
+        if self._monitor_thread and self._monitor_thread.is_alive():
+            try:
+                self._monitor_thread.join(timeout=1.0)  # Wait up to 1 second
+            except RuntimeError:
+                # Handle case where thread is current thread
+                pass
+        logger.info("Network monitoring stopped")
 
-    def add_callback(self, callback: Callable[[NetworkStatus], None]):
-        """Add callback for network status changes"""
-        self._callbacks.append(callback)
+    def register_callback(self, callback):
+        """Register a callback to be called on network status change"""
+        if callback not in self._callbacks:
+            self._callbacks.append(callback)
+            logger.debug(f"Registered callback: {callback}")
+
+    def unregister_callback(self, callback):
+        """Remove a callback"""
+        if callback in self._callbacks:
+            self._callbacks.remove(callback)
+            logger.debug(f"Unregistered callback: {callback}")
 
     def get_status(self) -> NetworkStatus:
         """Get current network status"""
@@ -62,22 +75,21 @@ class NetworkMonitor:
                 return False
 
     def _monitor_loop(self):
-        """Main monitoring loop"""
+        """Monitor network and stop when no longer needed"""
         while not self._stop_flag.is_set():
             current_status = NetworkStatus.ONLINE if self._check_connection() else NetworkStatus.OFFLINE
             
-            # If status changed, notify callbacks
             if current_status != self._status:
                 self._status = current_status
-                self._last_check = datetime.now()
-                logger.info(f"Network status changed to: {self._status.value}")
-                
-                # Notify all callbacks
-                for callback in self._callbacks:
-                    try:
-                        callback(self._status)
-                    except Exception as e:
-                        logger.error(f"Error in network status callback: {e}")
+                self._notify_callbacks()
+            
+            time.sleep(self.CHECK_INTERVAL)
 
-            # Wait for next check
-            self._stop_flag.wait(self._check_interval)
+    def _notify_callbacks(self):
+        """Notify all registered callbacks of current status"""
+        for callback in self._callbacks:
+            try:
+                callback(self._status)
+            except Exception as e:
+                logger.error(f"Error in callback {callback}: {e}")
+
