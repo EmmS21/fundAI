@@ -14,11 +14,22 @@ class UserOperations:
         user_data['hardware_id'] = hardware_id
         
         with get_db_session() as session:
-            user = User(**user_data)
-            session.add(user)
+            # Check if user already exists
+            existing_user = session.query(User).filter_by(hardware_id=hardware_id).first()
+            
+            if existing_user:
+                # Update existing user
+                for key, value in user_data.items():
+                    setattr(existing_user, key, value)
+                user = existing_user
+            else:
+                # Create new user
+                user = User(**user_data)
+                session.add(user)
+            
             session.commit()
             
-            # Add to sync queue
+            # Add to sync queue (will handle deduplication)
             queue_manager = QueueManager()
             queue_manager.add_to_queue(
                 data={

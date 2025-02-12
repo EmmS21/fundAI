@@ -65,9 +65,6 @@ class OnboardingWindow(QMainWindow):
                 "Your profile has been saved and will be synced when online."
             )
             
-            # Close the onboarding window
-            self.close()
-            
         except Exception as e:
             QMessageBox.critical(
                 self,
