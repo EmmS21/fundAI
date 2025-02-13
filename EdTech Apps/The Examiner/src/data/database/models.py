@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, DateTime, Enum, Float, ForeignKey, Table, JSON, Boolean
+from sqlalchemy import Column, Integer, String, Date, DateTime, Enum, Float, ForeignKey, Table, JSON, Boolean, LargeBinary
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
@@ -23,7 +23,7 @@ class User(Base):
     grade = Column(String)  
     
     # New fields for profile
-    profile_picture = Column(String, nullable=True)  
+    profile_picture = Column(LargeBinary, nullable=True)  
     city = Column(String, nullable=True)
     subjects = Column(JSON, default=dict) 
     medals = Column(JSON, default={'gold': 0, 'silver': 0, 'bronze': 0})
