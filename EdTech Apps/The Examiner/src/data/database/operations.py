@@ -1,8 +1,13 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import create_engine
 from .models import User
 from src.utils.db import get_db_session
 from src.utils.hardware_identifier import HardwareIdentifier
 from src.core.queue_manager import QueueManager, QueuePriority
+
+# Create engine and Session factory
+engine = create_engine('sqlite:///student_profile.db')  # or whatever your database path is
+Session = sessionmaker(bind=engine)
 
 class UserOperations:
     @staticmethod
@@ -50,3 +55,11 @@ class UserOperations:
         
         with get_db_session() as session:
             return session.query(User).filter_by(hardware_id=hardware_id).first()
+
+    @classmethod
+    def update_user_profile_picture(cls, user_id: str, image_data: bytes):
+        with get_db_session() as session:
+            user = session.query(User).filter(User.id == user_id).first()
+            if user:
+                user.profile_picture = image_data
+                session.commit()
