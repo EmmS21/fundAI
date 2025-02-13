@@ -58,8 +58,16 @@ class UserOperations:
 
     @classmethod
     def update_user_profile_picture(cls, user_id: str, image_data: bytes):
-        with get_db_session() as session:
+        with Session() as session:  # Now Session knows which database to connect to
             user = session.query(User).filter(User.id == user_id).first()
             if user:
                 user.profile_picture = image_data
+                session.commit()
+
+    @classmethod
+    def update_field(cls, user_id: str, field_name: str, value: str):
+        with get_db_session() as session:
+            user = session.query(User).filter(User.id == user_id).first()
+            if user:
+                setattr(user, field_name, value)
                 session.commit()
