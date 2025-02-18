@@ -1,9 +1,11 @@
-from PySide6.QtWidgets import QMainWindow, QStackedWidget, QMessageBox, QWidget, QVBoxLayout
+from PySide6.QtWidgets import QMainWindow, QStackedWidget, QMessageBox, QWidget, QVBoxLayout, QScrollArea
 from PySide6.QtCore import Qt
 from .step_widget import StepWidget
 from src.data.database.operations import UserOperations
 from src.utils.hardware_identifier import HardwareIdentifier
-from src.ui.components.profile.profile_header import ProfileHeader
+from ..profile.profile_header import ProfileHeader
+from ..profile.achievements.achievement_widget import AchievementWidget
+from ..profile.profile_info_widget import ProfileInfoWidget
 
 class OnboardingWindow(QMainWindow):
     def __init__(self):
@@ -69,22 +71,57 @@ class OnboardingWindow(QMainWindow):
             # Get fresh user data
             fresh_user = UserOperations.get_current_user()
             
-            # Clear existing widgets
-            self.stacked_widget.setParent(None)
+            # Create scroll area for better content management
+            scroll_area = QScrollArea()
+            scroll_area.setWidgetResizable(True)
+            scroll_area.setStyleSheet("""
+                QScrollArea {
+                    border: none;
+                    background-color: white;
+                }
+            """)
             
-            # Create and set new central widget with profile content
-            central_widget = QWidget()
-            layout = QVBoxLayout(central_widget)
+            # Create container widget
+            container = QWidget()
+            container.setStyleSheet("""
+                QWidget {
+                    background-color: white;
+                }
+            """)
+            layout = QVBoxLayout(container)
             layout.setContentsMargins(20, 20, 20, 20)
             
             # Add profile header
             profile_header = ProfileHeader(fresh_user)
             layout.addWidget(profile_header)
+            
+            # Add achievement widget
+            achievement_widget = AchievementWidget(fresh_user)
+            layout.addWidget(achievement_widget)
+            
+            # Add profile info widget
+            profile_info = ProfileInfoWidget(fresh_user)
+            layout.addWidget(profile_info)
+            
+            # Add stretch to push everything to the top
             layout.addStretch()
             
+            # Set the container as the scroll area widget
+            scroll_area.setWidget(container)
+            
             # Set as central widget
-            self.setCentralWidget(central_widget)
-            self.setWindowTitle("Student Profile")  # Update window title
+            self.setCentralWidget(scroll_area)
+            self.setWindowTitle("Student Profile")
+            
+            # Set window and all widgets background to white
+            self.setStyleSheet("""
+                QMainWindow, QScrollArea, QWidget {
+                    background-color: white;
+                }
+                QScrollArea {
+                    border: none;
+                }
+            """)
             
         except Exception as e:
             QMessageBox.critical(
