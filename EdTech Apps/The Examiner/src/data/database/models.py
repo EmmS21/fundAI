@@ -21,6 +21,7 @@ class User(Base):
     country = Column(String)
     school_level = Column(String)  
     grade = Column(String)  
+    school = Column(String, nullable=True)
     
     # New fields for profile
     profile_picture = Column(LargeBinary, nullable=True)  
@@ -34,6 +35,7 @@ class User(Base):
     sync_status = Column(Enum(SyncStatus), default=SyncStatus.PENDING)
     sync_attempts = Column(Integer, default=0)
     last_sync_attempt = Column(DateTime, nullable=True)
+    
 
     # Relationships
     exam_results = relationship("ExamResult", back_populates="user")
