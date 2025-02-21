@@ -1,13 +1,16 @@
 from PySide6.QtWidgets import (QWidget, QGridLayout, QLabel, QVBoxLayout, 
                               QTabBar, QHBoxLayout, QPushButton, QLineEdit, QMessageBox)
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve
+from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer
 from src.data.database.operations import UserOperations
+from .achievements.medal_widget import MedalWidget
+from .subjects.subject_selector import SubjectSelector
 
 class ProfileInfoWidget(QWidget):
     def __init__(self, user_data):
         super().__init__()
         self.user_data = user_data
         self._setup_ui()
+        self._setup_subjects_section()
     
     def create_field(self, label_text, value):
         """Create a field widget with label and value. Moved from _setup_ui to be accessible by all methods."""
@@ -248,8 +251,6 @@ class ProfileInfoWidget(QWidget):
             container_layout.addWidget(field_container)
         
         else:
-            print(f"\nCreating field: {label_text}")
-            print(f"Value passed in: {value}")
             label = QLabel(label_text)
             label.setStyleSheet("""
                 QLabel {
@@ -314,9 +315,7 @@ class ProfileInfoWidget(QWidget):
             
             container_layout.addWidget(label, alignment=Qt.AlignCenter)
             container_layout.addWidget(field_container)
-            
-            print(f"Tag button text: {tag.text()}")
-        
+                    
         return container
 
     def _setup_ui(self):
@@ -327,7 +326,7 @@ class ProfileInfoWidget(QWidget):
         
         # Create container for grid
         self.grid_widget = QWidget()
-        grid_layout = QGridLayout(self.grid_widget)  # Set parent directly
+        grid_layout = QGridLayout(self.grid_widget)
         grid_layout.setSpacing(16)
         
         # Create fields
@@ -338,7 +337,6 @@ class ProfileInfoWidget(QWidget):
             ("Country", self.user_data.country or "Not set")
         ]
 
-        print(f"Country value from database: {self.user_data}")        
         # Add fields to grid
         for i, (label, value) in enumerate(fields):
             row = i // 2
@@ -366,7 +364,7 @@ class ProfileInfoWidget(QWidget):
                 background-color: #357abd;
             }
         """)
-        self.update_btn.clicked.connect(self.update_fields)  # Connect to update handler
+        self.update_btn.clicked.connect(self.update_fields)  
         
         # Create Hide button
         self.hide_btn = QPushButton("Hide")
@@ -386,8 +384,8 @@ class ProfileInfoWidget(QWidget):
         """)
         
         # Create toggle button with unicode arrow (hidden initially)
-        self.toggle_icon = QPushButton("▼")
-        self.toggle_icon.setFixedSize(32, 32)
+        self.toggle_icon = QPushButton("👤 Edit ▼")
+        self.toggle_icon.setFixedSize(128, 32)
         self.toggle_icon.setStyleSheet("""
             QPushButton {
                 background-color: #f3f4f6;
@@ -413,6 +411,24 @@ class ProfileInfoWidget(QWidget):
         # Connect buttons
         self.hide_btn.clicked.connect(self.animate_hide)
         self.toggle_icon.clicked.connect(self.animate_show)
+        
+        # Add subjects toggle button
+        self.subjects_toggle = QPushButton("📚 Subjects ▼")
+        self.subjects_toggle.setFixedSize(128, 32)
+        self.subjects_toggle.setStyleSheet("""
+            QPushButton {
+                background-color: #f3f4f6;
+                border-radius: 16px;
+                padding: 8px;
+                font-size: 16px;
+                color: #374151;
+            }
+            QPushButton:hover {
+                background-color: #e5e7eb;
+            }
+        """)
+        self.subjects_toggle.clicked.connect(self.animate_show_subjects)
+        layout.addWidget(self.subjects_toggle, alignment=Qt.AlignCenter)
         
     def animate_hide(self):
         """Animate hiding the fields"""
@@ -454,17 +470,11 @@ class ProfileInfoWidget(QWidget):
         """Update edited fields in database and refresh display"""
         try:
             updates = {}
-            print("\n=== UPDATE FIELDS START ===")
-            print(f"Current user data: {vars(self.user_data)}")
             
             # Iterate through all fields in the grid
             for i in range(self.grid_widget.layout().count()):
                 field_container = self.grid_widget.layout().itemAt(i).widget()
                 if field_container:
-                    print(f"\nChecking field container {i}")
-                    print(f"Container type: {field_container.__class__.__name__}")
-                    print(f"Container visibility: {field_container.isVisible()}")
-                    
                     # Get the field layout
                     field_layout = field_container.layout()
                     if field_layout:
@@ -472,18 +482,14 @@ class ProfileInfoWidget(QWidget):
                         label = None
                         for j in range(field_layout.count()):
                             widget = field_layout.itemAt(j).widget()
-                            print(f"Examining widget type: {type(widget)}")
                             if isinstance(widget, QLabel):
                                 label = widget
-                                print(f"Found label: {label.text()}")
                             # Look inside the container widget for QLineEdit
                             elif isinstance(widget, QWidget):
                                 container_layout = widget.layout()
                                 if container_layout:
-                                    print(f"Checking container layout with {container_layout.count()} items")
                                     for k in range(container_layout.count()):
                                         inner_widget = container_layout.itemAt(k).widget()
-                                        print(f"Found inner widget type: {type(inner_widget)}")
                                         if isinstance(inner_widget, QLineEdit) and inner_widget.isVisible():
                                             field_name = label.text().lower()
                                             if field_name == "grade/form":
@@ -492,26 +498,16 @@ class ProfileInfoWidget(QWidget):
                                                 field_name = "school"
                                             value = inner_widget.text()
                                             updates[field_name] = value
-                                            print(f"Found edited field: {field_name} = {value}")
-
-            print(f"\nCollected updates: {updates}")
 
             # Update database if we have changes
             if updates:
-                print("Applying updates to database...")
                 for field, value in updates.items():
-                    print(f"Updating {field} to {value}")
                     UserOperations.update_field(self.user_data.id, field, value)
                 
-                print("Fetching fresh user data...")
                 fresh_user = UserOperations.get_current_user()
-                print(f"Fresh user data: {vars(fresh_user)}")
                 self.user_data = fresh_user
-                                
-                print(f"Before refresh - user data city: {self.user_data.city}")
                 self._refresh_fields()
-                print(f"After refresh - user data city: {self.user_data.city}")  
-                              
+
                 # Find and update the City field specifically
                 for i in range(self.grid_widget.layout().count()):
                     container = self.grid_widget.layout().itemAt(i).widget()
@@ -545,10 +541,6 @@ class ProfileInfoWidget(QWidget):
                 print("No updates found to apply")
 
         except Exception as e:
-            print(f"Error during update: {str(e)}")
-            print(f"Error type: {type(e).__name__}")
-            import traceback
-            print(traceback.format_exc())
             QMessageBox.critical(
                 self,
                 "Error",
@@ -556,9 +548,7 @@ class ProfileInfoWidget(QWidget):
             )
 
     def _refresh_fields(self):
-        """Refresh all fields with current database values"""
-        print("\n=== Starting _refresh_fields ===")
-        
+        """Refresh all fields with current database values"""        
         # Store the current layout state before clearing
         visible_edits = {}
         layout = self.grid_widget.layout()
@@ -589,12 +579,7 @@ class ProfileInfoWidget(QWidget):
             ("Grade/Form", self.user_data.school_level.capitalize() if self.user_data.school_level else "Not set"),
             ("City", self.user_data.city or "Not set"),
             ("Country", self.user_data.country or "Not set")
-        ]
-        
-        print("\nRecreating fields with values:")
-        for label, value in fields:
-            print(f"{label}: {value}")
-        
+        ]        
         # Recreate and restore edit states
         for i, (label, value) in enumerate(fields):
             row, col = i // 2, i % 2
@@ -611,5 +596,131 @@ class ProfileInfoWidget(QWidget):
         # Update layout
         layout.activate()
         self.grid_widget.updateGeometry()
+
+    def _setup_subjects_section(self):
+        print("Setting up subjects section")  # Debug print
+        self.subjects_container = QWidget()
+        subjects_layout = QVBoxLayout(self.subjects_container)
+        subjects_layout.setContentsMargins(20, 20, 20, 20)
+        subjects_layout.setAlignment(Qt.AlignCenter)
         
-        print("=== _refresh_fields completed ===\n") 
+        # Header with title and hide button
+        header_layout = QHBoxLayout()
+        header_layout.setAlignment(Qt.AlignCenter)
+        
+        title = QLabel("My Subjects")
+        title.setStyleSheet("""
+            QLabel {
+                font-size: 24px;
+                font-weight: bold;
+                color: #1a1a1a;
+            }
+        """)
+        header_layout.addWidget(title)
+        
+        self.subjects_hide_btn = QPushButton("▲ Hide")
+        self.subjects_hide_btn.setFixedSize(80, 32)
+        self.subjects_hide_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f3f4f6;
+                color: #374151;
+                border: none;
+                border-radius: 4px;
+                font-size: 14px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #e5e7eb;
+            }
+        """)
+        self.subjects_hide_btn.clicked.connect(self.animate_hide_subjects)
+        header_layout.addWidget(self.subjects_hide_btn)
+        
+        subjects_layout.addLayout(header_layout)
+        
+        # Add subject button
+        add_subject_btn = QPushButton("+ Add Subject")
+        add_subject_btn.setFixedSize(180, 48)
+        add_subject_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #7c3aed;
+                color: white;
+                border: none;
+                border-radius: 24px;
+                font-size: 16px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #6d28d9;
+            }
+        """)
+        subjects_layout.addWidget(add_subject_btn, alignment=Qt.AlignCenter)
+        
+        # Create subject selector
+        self.subject_selector = SubjectSelector(self.user_data)
+        self.subject_selector.setVisible(False)  # Initially hidden
+        subjects_layout.addWidget(self.subject_selector, alignment=Qt.AlignCenter)
+        
+        # Toggle subject selector visibility when button is clicked
+        def toggle_selector():
+            current_visible = self.subject_selector.isVisible()
+            self.subject_selector.setVisible(not current_visible)
+            
+            # Only show dropdown if we're making the selector visible
+            if not current_visible:
+                # Use a small delay to ensure the widget is visible first
+                QTimer.singleShot(100, self.subject_selector.combo_box.showPopup)
+            
+            # Force layout update
+            self.subjects_container.updateGeometry()
+            self.adjustSize()
+        
+        add_subject_btn.clicked.connect(toggle_selector)
+        
+        # Connect subject signals
+        self.subject_selector.subject_added.connect(self._on_subject_added)
+        self.subject_selector.subject_removed.connect(self._on_subject_removed)
+        
+        # Add to main layout
+        self.layout().addWidget(self.subjects_container)
+        self.subjects_container.hide()
+        self.subjects_hide_btn.hide()
+
+    def animate_hide_subjects(self):
+        """Animate hiding subjects section"""
+        self.animation = QPropertyAnimation(self.subjects_container, b"maximumHeight")
+        self.animation.setDuration(300)
+        self.animation.setStartValue(self.subjects_container.height())
+        self.animation.setEndValue(0)
+        self.animation.setEasingCurve(QEasingCurve.InOutQuad)
+        
+        def on_finish():
+            self.subjects_container.hide()
+            self.subjects_hide_btn.hide()
+            self.subjects_toggle.show()
+        
+        self.animation.finished.connect(on_finish)
+        self.animation.start()
+
+    def animate_show_subjects(self):
+        """Animate showing subjects section"""
+        self.subjects_container.show()
+        self.subjects_hide_btn.show()
+        self.subjects_toggle.hide()
+
+        self.animation = QPropertyAnimation(self.subjects_container, b"maximumHeight")
+        self.animation.setDuration(300)
+        self.animation.setStartValue(0)
+        self.animation.setEndValue(self.subjects_container.sizeHint().height())
+        self.animation.setEasingCurve(QEasingCurve.InOutQuad)
+        self.animation.start()
+
+    def _on_subject_added(self, subject):
+        """Handle when a subject is added"""
+        # You can add any additional UI updates here
+        pass
+
+    def _on_subject_removed(self, subject):
+        """Handle when a subject is removed"""
+        # You can add any additional UI updates here
+        pass
