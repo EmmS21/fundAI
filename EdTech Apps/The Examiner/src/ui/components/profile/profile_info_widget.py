@@ -598,15 +598,15 @@ class ProfileInfoWidget(QWidget):
         self.grid_widget.updateGeometry()
 
     def _setup_subjects_section(self):
-        print("Setting up subjects section")  # Debug print
+        print("Setting up subjects section")
         self.subjects_container = QWidget()
         subjects_layout = QVBoxLayout(self.subjects_container)
         subjects_layout.setContentsMargins(20, 20, 20, 20)
-        subjects_layout.setAlignment(Qt.AlignCenter)
+        subjects_layout.setAlignment(Qt.AlignLeft)
         
         # Header with title and hide button
         header_layout = QHBoxLayout()
-        header_layout.setAlignment(Qt.AlignCenter)
+        header_layout.setAlignment(Qt.AlignLeft)
         
         title = QLabel("My Subjects")
         title.setStyleSheet("""
@@ -643,39 +643,28 @@ class ProfileInfoWidget(QWidget):
         add_subject_btn.setFixedSize(180, 48)
         add_subject_btn.setStyleSheet("""
             QPushButton {
-                background-color: #7c3aed;
+                background-color: #A855F7;
                 color: white;
                 border: none;
                 border-radius: 24px;
                 font-size: 16px;
                 font-weight: 500;
+                padding: 12px 16px;
             }
             QPushButton:hover {
-                background-color: #6d28d9;
+                background-color: #9333EA;
             }
         """)
         subjects_layout.addWidget(add_subject_btn, alignment=Qt.AlignCenter)
         
-        # Create subject selector
+        # Create subject selector (always visible now)
         self.subject_selector = SubjectSelector(self.user_data)
-        self.subject_selector.setVisible(False)  # Initially hidden
         subjects_layout.addWidget(self.subject_selector, alignment=Qt.AlignCenter)
         
-        # Toggle subject selector visibility when button is clicked
-        def toggle_selector():
-            current_visible = self.subject_selector.isVisible()
-            self.subject_selector.setVisible(not current_visible)
-            
-            # Only show dropdown if we're making the selector visible
-            if not current_visible:
-                # Use a small delay to ensure the widget is visible first
-                QTimer.singleShot(100, self.subject_selector.combo_box.showPopup)
-            
-            # Force layout update
-            self.subjects_container.updateGeometry()
-            self.adjustSize()
-        
-        add_subject_btn.clicked.connect(toggle_selector)
+        # Simplified button click handler - just show the popup
+        add_subject_btn.clicked.connect(
+            lambda: self.subject_selector._show_subject_popup(add_subject_btn)
+        )
         
         # Connect subject signals
         self.subject_selector.subject_added.connect(self._on_subject_added)
