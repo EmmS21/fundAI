@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, 
-                              QPushButton, QLabel, QCheckBox)
+                              QPushButton, QLabel, QCheckBox, QFrame)
 from PySide6.QtCore import Qt, Signal
 
 class SubjectCard(QWidget):
@@ -15,74 +15,114 @@ class SubjectCard(QWidget):
     def _setup_ui(self):
         # Main card layout
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)  # Space between header and checkboxes
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(20)  # Increased spacing between sections
         
-        # Card container with border
+        # Set fixed width for the card
+        self.setFixedWidth(680)
+        
+        # Card container styling
         self.setStyleSheet("""
             SubjectCard {
                 background-color: white;
-                border: 1px solid #E5E7EB;
-                border-radius: 8px;
+                border: 1px solid #F3F4F6;
+                border-radius: 12px;
+            }
+            QLabel#instructionLabel {
+                color: #6B7280;
+                font-size: 16px;
+            }
+            QLabel#subjectLabel {
+                font-size: 20px;
+                font-weight: bold;
+                color: #1F2937;
             }
             QCheckBox {
                 font-size: 14px;
                 color: #374151;
+                background-color: #F3F4F6;
+                border-radius: 8px;
+                padding: 12px 24px;
+                spacing: 8px;
+            }
+            QCheckBox:hover {
+                background-color: #E5E7EB;
+            }
+            QCheckBox:checked {
+                background-color: #E5E7EB;
             }
             QCheckBox::indicator {
                 width: 16px;
                 height: 16px;
                 border: 2px solid #D1D5DB;
                 border-radius: 4px;
+                background-color: white;
+            }
+            QCheckBox::indicator:hover {
+                border-color: #A855F7;
             }
             QCheckBox::indicator:checked {
                 background-color: #A855F7;
                 border-color: #A855F7;
                 image: url(resources/icons/checkmark.svg);
             }
-            QCheckBox::indicator:hover {
-                border-color: #A855F7;
-            }
-        """)
-        
-        # Header with subject name and delete button
-        header = QHBoxLayout()
-        header.setSpacing(8)
-        
-        # Subject name
-        name = QLabel(self.subject_name)
-        name.setStyleSheet("""
-            QLabel {
-                font-size: 16px;
-                font-weight: bold;
-                color: #1F2937;
-            }
-        """)
-        header.addWidget(name)
-        
-        # Delete button
-        delete_btn = QPushButton("×")
-        delete_btn.setFixedSize(24, 24)
-        delete_btn.setStyleSheet("""
-            QPushButton {
+            QPushButton#deleteButton {
                 background-color: transparent;
                 color: #6B7280;
                 border: none;
                 font-size: 18px;
                 font-weight: bold;
+                padding: 8px;
+                border-radius: 4px;
             }
-            QPushButton:hover {
+            QPushButton#deleteButton:hover {
+                background-color: #FEE2E2;
                 color: #EF4444;
             }
+            QPushButton#viewPerformance {
+                color: #A855F7;
+                border: none;
+                font-size: 14px;
+                text-align: left;
+                padding: 0;
+            }
         """)
+        
+        # Header with subject name and delete button
+        header = QHBoxLayout()
+        header.setSpacing(16)
+        
+        # Subject name
+        name = QLabel(self.subject_name)
+        name.setObjectName("subjectLabel")
+        header.addWidget(name)
+        
+        # Delete button
+        delete_btn = QPushButton("×")  # Using × symbol until we have an icon
+        delete_btn.setObjectName("deleteButton")
+        delete_btn.setFixedSize(32, 32)
+        delete_btn.setCursor(Qt.PointingHandCursor)
         delete_btn.clicked.connect(lambda: self.deleted.emit(self.subject_name))
         header.addWidget(delete_btn, alignment=Qt.AlignRight)
         
         layout.addLayout(header)
         
-        # Level selection checkboxes
-        checkbox_layout = QHBoxLayout()
-        checkbox_layout.setSpacing(16)
+        # Instruction text
+        instruction = QLabel("Select levels to access past papers:")
+        instruction.setObjectName("instructionLabel")
+        layout.addWidget(instruction)
+        
+        # Level selection container
+        levels_container = QFrame()
+        levels_container.setStyleSheet("""
+            QFrame {
+                background-color: #F9FAFB;
+                border-radius: 8px;
+                padding: 16px;
+            }
+        """)
+        levels_layout = QHBoxLayout(levels_container)
+        levels_layout.setSpacing(24)  # Increased spacing between checkboxes
         
         # Create checkboxes for each level
         self.checkboxes = {}
@@ -99,10 +139,16 @@ class SubjectCard(QWidget):
                 lambda state, l=level: self._on_level_changed(l, bool(state))
             )
             self.checkboxes[level] = checkbox
-            checkbox_layout.addWidget(checkbox)
+            levels_layout.addWidget(checkbox)
         
-        checkbox_layout.addStretch()  # Push checkboxes to the left
-        layout.addLayout(checkbox_layout)
+        levels_layout.addStretch()
+        layout.addWidget(levels_container)
+        
+        # View performance button
+        view_performance = QPushButton("View performance ▼")
+        view_performance.setObjectName("viewPerformance")
+        view_performance.setCursor(Qt.PointingHandCursor)
+        layout.addWidget(view_performance, alignment=Qt.AlignLeft)
     
     def _on_level_changed(self, level: str, checked: bool):
         """Handle checkbox state changes"""
