@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                               QPushButton, QFileDialog)
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtGui import QColor, QPixmap, QPainter, QTransform
 from src.utils.constants import PRIMARY_COLOR
 from src.data.database.operations import UserOperations
 
@@ -31,6 +31,53 @@ class ProfileHeader(QWidget):
         """)
         self.profile_pic.setText(self.user_data.full_name[0].upper())
         self.profile_pic.setAlignment(Qt.AlignCenter)
+        
+        # Load profile picture if it exists in database
+        if self.user_data.profile_picture:
+            print("Found profile picture in database")
+            print("Image data length:", len(self.user_data.profile_picture))
+            print("First few bytes:", self.user_data.profile_picture[:20])  # Look at data format
+            
+            pixmap = QPixmap()
+            pixmap.loadFromData(self.user_data.profile_picture)
+            
+            # Rotate image back to original orientation
+            transform = QTransform().rotate(-270)  # Adjust degrees as needed (-90, 90, 180)
+            pixmap = pixmap.transformed(transform)
+            
+            # Create a square image by cropping to the smallest dimension
+            size = min(pixmap.width(), pixmap.height())
+            square_pixmap = pixmap.copy(
+                (pixmap.width() - size) // 2,
+                (pixmap.height() - size) // 2,
+                size, size
+            )
+            
+            # Scale to desired size (100x100)
+            scaled_pixmap = square_pixmap.scaled(100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            
+            # Create and apply circular mask
+            mask = QPixmap(100, 100)
+            mask.fill(Qt.transparent)
+            painter = QPainter(mask)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setBrush(Qt.white)
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(0, 0, 100, 100)
+            painter.end()
+            
+            # Apply mask to create circular image
+            result = QPixmap(100, 100)
+            result.fill(Qt.transparent)
+            painter = QPainter(result)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setCompositionMode(QPainter.CompositionMode_Source)
+            painter.drawPixmap(0, 0, mask)
+            painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+            painter.drawPixmap(0, 0, scaled_pixmap)
+            painter.end()
+            
+            self.profile_pic.setPixmap(result)
         
         # Camera icon button
         camera_button = QPushButton("📷")
@@ -125,9 +172,56 @@ class ProfileHeader(QWidget):
             # Save to database
             UserOperations.update_user_profile_picture(self.user_data.id, image_data)
             
-            # Update UI
+            # Create circular mask
             pixmap = QPixmap()
             pixmap.loadFromData(image_data)
-            scaled_pixmap = pixmap.scaled(100, 100, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-            self.profile_pic.setPixmap(scaled_pixmap)
+            
+            # Rotate image back to original orientation
+            transform = QTransform().rotate(-90)  # Adjust degrees as needed (-90, 90, 180)
+            pixmap = pixmap.transformed(transform)
+            
+            # This part might be causing the rotation:
+            # Create a square image by cropping to the smallest dimension
+            size = min(pixmap.width(), pixmap.height())
+            square_pixmap = pixmap.copy(
+                (pixmap.width() - size) // 2,
+                (pixmap.height() - size) // 2,
+                size, size
+            )
+            
+            # Scale while preserving aspect ratio
+            scaled_size = min(square_pixmap.width(), square_pixmap.height())
+            scaled_pixmap = square_pixmap.scaled(
+                100, 100,
+                Qt.KeepAspectRatioByExpanding,
+                Qt.SmoothTransformation
+            )
+            
+            # Center crop to square
+            x = (scaled_pixmap.width() - 100) // 2
+            y = (scaled_pixmap.height() - 100) // 2
+            scaled_pixmap = scaled_pixmap.copy(x, y, 100, 100)
+            
+            # Create and apply circular mask
+            mask = QPixmap(100, 100)
+            mask.fill(Qt.transparent)
+            painter = QPainter(mask)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setBrush(Qt.white)
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(0, 0, 100, 100)
+            painter.end()
+            
+            # Apply mask to create circular image
+            result = QPixmap(100, 100)
+            result.fill(Qt.transparent)
+            painter = QPainter(result)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setCompositionMode(QPainter.CompositionMode_Source)
+            painter.drawPixmap(0, 0, mask)
+            painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+            painter.drawPixmap(0, 0, scaled_pixmap)
+            painter.end()
+            
+            self.profile_pic.setPixmap(result)
         
