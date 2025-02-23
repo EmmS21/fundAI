@@ -12,6 +12,10 @@ class SyncStatus(enum.Enum):
     SYNCED = "synced"
     FAILED = "failed"
 
+class ReportVersion(enum.Enum):
+    PRELIMINARY = "preliminary"
+    FINAL = "final"
+
 class User(Base):
     __tablename__ = 'users'
     
@@ -56,6 +60,10 @@ class ExamResult(Base):
     total_possible = Column(Float)  # What the grade is out of
     level = Column(String)  # Difficulty level
     topics = Column(JSON)  # Store topics as JSON array
+    
+    # New fields
+    report_version = Column(Enum(ReportVersion), default=ReportVersion.PRELIMINARY)
+    last_ai_sync = Column(DateTime, nullable=True)
     
     # Sync-related columns
     created_at = Column(DateTime, default=datetime.now)
