@@ -193,16 +193,7 @@ class UserOperations:
                     ).first()
                 
                 if user_subject:
-                    # Check for related exam results
-                    exam_results = session.query(ExamResult)\
-                        .filter(ExamResult.user_subject_id == user_subject.id)\
-                        .all()
-                    
-                    # Delete related exam results first
-                    for result in exam_results:
-                        session.delete(result)
-                    
-                    # Then delete the user-subject association
+                    # Delete the user-subject association
                     session.delete(user_subject)
                     session.commit()
                     return True
@@ -237,3 +228,10 @@ class UserOperations:
             except Exception as e:
                 print(f"Error getting subject levels: {e}")
                 return None
+
+    @staticmethod
+    def get_subject_name(subject_id):
+        """Get subject name by ID"""
+        with Session() as session:
+            subject = session.query(Subject).get(subject_id)
+            return subject.name if subject else None
