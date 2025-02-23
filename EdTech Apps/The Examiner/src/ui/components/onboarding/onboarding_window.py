@@ -59,17 +59,24 @@ class OnboardingWindow(QMainWindow):
             for step in self.steps:
                 user_data[step.field_name] = step.get_value()
             
+            print("Collected user data:", user_data)  # Debug log 1
+            
             # Save to database and queue for sync
-            UserOperations.create_user(user_data)
+            created_user = UserOperations.create_user(user_data)
+            print("Created user result:", created_user)  # Debug log 2
+            
+            # Get fresh user data
+            fresh_user = UserOperations.get_current_user()
+            print("Fresh user data:", fresh_user)  # Debug log 3
+            
+            if fresh_user is None:
+                print("Warning: get_current_user returned None")  # Debug log 4
             
             QMessageBox.information(
                 self,
                 "Success",
                 "Your profile has been saved and will be synced when online."
             )
-            
-            # Get fresh user data
-            fresh_user = UserOperations.get_current_user()
             
             # Create scroll area for better content management
             scroll_area = QScrollArea()

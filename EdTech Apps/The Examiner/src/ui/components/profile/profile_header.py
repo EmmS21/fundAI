@@ -1,62 +1,9 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                               QPushButton, QFileDialog)
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QColor, QPixmap, QPainter, QPainterPath
+from PySide6.QtGui import QColor, QPixmap
 from src.utils.constants import PRIMARY_COLOR
 from src.data.database.operations import UserOperations
-
-class CircularImageLabel(QLabel):
-    def __init__(self, size=100):
-        super().__init__()
-        self.setFixedSize(size, size)
-        self.radius = size // 2
-        self.pixmap = None
-        
-    def setPixmap(self, pixmap):
-        self.pixmap = pixmap
-        self.update()
-        
-    def paintEvent(self, event):
-        if not self.pixmap:
-            # Draw default circular background with initial
-            painter = QPainter(self)
-            painter.setRenderHint(QPainter.Antialiasing)
-            
-            # Draw purple background
-            path = QPainterPath()
-            path.addEllipse(0, 0, self.width(), self.height())
-            painter.setClipPath(path)
-            painter.fillPath(path, QColor(PRIMARY_COLOR))
-            
-            # Draw border
-            painter.setPen(QColor("#9333EA"))
-            painter.drawEllipse(1, 1, self.width()-2, self.height()-2)
-            
-            # Draw text if no image
-            if self.text():
-                painter.setPen(QColor("white"))
-                painter.drawText(self.rect(), Qt.AlignCenter, self.text())
-        else:
-            # Draw circular image
-            painter = QPainter(self)
-            painter.setRenderHint(QPainter.Antialiasing)
-            
-            # Create circular path
-            path = QPainterPath()
-            path.addEllipse(0, 0, self.width(), self.height())
-            painter.setClipPath(path)
-            
-            # Scale pixmap to fit
-            scaled_pixmap = self.pixmap.scaled(self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-            
-            # Center the pixmap
-            x = (scaled_pixmap.width() - self.width()) // 2
-            y = (scaled_pixmap.height() - self.height()) // 2
-            painter.drawPixmap(-x, -y, scaled_pixmap)
-            
-            # Draw border
-            painter.setPen(QColor("#9333EA"))
-            painter.drawEllipse(1, 1, self.width()-2, self.height()-2)
 
 class ProfileHeader(QWidget):
     def __init__(self, user_data):
@@ -65,20 +12,25 @@ class ProfileHeader(QWidget):
         self._setup_ui()
     
     def _setup_ui(self):
+        # Main vertical layout
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignCenter)
         self.setLayout(layout)
         
-        # Use CircularImageLabel instead of QLabel
-        self.profile_pic = CircularImageLabel()
-        
-        # Load profile picture if it exists in database
-        if self.user_data.profile_picture:
-            pixmap = QPixmap()
-            pixmap.loadFromData(self.user_data.profile_picture)
-            self.profile_pic.setPixmap(pixmap)
-        else:
-            self.profile_pic.setText(self.user_data.full_name[0].upper())
+        # Profile picture container with purple border
+        self.profile_pic = QLabel()
+        self.profile_pic.setFixedSize(100, 100)
+        self.profile_pic.setStyleSheet(f"""
+            QLabel {{
+                background-color: {PRIMARY_COLOR};
+                border-radius: 50px;
+                border: 3px solid #9333EA;  /* Purple border */
+                color: white;
+                font-size: 36px;
+            }}
+        """)
+        self.profile_pic.setText(self.user_data.full_name[0].upper())
+        self.profile_pic.setAlignment(Qt.AlignCenter)
         
         # Camera icon button
         camera_button = QPushButton("📷")

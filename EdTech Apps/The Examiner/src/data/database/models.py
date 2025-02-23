@@ -3,6 +3,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 import enum
+from sqlalchemy.sql import func
 
 Base = declarative_base()
 
@@ -39,6 +40,7 @@ class User(Base):
 
     # Relationships
     exam_results = relationship("ExamResult", back_populates="user")
+    subjects = relationship("UserSubject", back_populates="user")
 
     def __repr__(self):
         return f"<User(name='{self.full_name}', school_level='{self.school_level}', grade='{self.grade}')>"
@@ -88,3 +90,34 @@ class QuestionResponse(Base):
     
     # Relationships
     exam_result = relationship("ExamResult", back_populates="question_responses")
+
+# Many-to-many association table for user subjects with level selections
+class UserSubject(Base):
+    __tablename__ = 'user_subjects'
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    subject_id = Column(Integer, ForeignKey('subjects.id'), nullable=False)
+    
+    # Level selections
+    grade_7 = Column(Boolean, default=False)
+    o_level = Column(Boolean, default=False)
+    a_level = Column(Boolean, default=False)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="subjects")
+    subject = relationship("Subject", back_populates="users")
+
+class Subject(Base):
+    __tablename__ = 'subjects'
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    users = relationship("UserSubject", back_populates="subject")
