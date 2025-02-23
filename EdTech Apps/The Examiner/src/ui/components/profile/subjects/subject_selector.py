@@ -2,6 +2,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QPushButton,
                               QHBoxLayout, QFrame, QScrollArea)
 from PySide6.QtCore import Qt, Signal, QPoint
 from src.data.database.operations import UserOperations
+from .subject_list import SubjectList
 
 class SubjectSelector(QWidget):
     subject_added = Signal(str)  
@@ -26,22 +27,19 @@ class SubjectSelector(QWidget):
         self.subject_popup = SubjectPopup(self._get_available_subjects())
         self.subject_popup.subject_selected.connect(self._on_subject_selected)
         
-        # Container for displaying selected subject tags
-        self.selected_container = QWidget()
-        selected_layout = QVBoxLayout(self.selected_container)
-        selected_layout.setSpacing(8)
-        selected_layout.setContentsMargins(0, 8, 0, 0)
+        # Create subject list
+        self.subject_list = SubjectList()
+        layout.addWidget(self.subject_list)
         
         # Add already-selected subjects (if any)
-        if hasattr(self.user_data, 'subjects'):
+        if hasattr(self.user_data, 'subjects') and self.user_data.subjects:
             for subject in self.user_data.subjects:
-                self._add_subject_tag(subject)
-        
-        layout.addWidget(self.selected_container)
+                self.subject_list.add_subject(subject.name)  # Assuming subject has a name attribute
     
     def _get_available_subjects(self):
         """Get list of subjects that haven't been selected yet"""
-        selected_subjects = getattr(self.user_data, 'subjects', [])
+        # Access subjects directly from the User object
+        selected_subjects = [subject.name for subject in getattr(self.user_data, 'subjects', [])]
         return [s for s in self.subjects if s not in selected_subjects]
     
     def _show_subject_popup(self, button):
@@ -54,49 +52,26 @@ class SubjectSelector(QWidget):
     def _on_subject_selected(self, subject):
         """Handle a subject selection from the popup"""
         if not self._is_subject_selected(subject):
-            UserOperations.add_subject(self.user_data.id, subject)
-            self._add_subject_tag(subject)
-            self.subject_added.emit(subject)
-    
-    def _add_subject_tag(self, subject):
-        """Adds a tag styled as a button for the selected subject."""
-        tag_container = QWidget()
-        tag_layout = QHBoxLayout(tag_container)
-        tag_layout.setContentsMargins(0, 0, 0, 0)
-        tag_layout.setSpacing(8)
-        
-        tag = QPushButton(f"{subject}    ×")
-        tag.setFixedHeight(36)
-        tag.setStyleSheet("""
-            QPushButton {
-                background-color: #7c3aed;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                padding: 8px 16px;
-                font-size: 14px;
-                text-align: left;
-            }
-            QPushButton:hover {
-                background-color: #6d28d9;
-            }
-        """)
-        tag.clicked.connect(lambda: self._remove_subject(subject, tag_container))
-        tag_layout.addWidget(tag)
-        tag_layout.addStretch()
-        
-        self.selected_container.layout().addWidget(tag_container)
-    
-    def _remove_subject(self, subject, tag_container):
-        """Removes the subject tag, updates available subjects, and signals removal."""
-        UserOperations.remove_subject(self.user_data.id, subject)
-        tag_container.deleteLater()
-        self._update_available_subjects()
-        self.subject_removed.emit(subject)
+            # Add to database first
+            if UserOperations.add_subject(self.user_data['id'], subject):
+                # Add to UI
+                self.subject_list.add_subject(subject)
+                
+                # Update user data dictionary
+                if 'subjects' not in self.user_data:
+                    self.user_data['subjects'] = []
+                if subject not in self.user_data['subjects']:
+                    self.user_data['subjects'].append(subject)
+                
+                # Emit signal and close popup
+                self.subject_added.emit(subject)
+                self.subject_popup.hide()
     
     def _is_subject_selected(self, subject):
-        """Checks if the subject is already selected."""
-        return hasattr(self.user_data, 'subjects') and subject in self.user_data.subjects
+        """Checks if the subject is already selected"""
+        # Access subjects directly from the User object
+        selected_subjects = [subject.name for subject in getattr(self.user_data, 'subjects', [])]
+        return subject in selected_subjects
 
 class SubjectPopup(QFrame):
     subject_selected = Signal(str)
@@ -150,7 +125,8 @@ class SubjectPopup(QFrame):
                     text-align: left;
                 }
                 QPushButton:hover {
-                    background-color: #F3F4F6;
+                    background-color: #F3F8FF;
+                    color: #A855F7;
                 }
             """)
             btn.clicked.connect(lambda checked, s=subject: self._on_subject_clicked(s))

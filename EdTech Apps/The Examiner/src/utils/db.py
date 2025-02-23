@@ -3,8 +3,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from src.data.database.models import Base
 
-# Create SQLite database engine
-engine = create_engine('sqlite:///student_data.db', echo=True)
+# Create SQLite database engine - change to student_profile.db
+engine = create_engine('sqlite:///student_profile.db', echo=True)
 
 # Create all tables
 Base.metadata.create_all(engine)

@@ -4,8 +4,14 @@ from src.ui.components.onboarding.onboarding_window import OnboardingWindow
 from src.ui.main_window import MainWindow
 from src.core.network.sync_service import SyncService
 from src.data.database.operations import UserOperations
+from src.data.database.models import Base
+from src.utils.db import engine
+
 
 def main():
+    # Create any missing tables
+    Base.metadata.create_all(engine)
+    
     app = QApplication(sys.argv)
     
     # Start sync service
