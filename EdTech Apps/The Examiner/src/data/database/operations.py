@@ -111,14 +111,12 @@ class UserOperations:
 
     @staticmethod
     def update_subject_levels(user_id: int, subject_name: str, levels: Dict[str, bool]) -> bool:
-        """
-        Update the level selections for a user's subject
+        """Update the level selections for a user's subject"""
+        print(f"\nUpdating subject levels:")
+        print(f"User ID: {user_id}")
+        print(f"Subject: {subject_name}")
+        print(f"Levels to set: {levels}")
         
-        Args:
-            user_id: The user's ID
-            subject_name: Name of the subject
-            levels: Dictionary containing level selections to update
-        """
         with Session() as session:
             try:
                 # Find the user-subject association
@@ -129,14 +127,19 @@ class UserOperations:
                         Subject.name == subject_name
                     ).first()
                 
+                print(f"Found user_subject: {user_subject is not None}")
+                
                 if user_subject:
                     # Update only the provided levels
                     for level, value in levels.items():
                         if hasattr(user_subject, level):
+                            print(f"Setting {level} to {value}")
                             setattr(user_subject, level, value)
                     
                     session.commit()
+                    print("Changes committed successfully")
                     return True
+                print("No user_subject found!")
                 return False
             except Exception as e:
                 print(f"Error updating subject levels: {e}")
@@ -145,12 +148,8 @@ class UserOperations:
 
     @staticmethod
     def get_user_subjects(user_id: int) -> List[Dict]:
-        """
-        Get all subjects and their level selections for a user
-        
-        Returns:
-            List of dictionaries containing subject info and level selections
-        """
+        """Get all subjects and their level selections for a user"""
+        print(f"\nGetting subjects for user {user_id}")
         with Session() as session:
             try:
                 results = session.query(
@@ -163,7 +162,7 @@ class UserOperations:
                  .filter(UserSubject.user_id == user_id)\
                  .all()
                 
-                return [
+                subjects = [
                     {
                         'name': r.name,
                         'levels': {
@@ -175,6 +174,8 @@ class UserOperations:
                     }
                     for r in results
                 ]
+                print(f"Found subjects: {subjects}")
+                return subjects
             except Exception as e:
                 print(f"Error getting subjects: {e}")
                 return []

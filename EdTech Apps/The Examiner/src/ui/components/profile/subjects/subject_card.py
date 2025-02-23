@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, 
                               QPushButton, QLabel, QCheckBox, QFrame)
 from PySide6.QtCore import Qt, Signal
+from src.data.database.operations import UserOperations
 
 class SubjectCard(QWidget):
     deleted = Signal(str)
@@ -9,6 +10,7 @@ class SubjectCard(QWidget):
     def __init__(self, subject_name, levels=None, parent=None):
         super().__init__(parent)
         self.subject_name = subject_name
+        print(f"SubjectCard init - Subject: {subject_name}, Initial levels: {levels}")
         self.levels = levels or {'grade_7': False, 'o_level': False, 'a_level': False}
         self._setup_ui()
     
@@ -16,7 +18,7 @@ class SubjectCard(QWidget):
         # Main card layout
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(20)  # Increased spacing between sections
+        layout.setSpacing(20)  
         
         # Set fixed width for the card
         self.setFixedWidth(680)
@@ -64,7 +66,6 @@ class SubjectCard(QWidget):
             QCheckBox::indicator:checked {
                 background-color: #A855F7;
                 border-color: #A855F7;
-                image: url(resources/icons/checkmark.svg);
             }
             QPushButton#deleteButton {
                 background-color: transparent;
@@ -98,7 +99,7 @@ class SubjectCard(QWidget):
         header.addWidget(name)
         
         # Delete button
-        delete_btn = QPushButton("×")  # Using × symbol until we have an icon
+        delete_btn = QPushButton("×")  
         delete_btn.setObjectName("deleteButton")
         delete_btn.setFixedSize(32, 32)
         delete_btn.setCursor(Qt.PointingHandCursor)
@@ -122,7 +123,7 @@ class SubjectCard(QWidget):
             }
         """)
         levels_layout = QHBoxLayout(levels_container)
-        levels_layout.setSpacing(24)  # Increased spacing between checkboxes
+        levels_layout.setSpacing(24)  
         
         # Create checkboxes for each level
         self.checkboxes = {}
@@ -152,5 +153,20 @@ class SubjectCard(QWidget):
     
     def _on_level_changed(self, level: str, checked: bool):
         """Handle checkbox state changes"""
+        print(f"1. Checkbox changed - Level: {level}, Checked: {checked}")
         self.levels[level] = checked
+        print(f"2. Updated levels dict: {self.levels}")
+        
+        # Get current user
+        user = UserOperations.get_current_user()
+        if user:
+            print(f"3. Current user ID: {user.id}")
+            # Update database
+            success = UserOperations.update_subject_levels(user.id, self.subject_name, self.levels)
+            print(f"4. Database update success: {success}")
+        else:
+            print("3. No user found!")
+        
+        # Emit signal for UI updates
         self.levels_changed.emit(self.subject_name, self.levels)
+        print("5. Level changed signal emitted")

@@ -38,7 +38,13 @@ class SubjectSelector(QWidget):
                 if hasattr(user_subject, 'subject_id'):
                     subject_name = UserOperations.get_subject_name(user_subject.subject_id)
                     if subject_name:
-                        self.subject_list.add_subject(subject_name)
+                        # Get the saved levels for this subject
+                        levels = {
+                            'grade_7': user_subject.grade_7,
+                            'o_level': user_subject.o_level,
+                            'a_level': user_subject.a_level
+                        }
+                        self.subject_list.add_subject(subject_name, levels)
     
     def _get_available_subjects(self):
         """Get list of subjects that haven't been selected yet"""
@@ -72,18 +78,17 @@ class SubjectSelector(QWidget):
         """Handle a subject selection from the popup"""
         if not self._is_subject_selected(subject):
             # Add to database first
-            if UserOperations.add_subject(self.user_data.id, subject):
-                # Add to UI
-                self.subject_list.add_subject(subject)
+            if UserOperations.add_subject(subject):  # No need to pass user_id
+                # Get the saved levels for this subject
+                levels = UserOperations.get_subject_levels(subject)  # No need to pass user_id
+                # Add to UI with the correct levels
+                self.subject_list.add_subject(subject, levels)
                 self.subject_added.emit(subject)
                 
-                # Update available subjects in the existing popup
+                # Update available subjects
                 available_subjects = self._get_available_subjects()
                 self.subject_popup.update_subjects(available_subjects)
                 self.subject_popup.hide()
-            else:
-                # Handle error case
-                pass
     
     def _is_subject_selected(self, subject_name):
         """Checks if the subject is already selected"""
