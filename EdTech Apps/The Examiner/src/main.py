@@ -6,6 +6,7 @@ from src.core.network.sync_service import SyncService
 from src.data.database.operations import UserOperations
 from src.data.database.models import Base
 from src.utils.db import engine
+from src.data.cache.cache_manager import CacheManager
 
 
 def main():
@@ -20,6 +21,19 @@ def main():
     
     # Check if user exists
     user = UserOperations.get_current_user()
+    
+    # Initialize cache manager
+    cache_manager = CacheManager()
+    cache_manager.start()
+    
+    # Set up cleanup for application exit
+    def cleanup():
+        print("Performing application cleanup...")
+        cache_manager.stop()
+        sync_service.stop()
+    
+    # Connect cleanup to application aboutToQuit signal
+    app.aboutToQuit.connect(cleanup)
     
     # Show appropriate window
     if user:

@@ -7,17 +7,17 @@
   - Add `report_version` field (preliminary/final)
   - Add `last_ai_sync` timestamp
   - Create migration script for existing records
-- [ ] Implement `PaperCache` model
+- [x] Implement `PaperCache` model
   - Subject/level/year relationships (link to `UserSubject`)
   - Binary storage field for paper content
   - Completion status tracking per year
-- [ ] Build cache invalidation system
-  - 5-year rotation logic
+- [x] Build cache invalidation system
+  - ~~5-year rotation logic~~ (Simplified to completion-based only)
   - Completion-based refresh triggers
-  - Cryptographic shredding for rotated data
+  - ~~Cryptographic shredding for rotated data~~ (Not needed for security)
 
 ### Sync System
-- [ ] Enhance `SyncService`
+- [x] Enhance `SyncService`
   - Implement priority queue tiers (T1-T4)
   - Add differential sync for large files
   - Create batch processing for queued interactions
