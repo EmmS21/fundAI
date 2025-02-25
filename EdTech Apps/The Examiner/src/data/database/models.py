@@ -119,6 +119,7 @@ class UserSubject(Base):
     # Relationships
     user = relationship("User", back_populates="subjects")
     subject = relationship("Subject", back_populates="users")
+    cached_papers = relationship("PaperCache", back_populates="user_subject")
 
 class Subject(Base):
     __tablename__ = 'subjects'
@@ -129,3 +130,24 @@ class Subject(Base):
     
     # Relationships
     users = relationship("UserSubject", back_populates="subject")
+
+class PaperCache(Base):
+    __tablename__ = 'paper_cache'
+    
+    id = Column(Integer, primary_key=True)
+    # Link to UserSubject for subject/level relationship
+    user_subject_id = Column(Integer, ForeignKey('user_subjects.id'), nullable=False)
+    year = Column(Integer, nullable=False)
+    
+    # Binary storage for paper content
+    paper_content = Column(LargeBinary)
+    
+    # Simple completion tracking
+    is_completed = Column(Boolean, default=False)
+    
+    # Basic timestamps
+    created_at = Column(DateTime, default=datetime.now)
+    last_accessed = Column(DateTime, nullable=True)
+    
+    # Relationship
+    user_subject = relationship("UserSubject", back_populates="cached_papers")

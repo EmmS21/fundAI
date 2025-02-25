@@ -4,19 +4,21 @@ exam-assistant/
 │   │
 │   ├── data/
 │   │   ├── cache/
-│   │   │   ├── metadata/       
-│   │   │   └── responses/    
+│   │   │   ├── metadata/       # Stores metadata for cached questions
+│   │   │   ├── responses/      
+│   │   │   └── cache_manager.py # Updated to handle questions with assets
 │   │   ├── database/
 │   │   │   ├── models.py      
 │   │   │   └── operations.py  
 │   │
 │   ├── core/
 │   │   ├── network/
-│   │   │   └── sync_service.py 
+│   │   │   ├── sync_service.py        # Updated to handle question syncing
+│   │   │   └── network_monitor.py     # Monitors network connectivity
 │   │   │
-│   │   ├── queue_manager.py    
+│   │   ├── queue_manager.py           # Enhanced with batch processing
 │   │   └── firebase/
-│   │       └── client.py       
+│   │       └── client.py              # Enhanced with batch operations
 │   │
 │   ├── ui/
 │   │   └── components/
@@ -34,7 +36,8 @@ exam-assistant/
 │   │
 │   ├── utils/
 │   │   ├── db.py              
-│   │   └── constants.py        
+│   │   ├── constants.py        
+│   │   └── hardware_identifier.py  # For generating unique device IDs
 │   │
 │   └── config/
 │       └── firebase_config.py  

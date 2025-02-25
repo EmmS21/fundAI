@@ -1,10 +1,13 @@
 from sqlalchemy.orm import Session, sessionmaker, joinedload
 from sqlalchemy import create_engine, select
-from .models import User, Subject, UserSubject, ExamResult
+from .models import User, Subject, UserSubject, ExamResult, PaperCache
 from src.utils.db import engine, Session, get_db_session
 from src.utils.hardware_identifier import HardwareIdentifier
 from src.core.queue_manager import QueueManager, QueuePriority
 from typing import Dict, List, Optional
+from datetime import datetime
+import os
+import tempfile
 
 class UserOperations:
     @staticmethod
@@ -236,3 +239,211 @@ class UserOperations:
         with Session() as session:
             subject = session.query(Subject).get(subject_id)
             return subject.name if subject else None
+
+class PaperCacheOperations:
+    @staticmethod
+    def store_paper(user_subject_id: int, year: int, content: bytes) -> bool:
+        """Store a new paper in the cache"""
+        with get_db_session() as session:
+            try:
+                cache_entry = PaperCache(
+                    user_subject_id=user_subject_id,
+                    year=year,
+                    paper_content=content,
+                    last_accessed=datetime.now()
+                )
+                session.add(cache_entry)
+                session.commit()
+                return True
+            except Exception as e:
+                print(f"Error storing paper: {e}")
+                session.rollback()
+                return False
+
+    @staticmethod
+    def get_paper(user_subject_id: int, year: int) -> Optional[bytes]:
+        """Retrieve a paper from cache"""
+        with get_db_session() as session:
+            try:
+                cache_entry = session.query(PaperCache).filter_by(
+                    user_subject_id=user_subject_id,
+                    year=year
+                ).first()
+                
+                if cache_entry:
+                    # Update last accessed time
+                    cache_entry.last_accessed = datetime.now()
+                    session.commit()
+                    return cache_entry.paper_content
+                return None
+            except Exception as e:
+                print(f"Error retrieving paper: {e}")
+                return None
+
+    @staticmethod
+    def mark_completed(user_subject_id: int, year: int) -> bool:
+        """Mark a paper as completed"""
+        with get_db_session() as session:
+            try:
+                cache_entry = session.query(PaperCache).filter_by(
+                    user_subject_id=user_subject_id,
+                    year=year
+                ).first()
+                
+                if cache_entry:
+                    cache_entry.is_completed = True
+                    session.commit()
+                    return True
+                return False
+            except Exception as e:
+                print(f"Error marking paper as completed: {e}")
+                return False
+
+    @staticmethod
+    def invalidate_completed_papers(user_id: int, max_papers_to_keep: int = 10) -> List[int]:
+        """
+        Invalidate (mark for removal) completed papers when needed
+        
+        Args:
+            user_id: The user's ID
+            max_papers_to_keep: Maximum number of papers to keep per subject/level
+            
+        Returns:
+            List of invalidated paper IDs
+        """
+        invalidated_papers = []
+        
+        with get_db_session() as session:
+            try:
+                # Get all user subjects
+                user_subjects = session.query(UserSubject).filter_by(user_id=user_id).all()
+                
+                for user_subject in user_subjects:
+                    # For each subject, get all completed papers
+                    completed_papers = session.query(PaperCache).filter_by(
+                        user_subject_id=user_subject.id,
+                        is_completed=True
+                    ).order_by(PaperCache.last_accessed).all()
+                    
+                    # If we have more completed papers than our limit, remove the oldest accessed ones
+                    if len(completed_papers) > max_papers_to_keep:
+                        # Papers to remove (oldest accessed first)
+                        papers_to_remove = completed_papers[:-max_papers_to_keep]
+                        
+                        for paper in papers_to_remove:
+                            # Delete the paper content to free up space
+                            paper.paper_content = None
+                            invalidated_papers.append(paper.id)
+                        
+                        session.commit()
+                
+                return invalidated_papers
+                
+            except Exception as e:
+                print(f"Error invalidating completed papers: {e}")
+                session.rollback()
+                return []
+
+    @staticmethod
+    def get_papers_to_download(user_id: int, papers_per_subject: int = 5) -> List[Dict]:
+        """
+        Determine which papers need to be downloaded based on completion status
+        
+        Args:
+            user_id: The user's ID
+            papers_per_subject: Target number of papers to maintain per subject/level
+            
+        Returns:
+            List of dictionaries with subject_id, level, and year to download
+        """
+        papers_to_download = []
+        
+        with get_db_session() as session:
+            try:
+                # Get all user subjects
+                user_subjects = session.query(UserSubject).filter_by(user_id=user_id).all()
+                
+                for user_subject in user_subjects:
+                    # Check which levels are enabled
+                    levels = []
+                    if user_subject.grade_7:
+                        levels.append('grade_7')
+                    if user_subject.o_level:
+                        levels.append('o_level')
+                    if user_subject.a_level:
+                        levels.append('a_level')
+                    
+                    for level in levels:
+                        # Count active (non-completed) papers for this subject/level
+                        active_papers = session.query(PaperCache).filter_by(
+                            user_subject_id=user_subject.id,
+                            is_completed=False
+                        ).count()
+                        
+                        # If we have fewer active papers than our target, request more
+                        papers_needed = max(0, papers_per_subject - active_papers)
+                        
+                        if papers_needed > 0:
+                            # Get the most recent year we have
+                            latest_paper = session.query(PaperCache).filter_by(
+                                user_subject_id=user_subject.id
+                            ).order_by(PaperCache.year.desc()).first()
+                            
+                            # Start from current year if no papers exist
+                            start_year = datetime.now().year
+                            if latest_paper:
+                                # Start from the year after our most recent paper
+                                start_year = latest_paper.year + 1
+                            
+                            # Add papers to download list
+                            for i in range(papers_needed):
+                                papers_to_download.append({
+                                    'user_subject_id': user_subject.id,
+                                    'level': level,
+                                    'year': start_year - i,  # Get recent years first
+                                    'subject_name': UserOperations.get_subject_name(user_subject.subject_id)
+                                })
+                
+                return papers_to_download
+                
+            except Exception as e:
+                print(f"Error determining papers to download: {e}")
+                return []
+
+    @staticmethod
+    def cleanup_cache(threshold_mb: int = 100) -> bool:
+        """
+        Clean up cache when storage is running low
+        
+        Args:
+            threshold_mb: Threshold in MB to trigger cleanup
+            
+        Returns:
+            True if cleanup was performed, False otherwise
+        """
+        with get_db_session() as session:
+            try:
+                # Check available disk space
+                stats = os.statvfs(tempfile.gettempdir())
+                free_space_mb = (stats.f_bavail * stats.f_frsize) / (1024 * 1024)
+                
+                # If we're below threshold, clean up completed papers
+                if free_space_mb < threshold_mb:
+                    # Get all completed papers, ordered by last accessed (oldest first)
+                    completed_papers = session.query(PaperCache).filter_by(
+                        is_completed=True
+                    ).order_by(PaperCache.last_accessed).limit(50).all()
+                    
+                    for paper in completed_papers:
+                        # Remove paper content to free up space
+                        paper.paper_content = None
+                    
+                    session.commit()
+                    return True
+                
+                return False
+                
+            except Exception as e:
+                print(f"Error cleaning up cache: {e}")
+                session.rollback()
+                return False

@@ -4,13 +4,16 @@ from typing import Dict, List, Any, Optional
 import json
 import os
 import logging
+import uuid
 
 logger = logging.getLogger(__name__)
 
 class QueuePriority(Enum):
-    HIGH = 3    
-    MEDIUM = 2  
-    LOW = 1    
+    """Priority levels for sync queue items, from highest to lowest"""
+    CRITICAL = 1  # Final reports/scores (T1)
+    HIGH = 2      # Question cache updates (T2)
+    MEDIUM = 3    # System metrics (T3)
+    LOW = 4       # User profile changes (T4)
 
 class QueueStatus(Enum):
     PENDING = "pending"
@@ -19,10 +22,12 @@ class QueueStatus(Enum):
     COMPLETED = "completed"
 
 class QueueItem:
-    def __init__(self, data: Dict[str, Any], item_type: str, priority: QueuePriority):
-        self.id = data.get('hardware_id')
+    """Represents an item in the sync queue"""
+    
+    def __init__(self, data: Dict[str, Any], item_type: str, priority: QueuePriority = QueuePriority.MEDIUM):
+        self.id = data.get('hardware_id', str(uuid.uuid4()))
         self.type = item_type
-        self.data = data  # Store the complete data dictionary
+        self.data = data
         self.created_at = datetime.now()
         self.updated_at = datetime.now()
         self.status = QueueStatus.PENDING
@@ -31,6 +36,11 @@ class QueueItem:
         self.retry_count = 0
         self.max_retries = 3
         self.last_attempt = None
+        self.batch_id = data.get('batch_id', None)  # For grouping related items
+
+    def increment_attempts(self):
+        """Increment the number of sync attempts"""
+        self.attempts += 1
 
 class QueueManager:
     QUEUE_FILE = "sync_queue.json"
@@ -47,13 +57,25 @@ class QueueManager:
                 with open(self.QUEUE_FILE, 'r') as f:
                     raw_queue = json.load(f)
                     # Convert raw dictionaries to QueueItem objects
-                    self.queue = [
-                        QueueItem(
+                    self.queue = []
+                    for item in raw_queue:
+                        priority = QueuePriority.MEDIUM  # Default
+                        if item.get('priority'):
+                            try:
+                                priority = QueuePriority(item['priority'])
+                            except ValueError:
+                                pass
+                        
+                        queue_item = QueueItem(
                             data=item['data'],
                             item_type=item['type'],
-                            priority=QueuePriority.HIGH  # Default to HIGH for existing items
-                        ) for item in raw_queue
-                    ]
+                            priority=priority
+                        )
+                        queue_item.created_at = datetime.fromisoformat(item['created_at'])
+                        queue_item.attempts = item['attempts']
+                        if 'batch_id' in item:
+                            queue_item.batch_id = item['batch_id']
+                        self.queue.append(queue_item)
             else:
                 self.queue = []
         except Exception as e:
@@ -67,7 +89,7 @@ class QueueManager:
             if isinstance(value, (datetime, date)):
                 serialized[key] = value.isoformat()
             elif isinstance(value, dict):
-                serialized[key] = self._serialize_data(value)  # Recursively serialize nested dicts
+                serialized[key] = self._serialize_data(value)  
             elif value is None:
                 serialized[key] = None
             else:
@@ -85,7 +107,8 @@ class QueueManager:
                         'data': self._serialize_data(item.data),
                         'created_at': item.created_at.isoformat(),
                         'attempts': item.attempts,
-                        'priority': item.priority.value if item.priority else None
+                        'priority': item.priority.value if item.priority else None,
+                        'batch_id': item.batch_id
                     }
                     serializable_queue.append(serialized_item)
 
@@ -117,15 +140,57 @@ class QueueManager:
             sync_service.start()
         
         return hardware_id
-
+    
+    def add_batch_to_queue(self, items: List[Dict[str, Any]], item_type: str, priority: QueuePriority) -> str:
+        """Add multiple related items as a batch"""
+        if not items:
+            return None
+            
+        # Generate a batch ID
+        batch_id = str(uuid.uuid4())
+        
+        # Add batch ID to each item
+        for item in items:
+            item['batch_id'] = batch_id
+            self.add_to_queue(item, item_type, priority)
+            
+        return batch_id
+    
     def get_next_item(self) -> Optional[QueueItem]:
-        """Get next item from queue"""
-        if self.queue:
-            item = self.queue[0]
-            logger.debug(f"Retrieved queue item: {item}")
-            return item
-        logger.debug("Queue is empty")
-        return None
+        """Get the next item to process based on priority"""
+        if not self.queue:
+            return None
+            
+        # Sort by priority (lowest value = highest priority) then by creation time
+        self.queue.sort(key=lambda x: (x.priority.value, x.created_at))
+        
+        # Return the highest priority item
+        return self.queue[0] if self.queue else None
+    
+    def get_batch_items(self, batch_id: str) -> List[QueueItem]:
+        """Get all items belonging to a specific batch"""
+        return [item for item in self.queue if item.batch_id == batch_id]
+    
+    def mark_completed(self, item_id: str) -> None:
+        """Mark an item as successfully synced"""
+        self.queue = [item for item in self.queue if item.id != item_id]
+        self.save_queue()
+    
+    def mark_batch_completed(self, batch_id: str) -> None:
+        """Mark all items in a batch as completed"""
+        self.queue = [item for item in self.queue if item.batch_id != batch_id]
+        self.save_queue()
+    
+    def mark_failed(self, item_id: str) -> None:
+        """Mark an item as failed after max retries"""
+        for item in self.queue:
+            if item.id == item_id:
+                item.increment_attempts()
+                if item.attempts >= self.max_retries:
+                    logger.warning(f"Item {item_id} failed after {self.max_retries} attempts. Removing from queue.")
+                    self.queue = [i for i in self.queue if i.id != item_id]
+                self.save_queue()
+                break
 
     def remove_item(self, item: QueueItem) -> None:
         """Remove item from queue"""
@@ -139,28 +204,6 @@ class QueueManager:
             index = self.queue.index(item)
             self.queue[index] = item
             self.save_queue()
-
-    def mark_completed(self, hardware_id: str) -> None:
-        """Mark item as completed and remove from queue"""
-        for item in self.queue:
-            if item.id == hardware_id:
-                self.queue.remove(item)
-                self.save_queue()
-                logger.info(f"Marked item {hardware_id} as completed")
-                break
-
-    def mark_failed(self, hardware_id: str) -> None:
-        """Mark item as failed, update attempts"""
-        for item in self.queue:
-            if isinstance(item, QueueItem) and item.id == hardware_id:
-                item.attempts += 1
-                if item.attempts >= self.max_retries:
-                    self.queue.remove(item)
-                    logger.warning(f"Item {hardware_id} exceeded max retries, removed from queue")
-                else:
-                    logger.warning(f"Item {hardware_id} failed, attempt {item.attempts}")
-                self.save_queue()
-                break
 
     def _get_item_by_id(self, item_id: str) -> QueueItem:
         return next((item for item in self.queue if item.id == item_id), None)
