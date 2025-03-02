@@ -1,4 +1,6 @@
 /sdk
 /.venv
 /**/__pycache__
-credentials.json 
+credentials.json
+.env
+**/.env 
