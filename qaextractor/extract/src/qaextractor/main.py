@@ -5,7 +5,6 @@ import json
 import pymongo
 from pymongo.errors import AutoReconnect, OperationFailure
 import pathlib
-import sys
 
 @object_type
 class Qaextractor:
@@ -139,7 +138,7 @@ class Qaextractor:
 
     @function
     async def process_education_level(self, credentials_json: Secret, connection_string: Secret, level_name: str, level_id: str) -> str:
-        """Process a single education level and create MongoDB documents"""
+        """Process a single education level and create MongoDB documents for both questions and answers"""
         
         # Get plaintext value from the Secret
         credentials_json_value = await credentials_json.plaintext()
