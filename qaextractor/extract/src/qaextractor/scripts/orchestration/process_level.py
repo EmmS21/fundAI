@@ -81,7 +81,7 @@ def parse_paper_name(filename):
 
 def create_document(level_name, subject, year, paper_info, folder_path):
     """Create a MongoDB document for a paper"""
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now()
     
     # Create document
     document = {
@@ -112,6 +112,67 @@ def create_document(level_name, subject, year, paper_info, folder_path):
     
     return document
 
+def navigate_to_papers(service, level_name, subject_id):
+    """Navigate to papers based on education level structure"""
+    if level_name in ["ASLevel", "OLevel"]:
+        # Find Exams folder
+        folders = get_folder_contents(service, subject_id)
+        exam_folder = None
+        for folder in folders:
+            if folder["name"] == "Exams":
+                exam_folder = folder
+                break
+        
+        if not exam_folder:
+            return []
+            
+        # Get years
+        years = get_folder_contents(service, exam_folder["id"])
+        
+        # Collect papers from all years
+        all_papers = []
+        for year in years:
+            papers = get_folder_contents(service, year["id"], True)
+            papers = [p for p in papers if p["name"].lower().endswith(".pdf")]
+            for paper in papers:
+                all_papers.append({
+                    "paper": paper,
+                    "year": year,
+                    "exam_folder": exam_folder,
+                    "subject_id": subject_id
+                })
+        
+        return all_papers
+    else:
+        # Primary School structure
+        years = get_folder_contents(service, subject_id)
+        
+        all_papers = []
+        for year in years:
+            # Find PP folder
+            folders = get_folder_contents(service, year["id"])
+            pp_folder = None
+            for folder in folders:
+                if folder["name"] == "PP":
+                    pp_folder = folder
+                    break
+            
+            if not pp_folder:
+                continue
+                
+            # Get papers
+            papers = get_folder_contents(service, pp_folder["id"], True)
+            papers = [p for p in papers if p["name"].lower().endswith(".pdf")]
+            for paper in papers:
+                all_papers.append({
+                    "paper": paper,
+                    "year": year,
+                    "pp_folder": pp_folder,
+                    "subject_id": subject_id
+                })
+        
+        return all_papers
+
 def process_level(level_name, level_id, mongodb_uri):
     """Process a single education level and create MongoDB documents"""
     try:
@@ -120,7 +181,6 @@ def process_level(level_name, level_id, mongodb_uri):
         db = client["fundaAI"]
         collection = db["pp-questions"]
         
-        # Initialize counters
         documents_created = 0
         errors = 0
         error_details = []
@@ -132,57 +192,116 @@ def process_level(level_name, level_id, mongodb_uri):
         subjects = get_folder_contents(service, level_id)
         
         for subject in subjects:
-            # Find the exams folder
-            exam_folder = get_exam_folder(service, subject["id"], level_name)
-            if not exam_folder:
-                continue
+            if level_name in ["ASLevel", "OLevel"]:
+                # ASLevel/OLevel structure: Level → Subjects → Exams → Years → Papers
+                exam_folder = get_exam_folder(service, subject["id"], level_name)
+                if not exam_folder:
+                    continue
+                    
+                # Get years in this subject
+                years = get_folder_contents(service, exam_folder["id"])
                 
-            # Get years in this subject
-            years = get_folder_contents(service, exam_folder["id"])
-            
-            for year in years:
-                # Get papers in this year
-                papers = get_folder_contents(service, year["id"], True)
-                papers = [p for p in papers if p["name"].lower().endswith(".pdf")]
-                
-                for paper in papers:
-                    try:
-                        # Parse paper name
-                        paper_info = parse_paper_name(paper["name"])
-                        if not paper_info:
-                            error_details.append(f"Invalid paper name: {paper['name']}")
-                            errors += 1
-                            continue
+                for year in years:
+                    # Get papers in this year
+                    papers = get_folder_contents(service, year["id"], True)
+                    papers = [p for p in papers if p["name"].lower().endswith(".pdf")]
+                    
+                    for paper in papers:
+                        try:
+                            # Parse paper name
+                            paper_info = parse_paper_name(paper["name"])
+                            if not paper_info:
+                                error_details.append(f"Invalid paper name: {paper['name']}")
+                                errors += 1
+                                continue
+                                
+                            # Add file info to paper_info
+                            paper_info["id"] = paper["id"]
+                            paper_info["name"] = paper["name"]
                             
-                        # Add file info to paper_info
-                        paper_info["id"] = paper["id"]
-                        paper_info["name"] = paper["name"]
-                        
-                        # Create folder path
-                        folder_path = [
-                            level_name, 
-                            subject["name"], 
-                            exam_folder["name"], 
-                            year["name"], 
-                            paper["name"]
-                        ]
-                        
-                        # Create document
-                        document = create_document(level_name, subject, year, paper_info, folder_path)
-                        
-                        # Insert into MongoDB
-                        result = collection.update_one(
-                            {"FileID": paper_info["id"]},
-                            {"$set": document},
-                            upsert=True
-                        )
-                        
-                        if result.upserted_id or result.modified_count > 0:
-                            documents_created += 1
-                        
-                    except Exception as e:
-                        errors += 1
-                        error_details.append(f"Error processing {paper['name']}: {str(e)}")
+                            # Create folder path
+                            folder_path = [
+                                level_name, 
+                                subject["name"], 
+                                exam_folder["name"], 
+                                year["name"], 
+                                paper["name"]
+                            ]
+                            
+                            # Create document
+                            document = create_document(level_name, subject, year, paper_info, folder_path)
+                            
+                            # Insert into MongoDB
+                            result = collection.update_one(
+                                {"FileID": paper_info["id"]},
+                                {"$set": document},
+                                upsert=True
+                            )
+                            
+                            if result.upserted_id or result.modified_count > 0:
+                                documents_created += 1
+                            
+                        except Exception as e:
+                            errors += 1
+                            error_details.append(f"Error processing {paper['name']}: {str(e)}")
+            else:
+                # Primary School structure: Level → Subjects → Years → PP → Papers
+                years = get_folder_contents(service, subject["id"])
+                
+                for year in years:
+                    # Find PP folder in this year
+                    folders = get_folder_contents(service, year["id"])
+                    pp_folder = None
+                    for folder in folders:
+                        if folder["name"] == "PP":
+                            pp_folder = folder
+                            break
+                    
+                    if not pp_folder:
+                        continue
+                    
+                    # Get papers in PP folder
+                    papers = get_folder_contents(service, pp_folder["id"], True)
+                    papers = [p for p in papers if p["name"].lower().endswith(".pdf")]
+                    
+                    for paper in papers:
+                        try:
+                            # Parse paper name
+                            paper_info = parse_paper_name(paper["name"])
+                            if not paper_info:
+                                error_details.append(f"Invalid paper name: {paper['name']}")
+                                errors += 1
+                                continue
+                                
+                            # Add file info to paper_info
+                            paper_info["id"] = paper["id"]
+                            paper_info["name"] = paper["name"]
+                            
+                            # Create folder path
+                            folder_path = [
+                                level_name, 
+                                subject["name"], 
+                                year["name"], 
+                                pp_folder["name"], 
+                                paper["name"]
+                            ]
+                            
+                            # Create document
+                            document = create_document(level_name, subject, year, paper_info, folder_path)
+                            
+                            # Insert into MongoDB
+                            result = collection.update_one(
+                                {"FileID": paper_info["id"]},
+                                {"$set": document},
+                                upsert=True
+                            )
+                            
+                            if result.upserted_id or result.modified_count > 0:
+                                documents_created += 1
+                            
+                        except Exception as e:
+                            errors += 1
+                            error_details.append(f"Error processing {paper['name']}: {str(e)}")
         
         # Create result using helper function from constants
         return constants.create_level_result(
