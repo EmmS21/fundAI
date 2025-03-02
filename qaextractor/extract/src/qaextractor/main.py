@@ -70,15 +70,15 @@ class Qaextractor:
         )
 
     @function
-    def authenticate(self, collection: str, connection_string: Secret) -> str:
+    async def authenticate(self, collection: str, connection_string: Secret) -> str:
         """Authenticates with MongoDB and returns success message."""
         database = "fundaAI" 
         
         if not connection_string:
             return "Error: MONGODB_URI environment variable not set"
         
-        # Get the plaintext value from the Secret
-        connection_string_value = connection_string.plaintext()
+        # Get the plaintext value from the Secret - note the await
+        connection_string_value = await connection_string.plaintext()
         
         max_retries = 3
         retries = 0
@@ -141,6 +141,10 @@ class Qaextractor:
     async def process_education_level(self, credentials_json: Secret, connection_string: Secret, level_name: str, level_id: str) -> str:
         """Process a single education level and create MongoDB documents"""
         
+        # Get plaintext value from the Secret
+        credentials_json_value = await credentials_json.plaintext()
+        connection_string_value = await connection_string.plaintext()
+        
         # Load scripts
         script_path = pathlib.Path(__file__).parent / "scripts" / "orchestration" / "process_level.py"
         constants_path = pathlib.Path(__file__).parent / "scripts" / "orchestration" / "constants.py"
@@ -155,13 +159,12 @@ class Qaextractor:
             dag.container()
             .from_("python:3.12-slim")
             .with_exec(["pip", "install", "google-api-python-client", "google-auth", "pymongo"])
-            .terminal()
-            .with_new_file("/app/credentials.json", contents=credentials_json)
+            .with_new_file("/app/credentials.json", contents=credentials_json_value)
             .with_new_file("/app/process_level.py", contents=script_content)
             .with_new_file("/app/constants.py", contents=constants_content)
-            .with_env_variable("MONGODB_URI", connection_string)
+            .with_env_variable("MONGODB_URI", connection_string_value)
             .with_workdir("/app")
-            .with_exec(["python", "process_level.py", level_name, level_id, connection_string])
+            .with_exec(["python", "process_level.py", level_name, level_id, connection_string_value])
             .stdout()
         )
 
@@ -185,7 +188,7 @@ class Qaextractor:
         create_level_result = constants_module["create_level_result"]
         
         # First verify MongoDB connection
-        auth_result = self.authenticate("pp-questions", connection_string)
+        auth_result = await self.authenticate("pp-questions", connection_string)
         if not auth_result.startswith("Success"):
             return f"Failed to connect to MongoDB: {auth_result}"
         
