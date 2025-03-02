@@ -4,7 +4,7 @@ import sys
 import os
 import pymongo
 
-def create_document(level_name, subject_name, year, paper_info, folder_path, mongodb_uri):
+def create_document(level_name, subject_name, year, paper_info, folder_path, doc_type, mongodb_uri):
     """
     Create a MongoDB document for a paper and insert it into the database
     
@@ -14,6 +14,7 @@ def create_document(level_name, subject_name, year, paper_info, folder_path, mon
         year (str): Year of the paper
         paper_info (dict): Paper information including paper number, term, version, etc.
         folder_path (list): Path to the file in Google Drive
+        doc_type (str): Document type ("questions" or "answers")
         mongodb_uri (str): MongoDB connection string
     
     Returns:
@@ -23,7 +24,10 @@ def create_document(level_name, subject_name, year, paper_info, folder_path, mon
         # Connect to MongoDB
         client = pymongo.MongoClient(mongodb_uri)
         db = client["fundaAI"]
-        collection = db["pp-questions"]
+        
+        # Select the appropriate collection based on document type
+        collection_name = "pp-questions" if doc_type == "questions" else "pp-answers"
+        collection = db[collection_name]
         
         # Current timestamp
         now = datetime.datetime.utcnow()
@@ -40,10 +44,11 @@ def create_document(level_name, subject_name, year, paper_info, folder_path, mon
             "Processed": False,
             "ProcessedDate": None,
             "FolderStructure": folder_path,
-            "Questions": [],
+            "DocumentType": doc_type,
+            "Content": [],  # Will be populated during processing
             "Metadata": {
                 "TotalPages": 0,
-                "TotalQuestions": 0,
+                "TotalItems": 0,
                 "ExtractionDate": now,
                 "LastModified": now
             },
@@ -67,18 +72,21 @@ def create_document(level_name, subject_name, year, paper_info, folder_path, mon
             return {
                 "success": True,
                 "action": "inserted",
-                "document_id": str(result.upserted_id)
+                "document_id": str(result.upserted_id),
+                "collection": collection_name
             }
         elif result.modified_count > 0:
             return {
                 "success": True,
                 "action": "updated",
-                "modified_count": result.modified_count
+                "modified_count": result.modified_count,
+                "collection": collection_name
             }
         else:
             return {
                 "success": True,
-                "action": "no_change"
+                "action": "no_change",
+                "collection": collection_name
             }
             
     except Exception as e:
@@ -103,7 +111,8 @@ if __name__ == "__main__":
         year = sys.argv[3]
         paper_info_json = sys.argv[4]
         folder_path_json = sys.argv[5]
-        mongodb_uri = sys.argv[6] if len(sys.argv) > 6 else os.environ.get("MONGODB_URI")
+        doc_type = sys.argv[6]
+        mongodb_uri = sys.argv[7] if len(sys.argv) > 7 else os.environ.get("MONGODB_URI")
         
         try:
             paper_info = json.loads(paper_info_json)
@@ -123,9 +132,10 @@ if __name__ == "__main__":
             year = input_data.get("year")
             paper_info = input_data.get("paper_info")
             folder_path = input_data.get("folder_path")
+            doc_type = input_data.get("doc_type")
             mongodb_uri = input_data.get("mongodb_uri") or os.environ.get("MONGODB_URI")
             
-            if not all([level_name, subject_name, year, paper_info, folder_path, mongodb_uri]):
+            if not all([level_name, subject_name, year, paper_info, folder_path, doc_type, mongodb_uri]):
                 print(json.dumps({
                     "success": False,
                     "error": "Missing required fields in input"
@@ -139,7 +149,7 @@ if __name__ == "__main__":
             sys.exit(1)
     
     # Create document
-    result = create_document(level_name, subject_name, year, paper_info, folder_path, mongodb_uri)
+    result = create_document(level_name, subject_name, year, paper_info, folder_path, doc_type, mongodb_uri)
     
     # Output result
     print(json.dumps(result)) 

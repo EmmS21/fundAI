@@ -9,6 +9,11 @@
   - OLevel: Level → Subjects → (Exams|MS) → Years → Papers
   - Primary: Level → Subjects → Years → (PP|MS) → Papers
 
+  - ASLevel: Level → Subjects → Marking Schema → Years → Papers
+  - OLevel: Level → Subjects → Marking Schema → Years → Papers
+  - Primary: Level → Subjects → Years → MS → Papers
+
+
 ## Phase 2: Paper Name Parser
 - [x] Create paper name parser function that extracts:
   - Paper number (required)
