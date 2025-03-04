@@ -4,5 +4,12 @@
   "sdk": {
     "source": "python"
   },
+  "dependencies": [
+    {
+      "name": "pdfextractor",
+      "source": "github.com/EmmS21/daggerverse/pdfextractor@051c66e503309ab614fb64f5150d11389bc888f3",
+      "pin": "051c66e503309ab614fb64f5150d11389bc888f3"
+    }
+  ],
   "source": "extract"
 }

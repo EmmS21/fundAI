@@ -6,6 +6,7 @@ import pymongo
 from pymongo.errors import AutoReconnect, OperationFailure
 import pathlib
 import re
+from .tools.pdf_tools_module import PdfTools
 
 @object_type
 class Qaextractor:
@@ -287,130 +288,152 @@ class Qaextractor:
             )
             
             # Extract text from the PDF first to avoid passing raw PDF content
+            # First, read the content of the pdf_extractor.py file
+            pdf_extractor_path = pathlib.Path(__file__).parent / "scripts" / "orchestration" / "pdf_extractor.py"
+            with open(pdf_extractor_path, "r") as f:
+                pdf_extractor_content = f.read()
+
+            # Now use the content with with_new_file instead of with_file
             pdf_text_container = (
                 dag.container()
                 .from_("python:3.12-slim")
-                .with_exec(["pip", "install", "PyPDF2"])
+                .with_exec(["pip", "install", "PyPDF2", "Pillow"])
                 .with_file("/app/exam.pdf", pdf_file)
+                .with_new_file("/app/pdf_extractor.py", contents=pdf_extractor_content)
                 .with_workdir("/app")
-                .with_exec(["python", "-c", """
-import PyPDF2
-import json
-import sys
-import re
-
-try:
-    with open('exam.pdf', 'rb') as f:
-        pdf = PyPDF2.PdfReader(f)
-        text = ""
-        # Extract text from first 3 pages or all pages if less than 3
-        for i in range(min(3, len(pdf.pages))):
-            page_text = pdf.pages[i].extract_text()
-            # Clean the text to remove problematic characters
-            page_text = re.sub(r'[\\\\"]', ' ', page_text)  # Replace backslashes and quotes
-            text += page_text + "\\n\\n"
-        
-        # Print the extracted text as JSON
-        print(json.dumps({"text": text}))
-except Exception as e:
-    print(json.dumps({"error": str(e)}))
-                """])
+                .with_exec(["python", "pdf_extractor.py", "exam.pdf"])
             )
             
-            # Get the extracted text
+            # Get the PDF text extraction result
             pdf_text_json = await pdf_text_container.stdout()
-            print(f"DEBUG: PDF text extraction result: {pdf_text_json[:200]}...")
-            
-            try:
-                pdf_text_data = json.loads(pdf_text_json)
+
+            # Parse the PDF text extraction result
+            pdf_text_data = json.loads(pdf_text_json)
+
+            # Create a pdfextractor instance
+            pdf_extractor = dag.pdfextractor()
+
+            # Now use the LLM with the pdfextractor module
+            question_extractor = (
+                dag.llm()
+                .with_pdfextractor(pdf_extractor)
+                .with_prompt(f"""
+                The following text is from an exam paper:
                 
-                if "error" in pdf_text_data:
-                    return json.dumps({
-                        "success": False,
-                        "error": f"Failed to extract text from PDF: {pdf_text_data['error']}"
-                    })
+                {pdf_text_data['text']}
                 
-                # Use the extracted text instead of the PDF file
-                question_extractor = (
-                    dag.llm()
-                    .with_prompt(f"""
-                    The following text is from an exam paper:
-                    
-                    {pdf_text_data['text']}
-                    
-                    Analyze this text and extract the first question.
-                    
-                    Return ONLY a JSON object with this structure:
+                Analyze this text and extract ALL questions in the exam paper, including their full context. For each question:
+                
+                You have access to a PDF extraction tool that can help you analyze the document:
+                - Use the extract(pdf_path, page_number) function to extract a specific page from the PDF as a base64-encoded image
+                  - pdf_path should be the path to the PDF file (use "/src/test.pdf")
+                  - page_number is the page number to extract (1-based index, so the first page is 1)
+                
+                For example, to extract the first page of the PDF:
+                ```
+                extract("/src/test.pdf", 1)
+                ```
+                
+                This will return a base64-encoded string of the page image, which you can analyze to identify visual elements.
+                
+                1. Identify the question number
+                2. Extract the complete question text
+                3. Extract any associated texts, passages, or materials that are part of the question (like Text A, B, C)
+                4. Note any sub-questions
+                5. Identify tables (describe their content)
+                6. Note any images or visual elements that you can detect
+                7. Determine how many marks the question is worth
+                
+                IMPORTANT: Many exam questions include associated texts, passages, or materials that students need to analyze. These are part of the question and should be included in your extraction.
+                                
+                IMPORTANT: When extracting context materials, be careful to distinguish between:
+                - Actual text passages that should be included in "content"
+                - Images, charts, or graphs that should be identified as images, not treated as text
+                
+                For example, if "Text C" is actually a graph or chart, it should be categorized as an image in the "images" array, not as text in "context_materials".
+                
+                Return ONLY a JSON object with this structure:
+                {{
+                  "total_questions": 5,
+                  "questions": [
                     {{
                       "question_number": 1,
-                      "question_text": "text here",
-                      "marks": 10
+                      "question_text": "Full text of the question prompt",
+                      "context_materials": [
+                        {{
+                          "label": "Text A",
+                          "content": "Full text of passage A...",
+                          "description": "An extract from a book of recipes from 1739",
+                          "type": "text"  // Use "text" for text passages
+                        }}
+                      ],
+                      "sub_questions": [
+                        {{
+                          "sub_number": "a",
+                          "text": "Text of sub-question a",
+                          "marks": 5
+                        }}
+                      ],
+                      "tables": [
+                        {{
+                          "description": "Table showing data about X"
+                        }}
+                      ],
+                      "images": [
+                        {{
+                          "label": "Text C",  // If a "Text" label refers to an image, include it here
+                          "description": "Graph showing relationship between X and Y",
+                          "base64_data": "Optional: Include the base64 data if you extracted it"
+                        }}
+                      ],
+                      "marks": 15
                     }}
-                    
-                    No other text or formatting.
-                    """)
-                )
+                  ]
+                }}
                 
-                try:
-                    # Get the extracted question
-                    question_json = await question_extractor.last_reply()
-                    
-                    # Debug: Print the raw response
-                    print(f"DEBUG: Raw LLM response: {question_json[:200]}...")
-                    
-                    # Clean the response to ensure it's valid JSON
-                    cleaned_json = question_json.strip()
-
-                    # Extract JSON from markdown code blocks if present
-                    json_pattern = r'```(?:json)?\s*([\s\S]*?)```'
-                    json_matches = re.findall(json_pattern, cleaned_json)
-                    if json_matches:
-                        cleaned_json = json_matches[0].strip()
-                    else:
-                        # If no code blocks, try to find JSON object directly
-                        json_object_pattern = r'(\{[\s\S]*\})'
-                        object_matches = re.findall(json_object_pattern, cleaned_json)
-                        if object_matches:
-                            cleaned_json = object_matches[0].strip()
-
-                    # Debug: Print the cleaned JSON
-                    print(f"DEBUG: Cleaned JSON: {cleaned_json[:200]}...")
-                    
-                    # Parse the JSON response
-                    question_data = json.loads(cleaned_json)
-                    
-                    # Return the result
-                    return json.dumps({
-                        "success": True,
-                        "file_id": file_id,
-                        "file_name": download_result.get("file_name", ""),
-                        "extracted_question": question_data
-                    }, indent=2)
-                    
-                except Exception as e:
-                    # Catch all exceptions for better debugging
-                    import traceback
-                    error_traceback = traceback.format_exc()
-                    
-                    return json.dumps({
-                        "success": False,
-                        "error": f"Error during LLM processing: {str(e)}",
-                        "traceback": error_traceback,
-                        "raw_response": question_json if 'question_json' in locals() else "No response"
-                    })
-                
-            except json.JSONDecodeError as e:
-                return json.dumps({
-                    "success": False,
-                    "error": f"Failed to parse PDF text extraction result as JSON: {str(e)}",
-                    "raw_response": pdf_text_json
-                })
+                No other text or formatting.
+                """)
+            )
             
-        except json.JSONDecodeError:
+            # Get the extracted questions
+            questions_json = await question_extractor.last_reply()
+            
+            # Clean the response to ensure it's valid JSON
+            cleaned_json = questions_json.strip()
+
+            # Extract JSON from markdown code blocks if present
+            json_pattern = r'```(?:json)?\s*([\s\S]*?)```'
+            json_matches = re.findall(json_pattern, cleaned_json)
+            if json_matches:
+                cleaned_json = json_matches[0].strip()
+            else:
+                # If no code blocks, try to find JSON object directly
+                json_object_pattern = r'(\{[\s\S]*\})'
+                object_matches = re.findall(json_object_pattern, cleaned_json)
+                if object_matches:
+                    cleaned_json = object_matches[0].strip()
+
+            # Parse the JSON response
+            questions_data = json.loads(cleaned_json)
+            
+            # Return the result
+            return json.dumps({
+                "success": True,
+                "file_id": file_id,
+                "file_name": download_result.get("file_name", ""),
+                "total_questions": questions_data.get("total_questions", 0),
+                "extracted_questions": questions_data.get("questions", [])
+            }, indent=2)
+            
+        except Exception as e:
+            # Catch all exceptions for better debugging
+            import traceback
+            error_traceback = traceback.format_exc()
+            
             return json.dumps({
                 "success": False,
-                "error": "Failed to parse download result as JSON",
-                "raw_response": download_result_json
+                "error": f"Error during LLM processing: {str(e)}",
+                "traceback": error_traceback,
+                "raw_response": questions_json if 'questions_json' in locals() else "No response"
             })
-
-
+            
