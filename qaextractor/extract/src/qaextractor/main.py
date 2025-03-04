@@ -1,12 +1,10 @@
 import dagger
 from dagger import dag, function, object_type, Secret
-import os
 import json
 import pymongo
 from pymongo.errors import AutoReconnect, OperationFailure
 import pathlib
 import re
-from .tools.pdf_tools_module import PdfTools
 
 @object_type
 class Qaextractor:
@@ -274,7 +272,6 @@ class Qaextractor:
         
         try:
             download_result = json.loads(download_result_json)
-            
             if not download_result.get("success", False):
                 return json.dumps({
                     "success": False,
@@ -292,12 +289,14 @@ class Qaextractor:
             pdf_extractor_path = pathlib.Path(__file__).parent / "scripts" / "orchestration" / "pdf_extractor.py"
             with open(pdf_extractor_path, "r") as f:
                 pdf_extractor_content = f.read()
-
+            
             # Now use the content with with_new_file instead of with_file
             pdf_text_container = (
                 dag.container()
                 .from_("python:3.12-slim")
-                .with_exec(["pip", "install", "PyPDF2", "Pillow"])
+                .with_exec(["apt-get", "update"])
+                .with_exec(["apt-get", "install", "-y", "libgl1-mesa-glx", "libglib2.0-0", "poppler-utils"])
+                .with_exec(["pip", "install", "PyPDF2", "pdf2image", "pillow", "numpy", "opencv-python", "requests"])
                 .with_file("/app/exam.pdf", pdf_file)
                 .with_new_file("/app/pdf_extractor.py", contents=pdf_extractor_content)
                 .with_workdir("/app")
@@ -306,17 +305,17 @@ class Qaextractor:
             
             # Get the PDF text extraction result
             pdf_text_json = await pdf_text_container.stdout()
-
-            # Parse the PDF text extraction result
             pdf_text_data = json.loads(pdf_text_json)
-
-            # Create a pdfextractor instance
-            pdf_extractor = dag.pdfextractor()
-
-            # Now use the LLM with the pdfextractor module
+            
+            if "error" in pdf_text_data:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Error extracting PDF content: {pdf_text_data['error']}"
+                })
+            
+            # Now use the LLM directly without the pdfextractor tool
             question_extractor = (
                 dag.llm()
-                .with_pdfextractor(pdf_extractor)
                 .with_prompt(f"""
                 The following text is from an exam paper:
                 
@@ -324,24 +323,27 @@ class Qaextractor:
                 
                 Analyze this text and extract ALL questions in the exam paper, including their full context. For each question:
                 
-                You have access to a PDF extraction tool that can help you analyze the document:
-                - Use the extract(pdf_path, page_number) function to extract a specific page from the PDF as a base64-encoded image
-                  - pdf_path should be the path to the PDF file (use "/src/test.pdf")
-                  - page_number is the page number to extract (1-based index, so the first page is 1)
+                IMPORTANT: The text includes image and graphic markers in the following formats:
+                - [COVER IMAGE: name on page X, WxH] - Images on the cover page
+                - [IMAGE for Q5: name on page X, WxH] - Images for specific questions
+                - [GRAPHIC for Q3: name on page Y] - Graphics for specific questions
+                - [IMAGE: name on page Z, WxH] - General images
                 
-                For example, to extract the first page of the PDF:
-                ```
-                extract("/src/test.pdf", 1)
-                ```
+                These markers contain the image URL in the "url" field of the corresponding object in the PDF data. 
+                To find the URL for an image marker, look for the matching image object in this data:
+                {json.dumps([img for img in pdf_text_data['images'] if 'url' in img])}
                 
-                This will return a base64-encoded string of the page image, which you can analyze to identify visual elements.
+                To find the URL for a graphic marker, look for the matching graphic object in this data:
+                {json.dumps([graphic for graphic in pdf_text_data['graphics'] if 'url' in graphic])}
+                
+                Match the image name and page number from the marker to find the correct URL.
                 
                 1. Identify the question number
                 2. Extract the complete question text
                 3. Extract any associated texts, passages, or materials that are part of the question (like Text A, B, C)
                 4. Note any sub-questions
                 5. Identify tables (describe their content)
-                6. Note any images or visual elements that you can detect
+                6. Note any images or visual elements that are associated with the question
                 7. Determine how many marks the question is worth
                 
                 IMPORTANT: Many exam questions include associated texts, passages, or materials that students need to analyze. These are part of the question and should be included in your extraction.
@@ -354,6 +356,10 @@ class Qaextractor:
                 
                 Return ONLY a JSON object with this structure:
                 {{
+                  "cover_image": {{  // Include if a cover image is detected
+                    "url": "The actual URL from the matching image object in the data",
+                    "description": "Brief description of the cover image"
+                  }},
                   "total_questions": 5,
                   "questions": [
                     {{
@@ -383,7 +389,7 @@ class Qaextractor:
                         {{
                           "label": "Text C",  // If a "Text" label refers to an image, include it here
                           "description": "Graph showing relationship between X and Y",
-                          "base64_data": "Optional: Include the base64 data if you extracted it"
+                          "url": "The actual URL from the matching image or graphic object"
                         }}
                       ],
                       "marks": 15
