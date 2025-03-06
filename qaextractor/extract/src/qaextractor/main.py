@@ -5,14 +5,13 @@ import pymongo
 from pymongo.errors import AutoReconnect, OperationFailure
 import pathlib
 import re
+from typing import Optional
+
+# Increase timeout to 10 minutes (600 seconds)
+dagger.Config(timeout=600)
 
 @object_type
 class Qaextractor:
-    @function
-    # def hello(self, credentials_json: Secret) -> str:
-    #     """Simple test function"""
-    #     return str(credentials_json)
-    
     @function
     async def getlevel(self, credentials_json: Secret) -> str:
         """Lists folders in root directory to identify education levels"""
@@ -167,12 +166,6 @@ class Qaextractor:
             .stdout()
         )
 
-
-    # @function
-    # def hello(self) -> str:
-    #     """Simple test function"""
-    #     return "hello world"
-
     @function
     async def orchestrate(self, credentials_json: Secret, connection_string: Secret) -> str:
         """Main orchestrator function that processes all education levels"""
@@ -241,7 +234,7 @@ class Qaextractor:
         return json.dumps(summary, indent=2)
 
     @function
-    async def single(self, credentials_json: Secret, file_id: str) -> str:
+    async def single(self, credentials_json: Secret, file_id: str, file_name: Optional[str] = None) -> str:
         """Extract a single question from a PDF file using LLM processing"""
         
         # Get plaintext value from the Secret
@@ -253,6 +246,10 @@ class Qaextractor:
         with open(llm_extraction_path, "r") as f:
             script_content = f.read()
         
+        # Use a default filename if none provided
+        if file_name is None:
+            file_name = f"document_{file_id[-8:]}"
+        
         # Download the PDF
         download_container = (
             dag.container()
@@ -261,7 +258,7 @@ class Qaextractor:
             .with_new_file("/app/credentials.json", contents=credentials_json_value)
             .with_new_file("/app/llm_extraction.py", contents=script_content)
             .with_workdir("/app")
-            .with_exec(["python", "llm_extraction.py", file_id])
+            .with_exec(["python", "llm_extraction.py", file_id, "/app", file_name])
         )
         
         # Get the download result
@@ -279,10 +276,8 @@ class Qaextractor:
                 })
             
             # Important: Export the file from the container
-            pdf_file = (
-                download_container
-                .file("/app/exam.pdf")
-            )
+            pdf_path = download_result.get("pdf_path")
+            pdf_file = await download_container.file(pdf_path)
             
             # Extract text from the PDF first to avoid passing raw PDF content
             # First, read the content of the pdf_extractor.py file
@@ -345,6 +340,8 @@ class Qaextractor:
                 5. Identify tables (describe their content)
                 6. Note any images or visual elements that are associated with the question
                 7. Determine how many marks the question is worth
+                8. Classify the question by topic and subtopic
+                9. Assess the difficulty level of the question based on the level (this is following the Cambridge curriculum).
                 
                 IMPORTANT: Many exam questions include associated texts, passages, or materials that students need to analyze. These are part of the question and should be included in your extraction.
                                 
@@ -354,9 +351,25 @@ class Qaextractor:
                 
                 For example, if "Text C" is actually a graph or chart, it should be categorized as an image in the "images" array, not as text in "context_materials".
                 
+                TOPIC CLASSIFICATION: For each question, identify:
+                - The main topic (e.g., "Algebra", "Thermodynamics", "Shakespeare", "Cell Biology")
+                - Specific subtopics (e.g., "Quadratic Equations", "Heat Transfer", "Macbeth", "Mitosis")
+                
+                DIFFICULTY ASSESSMENT: Rate each question's difficulty on a scale:
+                - Easy: Straightforward application of basic concepts
+                - Medium: Requires some analysis and multiple steps
+                - Hard: Complex problem requiring deep understanding
+                - Very Hard: Challenging problem requiring synthesis of multiple concepts
+                
+                Base your difficulty assessment on:
+                - Complexity of the question
+                - Number of marks allocated
+                - Number of steps required to solve
+                - Presence of advanced concepts
+                
                 Return ONLY a JSON object with this structure:
                 {{
-                  "cover_image": {{  // Include if a cover image is detected
+                  "cover_image": {{  // Include if a cover image
                     "url": "The actual URL from the matching image object in the data",
                     "description": "Brief description of the cover image"
                   }},
@@ -365,6 +378,12 @@ class Qaextractor:
                     {{
                       "question_number": 1,
                       "question_text": "Full text of the question prompt",
+                      "topic": "Main topic area",
+                      "subtopic": "Specific subtopic",
+                      "difficulty": {{
+                        "level": "Medium",
+                        "justification": "Requires multiple steps and application of X concept"
+                      }},
                       "context_materials": [
                         {{
                           "label": "Text A",
@@ -422,11 +441,77 @@ class Qaextractor:
             # Parse the JSON response
             questions_data = json.loads(cleaned_json)
             
-            # Return the result
+            # Extract path components from the file path
+            file_path = download_result.get("file_path", "")
+            path_components = file_path.split("/")
+            
+            # Extract level, subject, and year
+            level = ""
+            subject = ""
+            year = ""
+            
+            # Load constants to get the correct level names
+            constants_path = pathlib.Path(__file__).parent / "scripts" / "orchestration" / "constants.py"
+            constants_module = {}
+            with open(constants_path, "r") as f:
+                exec(f.read(), constants_module)
+            
+            # Get education levels from constants
+            education_levels = constants_module.get("EDUCATION_LEVELS", {})
+            
+            # Find level by checking if any component matches a key in education_levels
+            for component in path_components:
+                if component in education_levels:
+                    level = component
+                    break
+                # Special case for "Primary School" which might appear as just "Primary" in the path
+                elif component == "Primary" and "Primary School" in education_levels:
+                    level = "Primary School"
+                    break
+            
+            # Subject is typically the component after the level
+            if level and level in path_components:
+                level_index = path_components.index(level)
+                if len(path_components) > level_index + 1:
+                    subject = path_components[level_index + 1]
+            # Special case for "Primary School" which might appear as just "Primary" in the path
+            elif "Primary" in path_components and level == "Primary School":
+                primary_index = path_components.index("Primary")
+                if len(path_components) > primary_index + 1:
+                    subject = path_components[primary_index + 1]
+            
+            # Find year (component that matches 4-digit pattern)
+            year_pattern = re.compile(r'\d{4}')
+            for component in path_components:
+                if year_pattern.match(component):
+                    year = component
+                    break
+            
+            # Get file name
+            file_name = download_result.get("file_name", "")
+            
+            # Create collection name by concatenating components
+            # Only include components that were successfully extracted
+            collection_name = ""
+            if level:
+                collection_name += level
+            if subject:
+                collection_name += subject
+            if year:
+                collection_name += year
+            if file_name:
+                collection_name += file_name
+            
+            # If we couldn't extract any components, use the file_name as a fallback
+            if not collection_name and file_name:
+                collection_name = file_name
+            
+            # Return the result with collection_name added
             return json.dumps({
                 "success": True,
                 "file_id": file_id,
-                "file_name": download_result.get("file_name", ""),
+                "file_name": file_name,
+                "collection_name": collection_name,
                 "total_questions": questions_data.get("total_questions", 0),
                 "extracted_questions": questions_data.get("questions", [])
             }, indent=2)
@@ -442,4 +527,102 @@ class Qaextractor:
                 "traceback": error_traceback,
                 "raw_response": questions_json if 'questions_json' in locals() else "No response"
             })
+
+    @function
+    async def run(self, mongodb_uri: Secret, credentials_json: Secret, source_dir: dagger.Directory, process_all: bool = False) -> str:
+        """
+        Runs the extraction pipeline to process unprocessed documents in MongoDB
+        
+        Args:
+            mongodb_uri: MongoDB connection string as a Secret
+            credentials_json: Google Drive credentials as a Secret
+            source_dir: Directory containing the source code
+            process_all: Whether to process all levels, subjects, and years
+        
+        Returns:
+            JSON string with the results of the extraction process
+        """
+        
+        # Get plaintext values
+        mongodb_uri_value = await mongodb_uri.plaintext()
+        
+        # First, find unprocessed documents
+        find_unprocessed_path = pathlib.Path(__file__).parent / "scripts" / "orchestration" / "find_unprocessed.py"
+        with open(find_unprocessed_path, "r") as f:
+            find_unprocessed_script = f.read()
+        
+        # Create a container for finding unprocessed documents
+        find_container = (
+            dag.container()
+            .from_("python:3.12-slim")
+            .with_exec(["pip", "install", "pymongo"])
+            .with_new_file("/app/find_unprocessed.py", contents=find_unprocessed_script)
+            .with_workdir("/app")
+            .with_env_variable("MONGODB_URI", mongodb_uri_value)
+        )
+        
+        # Command to run the script
+        find_command = ["python", "find_unprocessed.py"]
+        
+        # Add the all argument if process_all is True
+        if process_all:
+            find_command.append("all")
+        
+        # Execute the find script
+        find_result_json = await find_container.with_exec(find_command).stdout()
+        find_result = json.loads(find_result_json)
+        
+        if "error" in find_result:
+            return json.dumps({
+                "success": False,
+                "error": find_result["error"]
+            })
+        
+        # Load the update script
+        update_extraction_path = pathlib.Path(__file__).parent / "scripts" / "orchestration" / "update_extraction.py"
+        with open(update_extraction_path, "r") as f:
+            update_extraction_script = f.read()
+        
+        # Process each document SEQUENTIALLY
+        results = []
+        for document in find_result["documents"]:
+            try:
+                # Process one document at a time - pass the filename from document info
+                extraction_result = await self.single(
+                    credentials_json, 
+                    document["FileID"], 
+                    document.get("FileName", f"document_{document['_id']}")
+                )
+                
+                # Update MongoDB with the result
+                update_container = (
+                    dag.container()
+                    .from_("python:3.12-slim")
+                    .with_exec(["pip", "install", "pymongo"])
+                    .with_new_file("/app/update_extraction.py", contents=update_extraction_script)
+                    .with_workdir("/app")
+                    .with_env_variable("MONGODB_URI", mongodb_uri_value)
+                    .with_exec(["python", "update_extraction.py", document["_id"], extraction_result])
+                )
+                
+                # Get the update result
+                update_result_json = await update_container.stdout()
+                update_result = json.loads(update_result_json)
+                
+                results.append(update_result)
+            except Exception as e:
+                # Handle exceptions for each document individually
+                error_message = f"Error processing document {document['_id']}: {str(e)}"
+                results.append({
+                    "success": False,
+                    "document_id": document["_id"],
+                    "error": error_message
+                })
+        
+        # Return the results
+        return json.dumps({
+            "success": True,
+            "processed_count": len(results),
+            "results": results
+        })
             

@@ -6,6 +6,7 @@ import os
 import sys
 import json
 import io
+import google.auth
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
@@ -18,8 +19,11 @@ def get_drive_service():
     )
     return build("drive", "v3", credentials=credentials)
 
-def download_pdf(service, file_id, output_dir):
+def download_pdf(file_id, file_name, output_dir):
     """Download a PDF file from Google Drive and save it to the specified directory"""
+    # Get Drive service
+    service = get_drive_service()
+    
     request = service.files().get_media(fileId=file_id)
     
     file_content = io.BytesIO()
@@ -37,8 +41,8 @@ def download_pdf(service, file_id, output_dir):
     # Make sure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
     
-    # Save to the output directory with a predictable name
-    pdf_path = os.path.join(output_dir, "exam.pdf")
+    # Save to the output directory
+    pdf_path = os.path.join(output_dir, f"{file_name}.pdf")
     
     # Debug: Print the full PDF path we're about to write to
     print(f"DEBUG: Will save PDF to: {pdf_path}", file=sys.stderr)
@@ -61,11 +65,6 @@ def download_pdf(service, file_id, output_dir):
     
     return pdf_path
 
-def get_file_info(service, file_id):
-    """Get file metadata from Google Drive"""
-    file_info = service.files().get(fileId=file_id, fields="name,mimeType").execute()
-    return file_info
-
 if __name__ == "__main__":
     # Get arguments
     if len(sys.argv) < 2:
@@ -86,20 +85,19 @@ if __name__ == "__main__":
     print(f"DEBUG: Using output directory: {output_dir}", file=sys.stderr)
     
     try:
-        # Get Drive service
-        service = get_drive_service()
-        
-        # Get file info
-        file_info = get_file_info(service, file_id)
+        # Get file name (default to "document.pdf" if not provided)
+        file_name = None
+        if len(sys.argv) > 3:
+            file_name = sys.argv[3]
         
         # Download the PDF directly to the output directory
-        pdf_path = download_pdf(service, file_id, output_dir)
+        pdf_path = download_pdf(file_id, file_name, output_dir)
         
         # Return the result
         print(json.dumps({
             "success": True,
             "file_id": file_id,
-            "file_name": file_info.get("name", ""),
+            "file_name": file_name,
             "pdf_path": pdf_path
         }))
         

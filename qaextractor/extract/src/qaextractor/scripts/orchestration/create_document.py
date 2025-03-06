@@ -30,7 +30,7 @@ def create_document(level_name, subject_name, year, paper_info, folder_path, doc
         collection = db[collection_name]
         
         # Current timestamp
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now()
         
         # Create document
         document = {
@@ -45,7 +45,7 @@ def create_document(level_name, subject_name, year, paper_info, folder_path, doc
             "ProcessedDate": None,
             "FolderStructure": folder_path,
             "DocumentType": doc_type,
-            "Content": [],  # Will be populated during processing
+            "Content": [],  
             "Metadata": {
                 "TotalPages": 0,
                 "TotalItems": 0,
