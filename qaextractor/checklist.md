@@ -3,31 +3,29 @@
 ## Project Setup
 - [x] Set up Go project structure
 - [x] Install Dagger CLI with LLM support
-- [ ] Configure LLM endpoint (OpenAI, Anthropic, or Ollama)
+- [x] Configure LLM endpoint (OpenAI, Anthropic, or Ollama)
 - [x] Initialize Dagger module for the project
 - [ ] Set up MongoDB for storing processed data
-- [ ] Set up Modal for deployment
 
 ## Dagger Module Design
-- [ ] Define core module interfaces
-- [ ] Design container specifications for each module
-- [ ] Establish data formats for inter-module communication
+- [x] Define core module interfaces
+- [x] Design container specifications for each module
+- [x] Establish data formats for inter-module communication
 - [ ] Create validation functions for module outputs
 
 ## PDF Processing Modules
-- [ ] Create PDF ingestion module
-  - [ ] Support for bulk upload
+- [x] Create PDF ingestion module
+  - [x] Support for bulk upload
   - [ ] Tracking of already processed PDFs
-  - [ ] Extraction of metadata (year, paper number)
-- [ ] Implement OCR processing module
-  - [ ] Text extraction with formatting preservation
-  - [ ] Table recognition
-  - [ ] Image extraction
-  - [ ] Mathematical notation handling
-- [ ] Develop question extraction module
-  - [ ] Question and sub-question identification
-  - [ ] Connection of questions to their parts
-  - [ ] Extraction of marks per question
+  - [x] Extraction of metadata (year, paper number)
+- [x] Implement OCR processing module
+  - [x] Text extraction with formatting preservation
+  - [x] Table recognition
+  - [x] Image extraction
+- [x] Develop question extraction module
+  - [x] Question and sub-question identification
+  - [x] Connection of questions to their parts
+  - [x] Extraction of marks per question
 
 ## Answer Processing Modules
 - [ ] Create answer paper ingestion module
@@ -39,18 +37,18 @@
   - [ ] Connect to specific questions
 
 ## Analysis Modules
-- [ ] Develop difficulty rating module
-  - [ ] Analyze marking scheme complexity
-  - [ ] Consider mark allocation
-  - [ ] Factor in question structure
-- [ ] Implement topic classification module
-  - [ ] Identify subject topics and subtopics
-  - [ ] Tag questions with relevant topics
-  - [ ] Build topic relationships between questions
+- [x] Develop difficulty rating module
+  - [x] Analyze question complexity
+  - [x] Consider mark allocation
+  - [x] Factor in question structure
+- [x] Implement topic classification module
+  - [x] Identify subject topics and subtopics
+  - [x] Tag questions with relevant topics
+  - [x] Provide justification for classifications
 
 ## Database Integration
-- [ ] Create database schema for MongoDB
-- [ ] Implement database connection module
+- [x] Create database schema for MongoDB
+- [x] Implement database connection module
 - [ ] Develop query interfaces for accessing processed data
 - [ ] Set up tracking for processed papers
 
@@ -64,13 +62,8 @@
 - [ ] Establish deterministic processing pipeline
 
 ## Testing
-- [ ] Create test suite with sample PDFs
+- [x] Create test suite with sample PDFs
 - [ ] Implement integration tests for full pipeline
 - [ ] Test database integration
 - [ ] Verify deterministic behavior
 
-## Deployment
-- [ ] Configure Modal deployment
-- [ ] Set up continuous integration
-- [ ] Establish monitoring
-- [ ] Create simple API for accessing processed data
