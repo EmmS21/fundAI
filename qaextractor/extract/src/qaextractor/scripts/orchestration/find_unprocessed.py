@@ -9,7 +9,7 @@ def connect_to_mongodb(mongodb_uri):
     db = client["fundaAI"]
     return db
 
-def find_unprocessed_documents(db, process_all=False, limit=10):
+def find_unprocessed_documents(db, process_all=False, limit=10, skip=0):
     """
     Find unprocessed documents in MongoDB
     
@@ -17,6 +17,7 @@ def find_unprocessed_documents(db, process_all=False, limit=10):
         db: MongoDB database connection
         process_all: Whether to process all documents (ignore filter)
         limit: Maximum number of documents to return
+        skip: Number of documents to skip
         
     Returns:
         List of unprocessed documents
@@ -29,8 +30,12 @@ def find_unprocessed_documents(db, process_all=False, limit=10):
         # You can add more specific filters here if needed
         pass
     
-    # Find documents
-    documents = list(db["pp-questions"].find(query).limit(limit))
+    # Find documents with skip, limit, and stable sorting by _id
+    documents = list(db["pp-questions"]
+                     .find(query)
+                     .sort("_id", pymongo.ASCENDING)  # <-- Added stable sorting
+                     .skip(skip)
+                     .limit(limit))
     
     # Return document details
     result = []
@@ -64,11 +69,20 @@ if __name__ == "__main__":
     # Process command line arguments
     process_all = len(sys.argv) > 1 and sys.argv[1] == "all"
     
+    # Check for skip parameter
+    skip = 0
+    for i in range(1, len(sys.argv)):
+        if sys.argv[i] == "--skip" and i + 1 < len(sys.argv):
+            try:
+                skip = int(sys.argv[i + 1])
+            except ValueError:
+                pass
+    
     # Connect to MongoDB
     db = connect_to_mongodb(mongodb_uri)
     
     # Find unprocessed documents
-    documents = find_unprocessed_documents(db, process_all)
+    documents = find_unprocessed_documents(db, process_all, 10, skip)
     
     # Return as JSON
     print(json.dumps({"documents": documents}))

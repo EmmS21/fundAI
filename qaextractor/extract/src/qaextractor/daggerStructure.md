@@ -14,7 +14,9 @@
 │       │   │   ├── create_document.py  # Create MongoDB document
 │       │   │   ├── llm_extraction.py       # EXISTING: May need minor updates
 │       │   │   ├── pdf_extractor.py         # EXISTING: May need minor updates
-│       │   │   └── image_processor.py
+│       │   │   ├── image_processor.py
+│       │   │   ├── find_unprocessed.py      # Find unprocessed question documents
+│       │   │   ├── find_matching_answers.py # NEW: Find answer docs with matching questions
 │       ├── models/           # Data model definitions
 │       │   ├── extracted_question.py       # NEW: Data model for extracted 
 │       │   └── student_performance.py  # Student performance data models

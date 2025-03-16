@@ -45,14 +45,27 @@ class SyncService:
             self._initialized = False
 
     def initialize(self):
-        """Initialize only when needed"""
-        if not self._initialized:
-            self._queue_manager = QueueManager()
-            self._network_monitor = NetworkMonitor()
+        """Initialize the sync service with required dependencies"""
+        try:
+            # Initialize Firebase client
             self.firebase = FirebaseClient()
+            
+            # Get the authenticated user ID
+            self.user_id = self.firebase.get_user_id()
+            logger.info(f"Sync service initialized with user ID: {self.user_id}")
+            
+            # Initialize network monitor
+            self._network_monitor = NetworkMonitor()
+            
+            # Initialize queue manager
+            self._queue_manager = QueueManager()
+            
             _, _, self.hardware_id = HardwareIdentifier.get_hardware_id()
             self._cache_manager = CacheManager()
             self._initialized = True
+        except Exception as e:
+            logger.error(f"Failed to initialize sync service: {e}")
+            self._initialized = False
 
     def start(self):
         """Start the sync service"""
