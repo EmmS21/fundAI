@@ -17,6 +17,9 @@
 │       │   │   ├── image_processor.py
 │       │   │   ├── find_unprocessed.py      # Find unprocessed question documents
 │       │   │   ├── find_matching_answers.py # NEW: Find answer docs with matching questions
+│       │   │   ├── insert_questions.py      # Insert extracted questions into MongoDB
+│       │   │   ├── insert_answers.py        # NEW: Insert extracted answers into MongoDB
+│       │   │   ├── mark_processed.py        # Mark documents as processed
 │       ├── models/           # Data model definitions
 │       │   ├── extracted_question.py       # NEW: Data model for extracted 
 │       │   └── student_performance.py  # Student performance data models
