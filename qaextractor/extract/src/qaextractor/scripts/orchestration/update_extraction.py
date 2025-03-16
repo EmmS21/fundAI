@@ -1,64 +1,28 @@
-import pymongo
-import json
 import sys
-import os
+import json
+import pymongo
 import datetime
+import os
 from bson.objectid import ObjectId
 
-def connect_to_mongodb(mongodb_uri):
-    """Connect to MongoDB and return database client"""
-    client = pymongo.MongoClient(mongodb_uri)
-    db = client["fundaAI"]
-    return db
-
 def update_document(db, doc_id, extraction_data):
-    """
-    Update MongoDB with extraction results
-    
-    Args:
-        db: MongoDB database connection
-        doc_id: Original document ID
-        extraction_data: Extraction result data
-        
-    Returns:
-        Result of the update operation
-    """
+    """Update MongoDB with extraction results"""
     try:
-        # Parse extraction data
-        data = json.loads(extraction_data)
-        
-        if not data.get("success", False):
-            # Update document with error status
-            db["pp-questions"].update_one(
-                {"_id": ObjectId(doc_id)},
-                {
-                    "$set": {
-                        "Status": "error",
-                        "Metadata.LastModified": datetime.datetime.now()
-                    },
-                    "$push": {
-                        "ErrorLog": {
-                            "timestamp": datetime.datetime.now(),
-                            "message": data.get("error", "Unknown error during extraction")
-                        }
-                    }
-                }
-            )
-            return {
-                "success": False,
-                "document_id": doc_id,
-                "error": data.get("error", "Unknown error during extraction")
-            }
-        
-        # Get document from MongoDB to access metadata
+        # Parse the extraction data
+        try:
+            data = json.loads(extraction_data)
+        except Exception as e:
+            print(f"ERROR: Failed to parse extraction data: {str(e)}")
+            return {"success": False, "document_id": doc_id, "error": f"Invalid extraction data: {str(e)}"}
+            
+        # Get the original document
         original_doc = db["pp-questions"].find_one({"_id": ObjectId(doc_id)})
-        
         if not original_doc:
-            return {
-                "success": False,
-                "document_id": doc_id,
-                "error": "Original document not found"
-            }
+            print(f"ERROR: Document not found: {doc_id}")
+            return {"success": False, "document_id": doc_id, "error": "Document not found"}
+        
+        # Debug output
+        print(f"DEBUG: Processing document {doc_id}, extraction data has {len(data.get('extracted_questions', []))} questions")
         
         # Create document for extracted-questions collection
         extracted_doc = {
@@ -78,14 +42,22 @@ def update_document(db, doc_id, extraction_data):
         # Add Version if it exists
         if "Version" in original_doc:
             extracted_doc["paper_meta"]["Version"] = original_doc["Version"]
+        
+        print(f"DEBUG: Inserting document to extracted-questions collection")
             
         # Insert into extracted-questions collection
-        result = db["extracted-questions"].insert_one(extracted_doc)
+        try:
+            result = db["extracted-questions"].insert_one(extracted_doc)
+            print(f"DEBUG: Successfully inserted document with ID: {result.inserted_id}")
+        except Exception as e:
+            print(f"ERROR: Failed to insert into extracted-questions: {str(e)}")
+            return {"success": False, "document_id": doc_id, "error": f"Insert error: {str(e)}"}
+        
+        print(f"DEBUG: Preparing to update original document: {doc_id}")
         
         # Update original document
-        db["pp-questions"].update_one(
-            {"_id": ObjectId(doc_id)},
-            {
+        try:
+            update_dict = {
                 "$set": {
                     "Processed": True,
                     "ProcessedDate": datetime.datetime.now(),
@@ -94,62 +66,71 @@ def update_document(db, doc_id, extraction_data):
                     "Metadata.LastModified": datetime.datetime.now()
                 }
             }
-        )
-        
-        return {
-            "success": True,
-            "document_id": doc_id,
-            "extracted_id": str(result.inserted_id),
-            "question_count": data.get("total_questions", 0)
-        }
-        
-    except Exception as e:
-        import traceback
-        
-        # Update document with error status
-        db["pp-questions"].update_one(
-            {"_id": ObjectId(doc_id)},
-            {
-                "$set": {
-                    "Status": "error",
-                    "Metadata.LastModified": datetime.datetime.now()
-                },
-                "$push": {
-                    "ErrorLog": {
-                        "timestamp": datetime.datetime.now(),
-                        "message": str(e)
-                    }
-                }
+            print(f"DEBUG: Update operation: {json.dumps(update_dict, default=str)}")
+            
+            update_result = db["pp-questions"].update_one(
+                {"_id": ObjectId(doc_id)},
+                update_dict
+            )
+            
+            print(f"DEBUG: Update result - Modified count: {update_result.modified_count}, Matched count: {update_result.matched_count}")
+            
+            if update_result.matched_count == 0:
+                print(f"ERROR: No documents matched the ID {doc_id} during update")
+                return {"success": False, "document_id": doc_id, "error": "No matching document during update"}
+            elif update_result.modified_count == 0:
+                print(f"WARNING: Document matched but not modified. Document may already be processed.")
+            
+            return {
+                "success": True,
+                "document_id": doc_id,
+                "extracted_id": str(result.inserted_id),
+                "question_count": data.get("total_questions", 0),
+                "modified_count": update_result.modified_count,
+                "matched_count": update_result.matched_count
             }
-        )
-        
-        return {
-            "success": False,
-            "document_id": doc_id,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
+        except Exception as e:
+            print(f"ERROR: Failed to update pp-questions: {str(e)}")
+            return {"success": False, "document_id": doc_id, "error": f"Update error: {str(e)}"}
+            
+    except Exception as e:
+        print(f"ERROR: Exception in update_document: {str(e)}")
+        return {"success": False, "document_id": doc_id, "error": str(e)}
 
 if __name__ == "__main__":
-    # Get MongoDB URI from environment variable
-    mongodb_uri = os.environ.get("MONGODB_URI")
-    if not mongodb_uri:
-        print(json.dumps({"error": "MONGODB_URI environment variable not set"}))
-        sys.exit(1)
-    
-    # Get document ID and extraction data from arguments
+    # Check arguments
     if len(sys.argv) < 3:
-        print(json.dumps({"error": "Missing required arguments: document_id extraction_data"}))
+        print(json.dumps({"success": False, "error": "Missing required arguments"}))
         sys.exit(1)
     
     doc_id = sys.argv[1]
-    extraction_data = sys.argv[2]
+    
+    # Check if we should read from a file
+    if "--file" in sys.argv:
+        # The second argument is the file path
+        file_path = sys.argv[2]
+        try:
+            print(f"DEBUG: Reading extraction data from file: {file_path}")
+            with open(file_path, 'r') as f:
+                extraction_data = f.read()
+            print(f"DEBUG: Successfully read {len(extraction_data)} characters from file")
+        except Exception as e:
+            print(json.dumps({"success": False, "error": f"Failed to read file: {str(e)}"}))
+            sys.exit(1)
+    else:
+        # Use the command line argument directly
+        extraction_data = sys.argv[2]
     
     # Connect to MongoDB
-    db = connect_to_mongodb(mongodb_uri)
-    
-    # Update document
-    result = update_document(db, doc_id, extraction_data)
-    
-    # Return as JSON
-    print(json.dumps(result))
+    try:
+        client = pymongo.MongoClient(os.environ.get("MONGODB_URI"))
+        db = client["fundaAI"]
+        
+        # Update document and get result
+        result = update_document(db, doc_id, extraction_data)
+        
+        # Return JSON result
+        print(json.dumps(result))
+        
+    except Exception as e:
+        print(json.dumps({"success": False, "document_id": doc_id, "error": str(e)}))

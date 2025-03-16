@@ -1,6 +1,6 @@
 from src.data.database.operations import PaperCacheOperations, UserOperations
 from src.utils.db import get_db_session
-from typing import Any, List, Dict
+from typing import Any, List, Dict, Optional
 import threading
 import time
 import os

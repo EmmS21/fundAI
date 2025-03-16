@@ -6,6 +6,8 @@ from pymongo.errors import AutoReconnect, OperationFailure
 import pathlib
 import re
 from typing import Optional
+import os
+import time
 
 # Increase timeout to 10 minutes (600 seconds)
 dagger.Config(timeout=600)
@@ -531,16 +533,7 @@ class Qaextractor:
     @function
     async def run(self, mongodb_uri: Secret, credentials_json: Secret, source_dir: dagger.Directory, process_all: bool = False) -> str:
         """
-        Runs the extraction pipeline to process unprocessed documents in MongoDB
-        
-        Args:
-            mongodb_uri: MongoDB connection string as a Secret
-            credentials_json: Google Drive credentials as a Secret
-            source_dir: Directory containing the source code
-            process_all: Whether to process all levels, subjects, and years
-        
-        Returns:
-            JSON string with the results of the extraction process
+        Runs the extraction pipeline to process unprocessed documents in MongoDB one by one
         """
         
         # Get plaintext values
@@ -551,78 +544,209 @@ class Qaextractor:
         with open(find_unprocessed_path, "r") as f:
             find_unprocessed_script = f.read()
         
-        # Create a container for finding unprocessed documents
-        find_container = (
-            dag.container()
-            .from_("python:3.12-slim")
-            .with_exec(["pip", "install", "pymongo"])
-            .with_new_file("/app/find_unprocessed.py", contents=find_unprocessed_script)
-            .with_workdir("/app")
-            .with_env_variable("MONGODB_URI", mongodb_uri_value)
-        )
+        # Load the new split scripts
+        insert_questions_path = pathlib.Path(__file__).parent / "scripts" / "orchestration" / "insert_questions.py"
+        mark_processed_path = pathlib.Path(__file__).parent / "scripts" / "orchestration" / "mark_processed.py"
         
-        # Command to run the script
-        find_command = ["python", "find_unprocessed.py"]
+        with open(insert_questions_path, "r") as f:
+            insert_questions_script = f.read()
         
-        # Add the all argument if process_all is True
-        if process_all:
-            find_command.append("all")
+        with open(mark_processed_path, "r") as f:
+            mark_processed_script = f.read()
         
-        # Execute the find script
-        find_result_json = await find_container.with_exec(find_command).stdout()
-        find_result = json.loads(find_result_json)
+        # Track total processing statistics
+        all_results = []
+        total_processed = 0
+        total_success = 0
+        total_failures = 0
+        total_retries = 0
         
-        if "error" in find_result:
-            return json.dumps({
-                "success": False,
-                "error": find_result["error"]
-            })
+        # Add a set to track processed document IDs in this run
+        processed_doc_ids = set()
+
+        try:
+            # Debug the credentials to see if they're accessible
+            credentials_value = await credentials_json.plaintext()
+            print(f"DEBUG: Credentials available, length: {len(credentials_value)} chars")
+        except Exception as e:
+            print(f"ERROR: Could not access credentials: {str(e)}")
         
-        # Load the update script
-        update_extraction_path = pathlib.Path(__file__).parent / "scripts" / "orchestration" / "update_extraction.py"
-        with open(update_extraction_path, "r") as f:
-            update_extraction_script = f.read()
-        
-        # Process each document SEQUENTIALLY
-        results = []
-        for document in find_result["documents"]:
-            try:
-                # Process one document at a time - pass the filename from document info
-                extraction_result = await self.single(
-                    credentials_json, 
-                    document["FileID"], 
-                    document.get("FileName", f"document_{document['_id']}")
-                )
-                
-                # Update MongoDB with the result
-                update_container = (
-                    dag.container()
-                    .from_("python:3.12-slim")
-                    .with_exec(["pip", "install", "pymongo"])
-                    .with_new_file("/app/update_extraction.py", contents=update_extraction_script)
-                    .with_workdir("/app")
-                    .with_env_variable("MONGODB_URI", mongodb_uri_value)
-                    .with_exec(["python", "update_extraction.py", document["_id"], extraction_result])
-                )
-                
-                # Get the update result
-                update_result_json = await update_container.stdout()
-                update_result = json.loads(update_result_json)
-                
-                results.append(update_result)
-            except Exception as e:
-                # Handle exceptions for each document individually
-                error_message = f"Error processing document {document['_id']}: {str(e)}"
-                results.append({
+        # Process documents one by one until no more are found
+        while True:
+            print(f"Finding next unprocessed document (processed so far: {total_processed})...")
+            
+            # Create a container for finding documents using skip
+            find_container = (
+                dag.container()
+                .from_("python:3.12-slim")
+                .with_exec(["pip", "install", "pymongo"])
+                .with_new_file("/app/find_unprocessed.py", contents=find_unprocessed_script)
+                .with_workdir("/app")
+                .with_env_variable("MONGODB_URI", mongodb_uri_value)
+            )
+            
+            # Command to run the script with skip parameter
+            find_command = ["python", "find_unprocessed.py"]
+            
+            # Add the all argument if process_all is True
+            if process_all:
+                find_command.append("all")
+            
+            # Add the skip parameter based on documents processed so far
+            find_command.extend(["--skip", str(total_processed)])
+            
+            # Execute the find script
+            find_result_json = await find_container.with_exec(find_command).stdout()
+            find_result = json.loads(find_result_json)
+            
+            if "error" in find_result:
+                return json.dumps({
                     "success": False,
-                    "document_id": document["_id"],
-                    "error": error_message
+                    "error": find_result["error"]
                 })
+            
+            # Check if we have documents to process
+            if not find_result["documents"]:
+                print("No more unprocessed documents found.")
+                break
+            
+            # Process each document returned
+            for document in find_result["documents"]:
+                doc_id = document["_id"]
+                
+                # Skip documents we've already processed in this run
+                if doc_id in processed_doc_ids:
+                    print(f"Document {doc_id} was already processed in this run, skipping...")
+                    continue
+                
+                print(f"Processing document {doc_id}, file ID: {document['FileID']}")
+                
+                # Process this document
+                try:
+                    # Extract data from the document
+                    extraction_result = await self.single(
+                        credentials_json, 
+                        document["FileID"], 
+                        document.get("FileName", f"document_{doc_id}")
+                    )
+                    print(f"DEBUG: Extraction result type: {type(extraction_result)}, length: {len(extraction_result) if isinstance(extraction_result, str) else 'not a string'}")
+                    print(f"DEBUG: First 100 chars of extraction result: {extraction_result[:100]}")
+                    print(f"DEBUG: Last 100 chars of extraction result: {extraction_result[-100:] if len(extraction_result) > 100 else extraction_result}")
+
+                    # Validate JSON and show specific error info
+                    try:
+                        parsed = json.loads(extraction_result)
+                        print(f"DEBUG: Successfully parsed extraction JSON with {len(parsed.get('extracted_questions', []))} questions")
+                        print(f"DEBUG: JSON structure keys: {list(parsed.keys())}")
+                    except json.JSONDecodeError as e:
+                        print(f"DEBUG: CRITICAL JSON ERROR: {str(e)}")
+                        error_position = e.pos
+                        context_start = max(0, error_position - 50)
+                        context_end = min(len(extraction_result), error_position + 50)
+                        error_context = extraction_result[context_start:context_end]
+                        print(f"DEBUG: Error context (position {error_position}): {repr(error_context)}")
+                        print(f"DEBUG: Character at error position: {repr(extraction_result[error_position:error_position+1]) if error_position < len(extraction_result) else 'EOF'}")
+                    
+                    # Before insert container creation
+                    print(f"DEBUG: Creating container with file of size {len(extraction_result)} bytes")
+                    print(f"DEBUG: Writing extraction result to file in container...")
+
+                    # Count JSON objects to verify integrity
+                    try:
+                        json_obj = json.loads(extraction_result)
+                        num_questions = len(json_obj.get("extracted_questions", []))
+                        print(f"DEBUG: JSON contains {num_questions} questions")
+                    except Exception as e:
+                        print(f"DEBUG: Failed to count JSON objects: {str(e)}")
+                    
+                    # FIRST: Insert the extracted questions into the database
+                    insert_container = (
+                        dag.container()
+                        .from_("python:3.12-slim")
+                        .with_exec(["pip", "install", "pymongo"])
+                        .with_new_file("/app/insert_questions.py", contents=insert_questions_script)
+                        .with_workdir("/app")
+                        .with_env_variable("MONGODB_URI", mongodb_uri_value)
+                        .with_new_file("/app/extraction_data.json", contents=extraction_result)
+                        # Run verification as a SEPARATE command
+                        .with_exec(["sh", "-c", "echo 'FILE CONTENTS:' && cat /app/extraction_data.json | head -10"])
+                        # Then run the script in another command
+                        .with_exec(["python", "insert_questions.py", doc_id, "/app/extraction_data.json", "--file"])
+                    )
+                    
+                    # Get the insert result
+                    insert_result_json = await insert_container.stdout()
+                    print(f"DEBUG: Raw insert_result_json: {repr(insert_result_json)}")  # This will show the actual string including any whitespace or special characters
+                    try:
+                        insert_result = json.loads(insert_result_json)
+                    except json.JSONDecodeError as e:
+                        print(f"DEBUG: JSON decode error: {str(e)}")
+                        print(f"DEBUG: First 100 chars of raw result: {repr(insert_result_json[:100])}")
+                        # Continue with error handling
+                    
+                    if insert_result.get("success", False):
+                        print(f"SUCCESS: Inserted {insert_result.get('total_questions', 0)} questions for document {doc_id}")
+                        
+                        # SECOND: Mark the document as processed
+                        extraction_id = insert_result.get("extraction_id", "")
+                        total_questions = insert_result.get("total_questions", 0)
+                        
+                        mark_container = (
+                            dag.container()
+                            .from_("python:3.12-slim")
+                            .with_exec(["pip", "install", "pymongo"])
+                            .with_new_file("/app/mark_processed.py", contents=mark_processed_script)
+                            .with_workdir("/app")
+                            .with_env_variable("MONGODB_URI", mongodb_uri_value)
+                            .with_exec(["python", "mark_processed.py", doc_id, extraction_id, str(total_questions)])
+                        )
+                        
+                        # Get the mark result
+                        mark_result_json = await mark_container.stdout()
+                        mark_result = json.loads(mark_result_json)
+                        
+                        if mark_result.get("success", False):
+                            print(f"SUCCESS: Document {doc_id} marked as processed")
+                            total_success += 1
+                            
+                            # Combine results for reporting
+                            combined_result = {
+                                "success": True,
+                                "document_id": doc_id,
+                                "total_questions": total_questions,
+                                "extraction_id": extraction_id
+                            }
+                            all_results.append(combined_result)
+                        else:
+                            print(f"WARNING: Failed to mark document {doc_id} as processed: {mark_result.get('error', 'Unknown error')}")
+                            total_failures += 1
+                            all_results.append(mark_result)
+                    else:
+                        print(f"WARNING: Failed to insert questions for document {doc_id}: {insert_result.get('error', 'Unknown error')}")
+                        total_failures += 1
+                        
+                    # After successfully processing a document, add its ID to our set
+                    processed_doc_ids.add(doc_id)
+                    total_processed += 1
+                    time.sleep(2)  # Keep the delay for safety
+                    
+                except Exception as e:
+                    error_message = f"Error processing document {doc_id}: {str(e)}"
+                    print(f"ERROR: {error_message}")
+                    all_results.append({
+                        "success": False,
+                        "document_id": doc_id,
+                        "error": error_message
+                    })
+                    total_failures += 1
         
-        # Return the results
+        # Return the overall results
         return json.dumps({
             "success": True,
-            "processed_count": len(results),
-            "results": results
+            "processed_count": total_processed,
+            "success_count": total_success,
+            "failure_count": total_failures,
+            "retry_count": total_retries,
+            "results": all_results
         })
             

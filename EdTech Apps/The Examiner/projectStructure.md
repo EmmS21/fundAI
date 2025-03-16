@@ -18,7 +18,7 @@ exam-assistant/
 │   │   │
 │   │   ├── queue_manager.py           # Enhanced with batch processing
 │   │   └── firebase/
-│   │       └── client.py              # Enhanced with batch operations
+│   │       └── client.py              # Enhanced with anonymous authentication
 │   │
 │   ├── ui/
 │   │   └── components/
@@ -26,7 +26,7 @@ exam-assistant/
 │   │       │   └── onboarding_window.py  
 │   │       │
 │   │       └── profile/
-│   │           ├── profile_info_widget.py 
+│   │           ├── profile_info_widget.py # Updated to display country flags
 │   │           ├── subjects/
 │   │           │   ├── subject_selector.py 
 │   │           │   └── subject_card.py     
@@ -37,6 +37,7 @@ exam-assistant/
 │   ├── utils/
 │   │   ├── db.py              
 │   │   ├── constants.py        
+│   │   ├── country_flags.py    # NEW: Maps country names to flag emojis
 │   │   └── hardware_identifier.py  # For generating unique device IDs
 │   │
 │   └── config/

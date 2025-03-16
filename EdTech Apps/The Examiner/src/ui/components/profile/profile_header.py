@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QColor, QPixmap, QPainter, QTransform
 from src.utils.constants import PRIMARY_COLOR
 from src.data.database.operations import UserOperations
+from src.utils.country_flags import get_country_flag
 
 class ProfileHeader(QWidget):
     def __init__(self, user_data):
@@ -138,8 +139,14 @@ class ProfileHeader(QWidget):
             }
         """)
         
-        # Location text
-        location = f"{self.user_data.city}, {self.user_data.country}" if self.user_data.city else self.user_data.country
+        # Get flag emoji for country
+        country_with_flag = self.user_data.country
+        if self.user_data.country:
+            flag_emoji = get_country_flag(self.user_data.country)
+            if flag_emoji:
+                country_with_flag = f"{self.user_data.country} {flag_emoji}"
+        
+        location = f"{self.user_data.city}, {country_with_flag}" if self.user_data.city else country_with_flag
         location_label = QLabel(location)
         location_label.setStyleSheet("""
             QLabel {
