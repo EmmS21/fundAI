@@ -17,42 +17,34 @@ from pdf2image import convert_from_path
 import cv2
 
 def upload_image_to_imgbb(image_data, image_name):
-    """
-    Upload an image to ImgBB and return the URL.
+    """Upload an image to ImgBB"""
+    print(f"        Uploading image {image_name} ({len(image_data)} bytes)...")
     
-    Args:
-        image_data (bytes): Raw image data
-        image_name (str): Name for the image
-        
-    Returns:
-        str: URL to the uploaded image or None if upload failed
-    """
     try:
-        # ImgBB API key - you'll need to get a free API key from https://api.imgbb.com/
-        api_key = "9bb6bd78cb6c03a2dfddce20b69cc45c"  # Replace with your actual API key
-        
-        # Encode the image data
+        api_key = "9bb6bd78cb6c03a2dfddce20b69cc45c"
+        print(f"        Encoding image data to base64...")
         base64_image = base64.b64encode(image_data).decode('utf-8')
         
-        # Prepare the payload
         payload = {
             'key': api_key,
             'image': base64_image,
             'name': image_name
         }
         
-        # Make the request
+        print(f"        Sending request to ImgBB API...")
         response = requests.post('https://api.imgbb.com/1/upload', payload)
+        print(f"        ImgBB response status: {response.status_code}")
         
-        # Check if the request was successful
         if response.status_code == 200:
             result = response.json()
             if result['success']:
+                print(f"        Upload successful: {result['data']['url']}")
                 return result['data']['url']
         
+        print(f"        Upload failed")
         return None
     except Exception as e:
-        print(f"Error uploading image: {str(e)}")
+        print(f"        ERROR uploading image: {str(e)}")
         return None
 
 def upload_pil_image_to_imgbb(pil_image, image_name):
