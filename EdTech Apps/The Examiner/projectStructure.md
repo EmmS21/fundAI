@@ -16,6 +16,10 @@ exam-assistant/
 │   │   │   ├── sync_service.py        # Updated to handle question syncing
 │   │   │   └── network_monitor.py     # Monitors network connectivity
 │   │   │
+│   │   ├── mongodb/                   # NEW: MongoDB integration
+│   │   │   ├── __init__.py            # Module initialization
+│   │   │   └── client.py              # MongoDBClient implementation
+│   │   │
 │   │   ├── queue_manager.py           # Enhanced with batch processing
 │   │   └── firebase/
 │   │       └── client.py              # Enhanced with anonymous authentication
