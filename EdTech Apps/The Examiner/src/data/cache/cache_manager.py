@@ -17,6 +17,7 @@ from src.core.network.monitor import NetworkMonitor, NetworkStatus
 from src.core.mongodb.client import MongoDBClient
 from src.core.queue_manager import QueuePriority
 from src.data.database.models import Base as BaseModel
+from src.core.firebase.client import FirebaseClient
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,7 @@ class CacheManager:
             logger.info("Cache database initialized")
         except sqlite3.Error as e:
             logger.error(f"Database initialization error: {e}")
-            
+        
     def start(self):
         """Start the cache manager background thread"""
         if self.thread and self.thread.is_alive():
@@ -123,14 +124,14 @@ class CacheManager:
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
         logger.info("Cache Manager started")
-    
+        
     def stop(self):
         """Stop the cache manager background thread"""
         self.running = False
         if self.thread:
             self.thread.join(timeout=1.0)
         logger.info("Cache Manager stopped")
-    
+            
     def _run(self):
         """Main loop checking for updates and managing cache"""
         last_check_time = datetime.now() - timedelta(hours=2)  # Force initial check
@@ -165,11 +166,16 @@ class CacheManager:
     def _check_for_updates(self):
         """Check for new content that needs to be cached"""
         try:
+            # Check subscription status first
+            if not self._verify_subscription():
+                print("Skipping content update - no active subscription")
+                return
+                
             # Get user subjects
             with get_db_session() as session:
                 user = UserOperations.get_current_user()
                 if not user:
-                    logger.warning("No user found, skipping cache update")
+                    print("No user found, skipping cache update")
                     return
                 
                 user_subjects = UserOperations.get_user_subjects(user.id)
@@ -192,9 +198,30 @@ class CacheManager:
                     # If we have fewer than threshold, cache more
                     if cached_count < 50:  # Aim for at least 50 questions per subject/level
                         self._queue_questions_for_caching(subject_name, level_key, mongo_level)
-        
+                
         except Exception as e:
-            logger.error(f"Error checking for updates: {e}")
+            print(f"Error checking for updates: {e}")
+    
+    def _verify_subscription(self) -> bool:
+        """
+        Verify user has active subscription
+        
+        Returns:
+            bool: True if subscription is active, False otherwise
+        """
+        try:
+            # Get subscription status
+            firebase = FirebaseClient()
+            subscription = firebase.check_subscription_status()
+            
+            return subscription.get('is_active', False)
+            
+        except Exception as e:
+            logger.error(f"Error verifying subscription: {e}")
+            
+            # For exceptions during verification, allow content access
+            # (better user experience to show content than to block incorrectly)
+            return True
     
     def _convert_level_to_mongo_format(self, level_key: str) -> str:
         """Convert internal level key to MongoDB level format"""
@@ -399,6 +426,10 @@ class CacheManager:
         Returns:
             Question data or None if not found
         """
+        # For cached content, we check subscription but don't strictly enforce it
+        # This allows users to access content they've already downloaded
+        subscription_active = self._verify_subscription()
+        
         try:
             # Create subject path
             subject_path = os.path.join(self.QUESTIONS_DIR, self._safe_filename(subject), level)
@@ -442,6 +473,10 @@ class CacheManager:
                 
             # Resolve asset paths
             self._resolve_asset_paths(question_data)
+                
+            # If we found content but subscription is expired, add warning
+            if not subscription_active and question_data:
+                question_data['subscription_expired'] = True
                 
             return question_data
             
@@ -745,10 +780,10 @@ class CacheManager:
                 if result:
                     data, timestamp = result
                     return {
-                        'data': json.loads(data),
-                        'status': self._get_status(timestamp),
-                        'timestamp': timestamp
-                    }
+                                        'data': json.loads(data),
+                                'status': self._get_status(timestamp),
+                                'timestamp': timestamp
+                            }
                 return None
             except sqlite3.Error as e:
                 logger.error(f"Error retrieving from cache: {e}")

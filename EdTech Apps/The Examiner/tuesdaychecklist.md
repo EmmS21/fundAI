@@ -44,16 +44,34 @@
 - [x] Enhance `NetworkMonitor` for more robust detection
   - [x] Fix method reference (switched from status attribute to get_status() method)
   - [x] Implement missing `status_changed` signal for component communication
-  - [ ] Add validation check with lightweight request
+  - [x] Add validation check with lightweight request
   - [x] Implement "settling time" to prevent rapid toggling
-  - [ ] Add connection quality detection (not just binary online/offline)
+  - [x] Add connection quality detection (not just binary online/offline)
 
-- [ ] Create network-aware fetching strategy
-  - [ ] Adjust batch sizes based on connection quality
-  - [ ] Implement bandwidth-aware downloading
-  - [ ] Add automatic retry scheduling for offline periods
+- [x] Create network-aware fetching strategy
+  - [x] Adjust batch sizes based on connection quality
+  - [x] Implement adaptive retry intervals with exponential backoff
+  - [x] Add automatic retry scheduling for offline periods
 
-## 5. User Interface Updates
+## 5. Subscription Verification System
+
+- [x] Implement Firebase subscription status checking
+  - [x] Create method to verify subscription status in `FirebaseClient`
+  - [x] Add subscription model to user data structure
+  - [x] Implement caching of subscription status (24-hour validity)
+  - [x] Create offline grace period for subscription verification
+
+- [ ] Integrate subscription checks with MongoDB access
+  - [ ] Add verification step before providing MongoDB credentials
+  - [ ] Implement access control in `MongoDBClient` methods
+  - [ ] Create error handling for expired subscriptions
+
+- [ ] Add subscription status awareness to `CacheManager`
+  - [ ] Modify content fetching based on subscription status
+  - [ ] Implement graceful handling of expired subscriptions
+  - [ ] Add alerts for subscription expiration
+
+## 6. User Interface Updates
 
 - [ ] Add cache status indicators
   - [ ] Create visual indicators for cache freshness
@@ -65,7 +83,12 @@
   - [ ] Create interface for managing storage usage
   - [ ] Add troubleshooting tools for connection issues
 
-## 6. Testing & Validation
+- [x] Add subscription status UI
+  - [x] Create simple indicator showing current subscription status
+  - [x] Add expiration alerts when subscription is ending soon
+  - [x] Implement notification for expired subscriptions
+
+## 7. Testing & Validation
 
 - [ ] Create test suite for MongoDB connectivity
   - [ ] Test connection with various network conditions
@@ -77,19 +100,26 @@
   - [ ] Validate sync queue persistence
   - [ ] Measure performance with large question sets
 
-## 7. Documentation
+- [ ] Test subscription verification
+  - [ ] Verify correct handling of active subscriptions
+  - [ ] Test expired subscription scenarios
+  - [ ] Validate offline grace period functionality
+
+## 8. Documentation
 
 - [ ] Update code documentation
   - [ ] Document MongoDB schema expectations
   - [ ] Add comments for credential security measures
   - [ ] Document network detection approach
+  - [ ] Document subscription verification workflow
 
 - [ ] Create user documentation
   - [ ] Explain first-run MongoDB setup
   - [ ] Document offline capabilities
   - [ ] Add troubleshooting guide
+  - [ ] Include subscription management information
 
-## 8. Deployment Considerations
+## 9. Deployment Considerations
 
 - [ ] Finalize MongoDB schema requirements
   - [ ] Document required fields and relationships
@@ -100,3 +130,8 @@
   - [ ] Test credential storage on various Linux distributions
   - [ ] Verify network detection on all target platforms
   - [ ] Ensure MongoDB driver compatibility
+
+- [ ] Create subscription management tools
+  - [ ] Design simple admin interface for subscription management
+  - [ ] Implement secure method for updating subscription status
+  - [ ] Document subscription management workflow

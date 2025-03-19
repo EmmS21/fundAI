@@ -3,9 +3,45 @@ import re
 import uuid
 import platform
 import subprocess
+import json
+from pathlib import Path
 from typing import Optional, Tuple
 
 class HardwareIdentifier:
+    """Manages hardware-specific identification"""
+    
+    IDENTIFIER_FILE = ".hardware_id"
+    
+    @classmethod
+    def get_or_create_hardware_id(cls) -> str:
+        """Get existing hardware ID or create new one"""
+        try:
+            # Try to read existing ID
+            if os.path.exists(cls.IDENTIFIER_FILE):
+                with open(cls.IDENTIFIER_FILE, 'r') as f:
+                    data = json.load(f)
+                    if data.get('hardware_id'):
+                        return data['hardware_id']
+            
+            # Generate new ID if none exists
+            hardware_id = str(uuid.uuid4())
+            
+            # Save to file
+            with open(cls.IDENTIFIER_FILE, 'w') as f:
+                json.dump({'hardware_id': hardware_id}, f)
+            
+            return hardware_id
+            
+        except Exception as e:
+            print(f"Error managing hardware ID: {e}")
+            # Fallback to temporary ID if file operations fail
+            return str(uuid.uuid4())
+    
+    @classmethod
+    def get_hardware_id(cls) -> str:
+        """Get the hardware ID, creating if necessary"""
+        return cls.get_or_create_hardware_id()
+
     @staticmethod
     def get_os_type() -> str:
         """Get current operating system type"""
@@ -87,7 +123,7 @@ class HardwareIdentifier:
         return str(uuid.uuid5(uuid.NAMESPACE_DNS, '-'.join(system_info)))
 
     @classmethod
-    def get_hardware_id(cls) -> Tuple[str, str, str]:
+    def get_hardware_id_tuple(cls) -> Tuple[str, str, str]:
         """
         Get hardware identifier for current system
         Returns: (os_type, raw_identifier, normalized_identifier)

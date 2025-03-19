@@ -15,6 +15,10 @@ from .credential_manager import CredentialManager
 # Set up logging
 logger = logging.getLogger(__name__)
 
+class SubscriptionRequiredError(Exception):
+    """Error raised when a subscription is required but user isn't subscribed"""
+    pass
+
 class MongoDBClient:
     """
     Client for connecting to MongoDB and retrieving exam questions.
@@ -153,16 +157,30 @@ class MongoDBClient:
     @backoff.on_exception(backoff.expo, 
                          (ConnectionFailure, ServerSelectionTimeoutError),
                          max_tries=5)
-    def connect(self) -> bool:
+    def connect(self, force=False) -> bool:
         """
-        Establish connection to MongoDB with retry logic.
+        Connect to MongoDB
         
+        Args:
+            force: If True, bypass subscription check
+            
         Returns:
-            bool: True if connection successful, False otherwise
+            bool: True if connected, False otherwise
+            
+        Raises:
+            SubscriptionRequiredError: If subscription check fails
         """
-        if self.connected and self.client:
+        # If we're already connected and not forcing, return early
+        if self.connected and not force:
             return True
             
+        # Check subscription status (unless forcing)
+        if not force:
+            is_subscribed = self._check_subscription()
+            if not is_subscribed:
+                logger.warning("Subscription check failed - denying MongoDB access")
+                raise SubscriptionRequiredError("Active subscription required to access content")
+        
         try:
             # Check if we have credentials
             if not self.connection_uri:
@@ -613,4 +631,27 @@ class MongoDBClient:
             
         except Exception as e:
             logger.error(f"Error retrieving topics for subject: {e}")
-            return [] 
+            return []
+    
+    def _check_subscription(self) -> bool:
+        """
+        Check if user has active subscription
+        
+        Returns:
+            bool: True if subscription is active, False otherwise
+        """
+        try:
+            from ..firebase.client import FirebaseClient
+            
+            # Get subscription status from Firebase
+            firebase = FirebaseClient()
+            subscription = firebase.check_subscription_status()
+            
+            # Check if subscription is active
+            return subscription.get('is_active', False)
+            
+        except Exception as e:
+            logger.error(f"Error checking subscription status: {e}")
+            
+            # For exceptions, we'll be conservative and deny access
+            return False 

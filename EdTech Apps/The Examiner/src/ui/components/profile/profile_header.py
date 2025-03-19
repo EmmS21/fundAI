@@ -1,10 +1,11 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                               QPushButton, QFileDialog)
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QTimer, QRunnable, QThreadPool, QMetaObject, Q_ARG
 from PySide6.QtGui import QColor, QPixmap, QPainter, QTransform
 from src.utils.constants import PRIMARY_COLOR
 from src.data.database.operations import UserOperations
 from src.utils.country_flags import get_country_flag
+from src.core.firebase.client import FirebaseClient
 
 class ProfileHeader(QWidget):
     def __init__(self, user_data):
@@ -163,6 +164,105 @@ class ProfileHeader(QWidget):
         layout.addWidget(name_label)
         layout.addWidget(location_container)
         
+        # Add subscription status indicator
+        self._add_subscription_indicator(layout)
+        
+    def _add_subscription_indicator(self, parent_layout):
+        """Add subscription status indicator to the header"""
+        try:
+            # Create container widget
+            subscription_container = QWidget()
+            subscription_layout = QHBoxLayout(subscription_container)
+            subscription_layout.setContentsMargins(5, 5, 5, 5)
+            
+            # Create status label
+            status_label = QLabel("Subscription:")
+            status_label.setStyleSheet("font-weight: bold;")
+            
+            # Create status indicator
+            self.subscription_status = QLabel("Checking...")
+            self.subscription_status.setStyleSheet("color: #666;")
+            
+            # Add to layout
+            subscription_layout.addWidget(status_label)
+            subscription_layout.addWidget(self.subscription_status)
+            subscription_layout.addStretch()
+            
+            # Add to parent layout
+            parent_layout.addWidget(subscription_container, alignment=Qt.AlignRight)
+            
+            # Check subscription status in background
+            QTimer.singleShot(500, self._update_subscription_status)
+            
+        except Exception as e:
+            print(f"Error adding subscription indicator: {e}")
+    
+    def _update_subscription_status(self):
+        """Update the subscription status indicator"""
+        try:
+            # Get status in background thread to avoid UI freezing
+            class SubscriptionChecker(QRunnable):
+                def __init__(self, status_label):
+                    super().__init__()
+                    self.status_label = status_label
+                    
+                def run(self):
+                    try:
+                        firebase = FirebaseClient()
+                        status = firebase.check_subscription_status()
+                        
+                        # Pass result to main thread
+                        QMetaObject.invokeMethod(
+                            self.status_label, 
+                            "setText",
+                            Qt.QueuedConnection,
+                            Q_ARG(str, self._format_status(status))
+                        )
+                        QMetaObject.invokeMethod(
+                            self.status_label, 
+                            "setStyleSheet",
+                            Qt.QueuedConnection,
+                            Q_ARG(str, self._get_status_style(status))
+                        )
+                    except Exception as e:
+                        print(f"Error in subscription checker: {e}")
+                        QMetaObject.invokeMethod(
+                            self.status_label,
+                            "setText",
+                            Qt.QueuedConnection,
+                            Q_ARG(str, "Unknown")
+                        )
+                        QMetaObject.invokeMethod(
+                            self.status_label,
+                            "setStyleSheet",
+                            Qt.QueuedConnection,
+                            Q_ARG(str, "color: orange;")
+                        )
+                        
+                def _format_status(self, status):
+                    """Format subscription status for display"""
+                    if status.get('is_active', False):
+                        subscription_type = status.get('type', 'active').capitalize()
+                        return f"Active ({subscription_type})"
+                    else:
+                        return "Inactive"
+                        
+                def _get_status_style(self, status):
+                    """Get style for subscription status"""
+                    if status.get('is_active', False):
+                        return "color: green; font-weight: bold;"
+                    else:
+                        return "color: red; font-weight: bold;"
+            
+            # Start background check
+            checker = SubscriptionChecker(self.subscription_status)
+            QThreadPool.globalInstance().start(checker)
+            
+        except Exception as e:
+            print(f"Error updating subscription status: {e}")
+            self.subscription_status.setText("Unknown")
+            self.subscription_status.setStyleSheet("color: orange;")
+
     def _handle_image_upload(self):
         file_name, _ = QFileDialog.getOpenFileName(
             self,

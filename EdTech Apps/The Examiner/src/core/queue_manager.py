@@ -36,7 +36,7 @@ class QueueItem:
         self.retry_count = 0
         self.max_retries = 3
         self.last_attempt = None
-        self.batch_id = data.get('batch_id', None)  # For grouping related items
+        self.batch_id = data.get('batch_id', None) 
 
     def increment_attempts(self):
         """Increment the number of sync attempts"""
