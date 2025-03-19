@@ -7,421 +7,901 @@ import os
 import json
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
+import uuid
+import requests
+from PIL import Image
+import hashlib
+from src.core import services
+from src.core.network.monitor import NetworkMonitor, NetworkStatus
+from src.core.mongodb.client import MongoDBClient
+from src.core.queue_manager import QueuePriority
+from src.data.database.models import Base as BaseModel
 
 logger = logging.getLogger(__name__)
+
+class CacheStatus:
+    """Enumeration of cache statuses"""
+    FRESH = "fresh"       
+    STALE = "stale"        
+    EXPIRED = "expired"   
+    INVALID = "invalid"   
 
 class CacheManager:
     _instance = None
     
+    # Storage paths
+    CACHE_DIR = os.path.join("src", "data", "cache")
+    METADATA_DIR = os.path.join(CACHE_DIR, "metadata")
+    ASSETS_DIR = os.path.join(CACHE_DIR, "assets")
+    QUESTIONS_DIR = os.path.join(CACHE_DIR, "questions")
+    
+    # Cache settings
+    MAX_CACHE_SIZE_MB = 500  
+    CHECK_INTERVAL = 3600    
+    PAPERS_PER_SUBJECT = 5   
+    
+    DB_FILE = "cache.db"
+    
     def __new__(cls):
+        """Singleton pattern to ensure only one instance exists"""
         if cls._instance is None:
             cls._instance = super(CacheManager, cls).__new__(cls)
-            cls._instance._initialized = False
+            cls._instance.initialized = False
         return cls._instance
     
     def __init__(self):
-        if self._initialized:
+        """Initialize the cache manager"""
+        if self.initialized:
             return
             
-        self._initialized = True
-        self._running = False
-        self._thread = None
-        self._check_interval = 3600  # Check every hour
-        self._papers_per_subject = 5  # Target papers per subject/level
-        self._max_completed_papers = 10  # Max completed papers to keep
-        self.db_path = "student_profile.db"
+        # Create cache directories if they don't exist
+        os.makedirs(self.METADATA_DIR, exist_ok=True)
+        os.makedirs(self.ASSETS_DIR, exist_ok=True)
+        os.makedirs(self.QUESTIONS_DIR, exist_ok=True)
+        
+        # Initialize MongoDB client
+        self.mongodb_client = MongoDBClient()
+        
+        # Network monitor for connection status
+        self.network_monitor = NetworkMonitor()
+        
+        # Thread control
+        self.running = False
+        self.thread = None
+        
+        # Ensure required tables exist
         self._ensure_tables()
         
+        # Initialize database connection and structure
+        self.db_path = os.path.join(os.path.dirname(__file__), self.DB_FILE)
+        self.conn = None
+        self.lock = threading.RLock()  # Reentrant lock for thread safety
+        
+        # Set default TTL values (in seconds)
+        self.ttl_fresh = 3600  # 1 hour
+        self.ttl_stale = 86400  # 24 hours
+        
+        # Register in services registry
+        services.cache_manager = self
+        
+        self._initialize_db()
+        self.initialized = True
+        logger.info("Cache Manager initialized")
+    
+    def _initialize_db(self):
+        """Initialize the SQLite database"""
+        try:
+            self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            cursor = self.conn.cursor()
+            
+            # Create the cache table if it doesn't exist
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS cache (
+                key TEXT PRIMARY KEY,
+                data TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                sync_status TEXT DEFAULT 'synced'
+            )
+            ''')
+            
+            # Create index for faster lookups
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON cache(timestamp)')
+            
+            self.conn.commit()
+            logger.info("Cache database initialized")
+        except sqlite3.Error as e:
+            logger.error(f"Database initialization error: {e}")
+            
     def start(self):
         """Start the cache manager background thread"""
-        if self._running:
+        if self.thread and self.thread.is_alive():
+            logger.info("Cache Manager already running")
             return
             
-        self._running = True
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-        
+        self.running = True
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+        logger.info("Cache Manager started")
+    
     def stop(self):
         """Stop the cache manager background thread"""
-        self._running = False
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=1.0)
-            
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=1.0)
+        logger.info("Cache Manager stopped")
+    
     def _run(self):
-        """Main loop for cache management"""
-        while self._running:
+        """Main loop checking for updates and managing cache"""
+        last_check_time = datetime.now() - timedelta(hours=2)  # Force initial check
+        
+        while self.running:
             try:
-                # Get current user
-                user = UserOperations.get_current_user()
-                if user:
-                    # Clean up cache if needed
-                    PaperCacheOperations.cleanup_cache()
-                    
-                    # Invalidate completed papers
-                    PaperCacheOperations.invalidate_completed_papers(
-                        user.id, 
-                        self._max_completed_papers
-                    )
-                    
-                    # Check for papers to download
-                    papers_to_download = PaperCacheOperations.get_papers_to_download(
-                        user.id,
-                        self._papers_per_subject
-                    )
-                    
-                    # Queue papers for download (in a real implementation, this would
-                    # connect to a download service or API)
-                    if papers_to_download:
-                        self._queue_paper_downloads(papers_to_download)
+                # Check if it's time to look for updates
+                if (datetime.now() - last_check_time).total_seconds() >= self.CHECK_INTERVAL:
+                    # Only check for updates if we're online and MongoDB credentials are configured
+                    if (self.network_monitor.get_status() == NetworkStatus.ONLINE and 
+                            self.mongodb_client.has_credentials()):
+                        
+                        # Connect to MongoDB if not already connected
+                        if not self.mongodb_client.connected:
+                            self.mongodb_client.connect()
+                        
+                        if self.mongodb_client.connected:
+                            logger.info("Checking for new content to cache")
+                            self._check_for_updates()
+                            last_check_time = datetime.now()
+                
+                # Cleanup cache if it's too large
+                self._cleanup_if_needed()
+                
+                # Sleep for a bit before checking again
+                time.sleep(60)  # Check every minute
                 
             except Exception as e:
-                print(f"Error in cache manager: {e}")
-                
-            # Sleep until next check
-            time.sleep(self._check_interval)
+                logger.error(f"Error in cache manager background thread: {e}")
+                time.sleep(300)  # Longer delay after error
     
-    def _queue_paper_downloads(self, papers: List[Dict]):
-        """Queue papers for download (placeholder)"""
-        # In a real implementation, this would connect to a download service
-        print(f"Queueing {len(papers)} papers for download:")
-        for paper in papers:
-            print(f"  - {paper['subject_name']} ({paper['level']}) Year: {paper['year']}")
-    
-    def mark_paper_completed(self, user_subject_id: int, year: int) -> bool:
-        """Mark a paper as completed and trigger cache check"""
-        result = PaperCacheOperations.mark_completed(user_subject_id, year)
-        
-        # If we successfully marked as completed, check if we need to invalidate
-        if result:
-            # Get user ID from user_subject_id
-            with get_db_session() as session:
-                from src.data.database.models import UserSubject
-                user_subject = session.query(UserSubject).get(user_subject_id)
-                if user_subject:
-                    PaperCacheOperations.invalidate_completed_papers(
-                        user_subject.user_id,
-                        self._max_completed_papers
-                    )
-        
-        return result
-    
-    def force_cache_check(self, user_id: int) -> Dict:
-        """Force an immediate cache check"""
-        result = {
-            'invalidated': [],
-            'to_download': []
-        }
-        
-        # Invalidate completed papers
-        result['invalidated'] = PaperCacheOperations.invalidate_completed_papers(
-            user_id,
-            self._max_completed_papers
-        )
-        
-        # Check for papers to download
-        result['to_download'] = PaperCacheOperations.get_papers_to_download(
-            user_id,
-            self._papers_per_subject
-        )
-        
-        return result
-
-    def _ensure_tables(self):
-        """Ensure the necessary tables exist in the database"""
+    def _check_for_updates(self):
+        """Check for new content that needs to be cached"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            # Create questions table if it doesn't exist
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS cached_questions (
-                question_id TEXT PRIMARY KEY,
-                paper_id TEXT NOT NULL,
-                paper_year INTEGER NOT NULL,
-                paper_number TEXT NOT NULL,
-                subject TEXT NOT NULL,
-                level TEXT NOT NULL,
-                topic TEXT,
-                content TEXT NOT NULL,
-                marks INTEGER NOT NULL,
-                cached_at TIMESTAMP NOT NULL,
-                last_accessed TIMESTAMP NOT NULL
-            )
-            ''')
-            
-            # Create question_assets table for images, tables, etc.
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS question_assets (
-                asset_id TEXT PRIMARY KEY,
-                question_id TEXT NOT NULL,
-                asset_type TEXT NOT NULL,
-                content BLOB NOT NULL,
-                cached_at TIMESTAMP NOT NULL,
-                FOREIGN KEY (question_id) REFERENCES cached_questions (question_id) ON DELETE CASCADE
-            )
-            ''')
-            
-            # Create paper_metadata table to track which papers we have
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS paper_metadata (
-                paper_id TEXT PRIMARY KEY,
-                paper_year INTEGER NOT NULL,
-                paper_number TEXT NOT NULL,
-                subject TEXT NOT NULL,
-                level TEXT NOT NULL,
-                total_questions INTEGER NOT NULL,
-                cached_questions INTEGER NOT NULL DEFAULT 0,
-                last_updated TIMESTAMP NOT NULL
-            )
-            ''')
-            
-            conn.commit()
-            conn.close()
+            # Get user subjects
+            with get_db_session() as session:
+                user = UserOperations.get_current_user()
+                if not user:
+                    logger.warning("No user found, skipping cache update")
+                    return
+                
+                user_subjects = UserOperations.get_user_subjects(user.id)
+                
+            # For each subject, check if we need to cache more questions
+            for subj in user_subjects:
+                subject_name = subj['name']
+                
+                # Check which levels are enabled
+                for level_key, enabled in subj['levels'].items():
+                    if not enabled:
+                        continue
+                    
+                    # Convert internal level key to MongoDB level format
+                    mongo_level = self._convert_level_to_mongo_format(level_key)
+                    
+                    # Get number of cached questions for this subject/level
+                    cached_count = self._get_cached_question_count(subject_name, level_key)
+                    
+                    # If we have fewer than threshold, cache more
+                    if cached_count < 50:  # Aim for at least 50 questions per subject/level
+                        self._queue_questions_for_caching(subject_name, level_key, mongo_level)
+        
         except Exception as e:
-            logger.error(f"Error ensuring tables: {e}")
+            logger.error(f"Error checking for updates: {e}")
     
-    def save_question(self, question_data: Dict[str, Any], assets: List[Dict[str, Any]] = None) -> bool:
+    def _convert_level_to_mongo_format(self, level_key: str) -> str:
+        """Convert internal level key to MongoDB level format"""
+        level_mapping = {
+            'grade_7': 'primary school',
+            'o_level': 'olevel',
+            'a_level': 'aslevel'
+        }
+        return level_mapping.get(level_key, level_key)
+    
+    def _get_cached_question_count(self, subject: str, level: str) -> int:
+        """Get count of cached questions for a subject and level"""
+        try:
+            # Query the questions directory for matching files
+            subject_dir = os.path.join(self.QUESTIONS_DIR, self._safe_filename(subject), level)
+            
+            if not os.path.exists(subject_dir):
+                return 0
+                
+            # Count question files
+            count = 0
+            for root, dirs, files in os.walk(subject_dir):
+                count += len([f for f in files if f.endswith('.json')])
+                
+            return count
+            
+        except Exception as e:
+            logger.error(f"Error counting cached questions: {e}")
+            return 0
+    
+    def _queue_questions_for_caching(self, subject: str, level_key: str, mongo_level: str):
+        """Queue questions for download and caching"""
+        try:
+            # Skip if we're not connected to MongoDB
+            if not self.mongodb_client.connected:
+                logger.warning("Not connected to MongoDB, skipping question download")
+                return
+                
+            # Get questions from MongoDB
+            questions = self.mongodb_client.get_questions_by_subject_level(
+                subject=subject,
+                level=mongo_level,
+                limit=30  # Fetch a batch of questions
+            )
+            
+            if not questions:
+                logger.info(f"No questions found for {subject} at {level_key} level")
+                return
+                
+            logger.info(f"Queueing {len(questions)} questions for {subject} at {level_key} level")
+            
+            # Save each question to cache
+            for question_doc in questions:
+                self.save_question_from_mongodb(question_doc, subject, level_key)
+                
+        except Exception as e:
+            logger.error(f"Error queueing questions: {e}")
+    
+    def save_question_from_mongodb(self, question_doc: Dict, subject: str, level: str) -> bool:
         """
-        Save a question and its assets to the cache
+        Save a MongoDB question document to the local cache.
         
         Args:
-            question_data: Dictionary containing question data
-            assets: List of dictionaries containing asset data (images, tables, etc.)
+            question_doc: The MongoDB document containing questions
+            subject: The subject name
+            level: The level key (grade_7, o_level, a_level)
             
         Returns:
-            bool: True if successful, False otherwise
+            bool: True if successful
         """
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            # Extract document ID
+            doc_id = question_doc.get('_id')
+            if not doc_id:
+                logger.error("Question document has no ID")
+                return False
+                
+            # Extract paper metadata
+            paper_meta = question_doc.get('paper_meta', {})
+            year = paper_meta.get('Year', 'unknown')
+            paper_number = paper_meta.get('Paper', {}).get('$numberInt', '1')
+            term = paper_meta.get('Term', 'unknown')
             
-            now = datetime.now().isoformat()
+            # Process each question in the document
+            questions_list = question_doc.get('questions', [])
+            if not questions_list:
+                logger.warning(f"No questions found in document {doc_id}")
+                return False
+                
+            # Create directory structure
+            subject_dir = os.path.join(self.QUESTIONS_DIR, self._safe_filename(subject), level, year)
+            os.makedirs(subject_dir, exist_ok=True)
             
-            # Insert or replace question
-            cursor.execute('''
-            INSERT OR REPLACE INTO cached_questions 
-            (question_id, paper_id, paper_year, paper_number, subject, level, topic, content, marks, cached_at, last_accessed)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                question_data['question_id'],
-                question_data['paper_id'],
-                question_data['paper_year'],
-                question_data['paper_number'],
-                question_data['subject'],
-                question_data['level'],
-                question_data.get('topic'),
-                json.dumps(question_data['content']),
-                question_data['marks'],
-                now,
-                now
-            ))
-            
-            # Update paper metadata
-            cursor.execute('''
-            INSERT OR IGNORE INTO paper_metadata
-            (paper_id, paper_year, paper_number, subject, level, total_questions, cached_questions, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-            ''', (
-                question_data['paper_id'],
-                question_data['paper_year'],
-                question_data['paper_number'],
-                question_data['subject'],
-                question_data['level'],
-                question_data.get('total_questions', 0),
-                now
-            ))
-            
-            # Increment cached_questions count for this paper
-            cursor.execute('''
-            UPDATE paper_metadata
-            SET cached_questions = cached_questions + 1,
-                last_updated = ?
-            WHERE paper_id = ? AND cached_questions < total_questions
-            ''', (now, question_data['paper_id']))
-            
-            # Save assets if provided
-            if assets:
-                for asset in assets:
-                    cursor.execute('''
-                    INSERT OR REPLACE INTO question_assets
-                    (asset_id, question_id, asset_type, content, cached_at)
-                    VALUES (?, ?, ?, ?, ?)
-                    ''', (
-                        asset['asset_id'],
-                        question_data['question_id'],
-                        asset['asset_type'],
-                        asset['content'],
-                        now
-                    ))
-            
-            conn.commit()
-            conn.close()
+            # Save each question
+            for q_item in questions_list:
+                question_number = q_item.get('question_number', {}).get('$numberInt', '0')
+                if not question_number:
+                    question_number = str(uuid.uuid4())[:8]  # Fallback ID if no number
+                
+                # Create filename
+                filename = f"{year}_paper{paper_number}_q{question_number}.json"
+                filepath = os.path.join(subject_dir, filename)
+                
+                # Save question data
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    # Add metadata to help with retrieval
+                    question_data = {
+                        'doc_id': doc_id,
+                        'subject': subject,
+                        'level': level,
+                        'year': year,
+                        'paper': paper_number,
+                        'term': term,
+                        'question_number': question_number,
+                        'data': q_item,
+                        'cached_at': datetime.now().isoformat()
+                    }
+                    json.dump(question_data, f, ensure_ascii=False, indent=2)
+                
+                # Process and save images/assets
+                self._save_question_assets(q_item, doc_id, subject, level, year, question_number)
+                
+            logger.info(f"Saved {len(questions_list)} questions from document {doc_id}")
             return True
             
         except Exception as e:
-            logger.error(f"Error saving question: {e}")
+            logger.error(f"Error saving question from MongoDB: {e}")
             return False
     
-    def get_question(self, question_id: str) -> Optional[Dict[str, Any]]:
-        """Get a question and its assets from the cache"""
+    def _save_question_assets(self, question: Dict, doc_id: str, subject: str, level: str, 
+                             year: str, question_number: str) -> List[str]:
+        """
+        Download and save assets (images, etc.) for a question.
+        
+        Returns:
+            List of saved asset paths
+        """
+        saved_assets = []
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
+            # Process images if present
+            images = question.get('images', [])
             
-            # Get question
-            cursor.execute('''
-            SELECT * FROM cached_questions
-            WHERE question_id = ?
-            ''', (question_id,))
-            
-            row = cursor.fetchone()
-            if not row:
-                conn.close()
-                return None
+            for idx, img_data in enumerate(images):
+                # Get image URL
+                img_url = img_data.get('url')
+                if not img_url:
+                    continue
+                    
+                # Create asset directory
+                asset_dir = os.path.join(
+                    self.ASSETS_DIR, 
+                    self._safe_filename(subject), 
+                    level, 
+                    year, 
+                    str(question_number)
+                )
+                os.makedirs(asset_dir, exist_ok=True)
                 
-            # Update last_accessed
-            now = datetime.now().isoformat()
-            cursor.execute('''
-            UPDATE cached_questions
-            SET last_accessed = ?
-            WHERE question_id = ?
-            ''', (now, question_id))
+                # Generate filename from URL
+                filename = f"image_{idx}_{self._hash_url(img_url)}.jpg"
+                filepath = os.path.join(asset_dir, filename)
+                
+                # Skip if already downloaded
+                if os.path.exists(filepath):
+                    saved_assets.append(filepath)
+                    continue
+                
+                # Download image
+                try:
+                    if self.network_monitor.get_status() == NetworkStatus.ONLINE:
+                        response = requests.get(img_url, timeout=10)
+                        if response.status_code == 200:
+                            # Save image
+                            with open(filepath, 'wb') as f:
+                                f.write(response.content)
+                            
+                            saved_assets.append(filepath)
+                            logger.debug(f"Saved asset: {filepath}")
+                except Exception as img_error:
+                    logger.error(f"Error downloading image {img_url}: {img_error}")
             
-            # Get assets
-            cursor.execute('''
-            SELECT * FROM question_assets
-            WHERE question_id = ?
-            ''', (question_id,))
+            # Process any other assets here if needed
             
-            assets = []
-            for asset_row in cursor.fetchall():
-                assets.append(dict(asset_row))
-            
-            # Convert row to dict and parse content
-            question = dict(row)
-            question['content'] = json.loads(question['content'])
-            question['assets'] = assets
-            
-            conn.commit()
-            conn.close()
-            return question
+            return saved_assets
             
         except Exception as e:
-            logger.error(f"Error getting question: {e}")
+            logger.error(f"Error saving question assets: {e}")
+            return saved_assets
+    
+    def get_cached_question(self, subject: str, level: str, year: str = None, 
+                           question_number: str = None, random: bool = False) -> Optional[Dict]:
+        """
+        Get a cached question from local storage.
+        
+        Args:
+            subject: Subject name
+            level: Level key
+            year: Optional year filter
+            question_number: Optional question number filter
+            random: If True, return a random question matching criteria
+            
+        Returns:
+            Question data or None if not found
+        """
+        try:
+            # Create subject path
+            subject_path = os.path.join(self.QUESTIONS_DIR, self._safe_filename(subject), level)
+            
+            if not os.path.exists(subject_path):
+                return None
+                
+            # Get all question files matching criteria
+            matching_files = []
+            
+            # If year is specified, look in that year directory
+            if year:
+                year_path = os.path.join(subject_path, year)
+                if os.path.exists(year_path):
+                    for filename in os.listdir(year_path):
+                        if filename.endswith('.json'):
+                            # If question number is specified, match it
+                            if question_number and f"_q{question_number}" not in filename:
+                                continue
+                            matching_files.append(os.path.join(year_path, filename))
+            else:
+                # Search all years
+                for root, dirs, files in os.walk(subject_path):
+                    for filename in files:
+                        if filename.endswith('.json'):
+                            # If question number is specified, match it
+                            if question_number and f"_q{question_number}" not in filename:
+                                continue
+                            matching_files.append(os.path.join(root, filename))
+            
+            if not matching_files:
+                return None
+                
+            # Select file (random or first)
+            import random as rand
+            selected_file = rand.choice(matching_files) if random else matching_files[0]
+            
+            # Load question data
+            with open(selected_file, 'r', encoding='utf-8') as f:
+                question_data = json.load(f)
+                
+            # Resolve asset paths
+            self._resolve_asset_paths(question_data)
+                
+            return question_data
+            
+        except Exception as e:
+            logger.error(f"Error getting cached question: {e}")
             return None
     
-    def get_paper_questions(self, paper_id: str) -> List[Dict[str, Any]]:
-        """Get all questions for a specific paper"""
+    def get_cached_questions_for_test(self, subject: str, level: str, 
+                                     count: int = 10) -> List[Dict]:
+        """
+        Get a set of questions suitable for a test.
+        
+        Args:
+            subject: Subject name
+            level: Level key
+            count: Number of questions to return
+            
+        Returns:
+            List of question data
+        """
+        questions = []
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
+            # Get recent years first
+            years = self._get_available_years(subject, level)
+            years.sort(reverse=True)  # Most recent first
             
-            # Get all questions for this paper
-            cursor.execute('''
-            SELECT question_id FROM cached_questions
-            WHERE paper_id = ?
-            ''', (paper_id,))
+            questions_needed = count
             
-            questions = []
-            for row in cursor.fetchall():
-                question = self.get_question(row['question_id'])
-                if question:
-                    questions.append(question)
+            # Try to get an even distribution across years
+            for year in years:
+                # Calculate how many questions to get from this year
+                year_count = min(questions_needed, count // len(years) + 1)
+                
+                # Get questions from this year
+                year_questions = self._get_questions_from_year(subject, level, year, year_count)
+                questions.extend(year_questions)
+                
+                questions_needed -= len(year_questions)
+                if questions_needed <= 0:
+                    break
             
-            conn.close()
+            # If we still need more questions, get random ones
+            while len(questions) < count and questions_needed > 0:
+                q = self.get_cached_question(subject, level, random=True)
+                if q and q not in questions:
+                    questions.append(q)
+                    questions_needed -= 1
+                else:
+                    # Avoid infinite loop if we can't find more questions
+                    break
+                    
             return questions
             
         except Exception as e:
-            logger.error(f"Error getting paper questions: {e}")
+            logger.error(f"Error getting questions for test: {e}")
+            return questions
+    
+    def _get_available_years(self, subject: str, level: str) -> List[str]:
+        """Get list of years that have cached questions for the subject/level"""
+        years = []
+        try:
+            subject_path = os.path.join(self.QUESTIONS_DIR, self._safe_filename(subject), level)
+            
+            if not os.path.exists(subject_path):
+                return []
+                
+            # List directories in the subject path - these are years
+            for item in os.listdir(subject_path):
+                if os.path.isdir(os.path.join(subject_path, item)):
+                    years.append(item)
+                    
+            return years
+            
+        except Exception as e:
+            logger.error(f"Error getting available years: {e}")
             return []
     
-    def get_papers_needing_questions(self, subject: str, level: str, limit: int = 5) -> List[Dict[str, Any]]:
+    def _get_questions_from_year(self, subject: str, level: str, year: str, count: int) -> List[Dict]:
+        """Get a specific number of questions from a particular year"""
+        questions = []
+        try:
+            year_path = os.path.join(self.QUESTIONS_DIR, self._safe_filename(subject), level, year)
+            
+            if not os.path.exists(year_path):
+                return []
+                
+            # Get all question files
+            question_files = [f for f in os.listdir(year_path) if f.endswith('.json')]
+            
+            # Select randomly if we have more than we need
+            import random as rand
+            if len(question_files) > count:
+                question_files = rand.sample(question_files, count)
+            
+            # Load each question
+            for filename in question_files:
+                filepath = os.path.join(year_path, filename)
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        question_data = json.load(f)
+                        
+                    # Resolve asset paths
+                    self._resolve_asset_paths(question_data)
+                    
+                    questions.append(question_data)
+                except Exception as file_error:
+                    logger.error(f"Error loading question file {filepath}: {file_error}")
+                    
+            return questions
+            
+        except Exception as e:
+            logger.error(f"Error getting questions from year: {e}")
+            return []
+    
+    def _resolve_asset_paths(self, question_data: Dict):
         """
-        Get papers that need more questions cached
+        Update image URLs in question data to point to local files.
+        Modifies question_data in place.
+        """
+        try:
+            subject = question_data.get('subject')
+            level = question_data.get('level')
+            year = question_data.get('year')
+            question_number = question_data.get('question_number')
+            
+            if not all([subject, level, year, question_number]):
+                return
+                
+            # Path to asset directory for this question
+            asset_dir = os.path.join(
+                self.ASSETS_DIR, 
+                self._safe_filename(subject), 
+                level, 
+                year, 
+                str(question_number)
+            )
+            
+            if not os.path.exists(asset_dir):
+                return
+                
+            # Get question data
+            q_data = question_data.get('data', {})
+            
+            # Update image paths
+            images = q_data.get('images', [])
+            for idx, img_data in enumerate(images):
+                img_url = img_data.get('url')
+                if not img_url:
+                    continue
+                    
+                # Generate the expected filename
+                filename = f"image_{idx}_{self._hash_url(img_url)}.jpg"
+                filepath = os.path.join(asset_dir, filename)
+                
+                if os.path.exists(filepath):
+                    # Update URL to local file
+                    img_data['original_url'] = img_url
+                    img_data['url'] = f"file://{filepath}"
+                    
+        except Exception as e:
+            logger.error(f"Error resolving asset paths: {e}")
+    
+    def _cleanup_if_needed(self):
+        """Check if cache is too large and clean up if necessary"""
+        try:
+            # Get current cache size
+            cache_size = self._get_cache_size_mb()
+            
+            if cache_size > self.MAX_CACHE_SIZE_MB:
+                logger.info(f"Cache size ({cache_size}MB) exceeds limit ({self.MAX_CACHE_SIZE_MB}MB). Cleaning up...")
+                self._cleanup_cache()
+                
+        except Exception as e:
+            logger.error(f"Error checking cache size: {e}")
+    
+    def _get_cache_size_mb(self) -> float:
+        """Get the current size of the cache in MB"""
+        total_size = 0
+        
+        # Add size of questions directory
+        total_size += self._get_directory_size(self.QUESTIONS_DIR)
+        
+        # Add size of assets directory
+        total_size += self._get_directory_size(self.ASSETS_DIR)
+        
+        # Convert bytes to MB
+        return total_size / (1024 * 1024)
+    
+    def _get_directory_size(self, path: str) -> int:
+        """Get the size of a directory in bytes"""
+        total_size = 0
+        for dirpath, dirnames, filenames in os.walk(path):
+            for filename in filenames:
+                filepath = os.path.join(dirpath, filename)
+                total_size += os.path.getsize(filepath)
+                
+        return total_size
+    
+    def _cleanup_cache(self):
+        """Remove oldest/least used cached content to free up space"""
+        try:
+            # Get list of subjects
+            subjects = os.listdir(self.QUESTIONS_DIR)
+            
+            # For each subject, remove oldest years first
+            for subject in subjects:
+                subject_path = os.path.join(self.QUESTIONS_DIR, subject)
+                
+                # Skip if not a directory
+                if not os.path.isdir(subject_path):
+                    continue
+                    
+                # For each level, get years
+                for level in os.listdir(subject_path):
+                    level_path = os.path.join(subject_path, level)
+                    
+                    # Skip if not a directory
+                    if not os.path.isdir(level_path):
+                        continue
+                        
+                    # Get years sorted oldest first
+                    years = sorted(
+                        [y for y in os.listdir(level_path) if os.path.isdir(os.path.join(level_path, y))],
+                        key=lambda y: y if y.isdigit() else "0"
+                    )
+                    
+                    # Keep removing oldest years until we're under the limit
+                    while years and self._get_cache_size_mb() > self.MAX_CACHE_SIZE_MB * 0.8:
+                        oldest_year = years.pop(0)
+                        year_path = os.path.join(level_path, oldest_year)
+                        
+                        # Remove corresponding assets
+                        asset_year_path = os.path.join(
+                            self.ASSETS_DIR, subject, level, oldest_year
+                        )
+                        
+                        # Remove question files
+                        self._remove_directory(year_path)
+                        
+                        # Remove asset files
+                        if os.path.exists(asset_year_path):
+                            self._remove_directory(asset_year_path)
+                            
+                        logger.info(f"Removed cached content for {subject} {level} year {oldest_year}")
+                        
+                        # Break if we've cleaned up enough
+                        if self._get_cache_size_mb() <= self.MAX_CACHE_SIZE_MB * 0.8:
+                            break
+            
+        except Exception as e:
+            logger.error(f"Error cleaning up cache: {e}")
+    
+    def _remove_directory(self, path: str):
+        """Safely remove a directory and all its contents"""
+        try:
+            import shutil
+            if os.path.exists(path):
+                shutil.rmtree(path)
+        except Exception as e:
+            logger.error(f"Error removing directory {path}: {e}")
+    
+    def _safe_filename(self, name: str) -> str:
+        """Convert a string to a safe filename"""
+        return "".join([c for c in name if c.isalnum() or c in (' ', '_')]).rstrip().replace(' ', '_').lower()
+    
+    def _hash_url(self, url: str) -> str:
+        """Create a short hash of a URL for filename generation"""
+        return hashlib.md5(url.encode()).hexdigest()[:10]
+    
+    def _ensure_tables(self):
+        """Ensure required database tables exist"""
+        pass  # We're using our own file-based storage, so no tables needed
+
+    # Legacy methods for backward compatibility
+    def mark_paper_completed(self, user_subject_id: int, year: int) -> bool:
+        """Mark a paper as completed by the user (legacy method)"""
+        return True  # No-op since we're not using this mechanism anymore
+        
+    def force_cache_check(self, user_id: int) -> Dict:
+        """Force a check for cache updates (legacy method)"""
+        if self.network_monitor.get_status() == NetworkStatus.ONLINE:
+            self._check_for_updates()
+        return {"status": "check_initiated"}
+
+    def get(self, key: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve an item from the cache.
         
         Args:
-            subject: Subject to filter by
-            level: Level to filter by
-            limit: Maximum number of papers to return
+            key: The cache key
             
         Returns:
-            List of paper metadata dictionaries
+            The cached data or None if not found
         """
-        try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-            SELECT * FROM paper_metadata
-            WHERE subject = ? AND level = ? AND cached_questions < total_questions
-            ORDER BY paper_year DESC, paper_number ASC
-            LIMIT ?
-            ''', (subject, level, limit))
-            
-            papers = [dict(row) for row in cursor.fetchall()]
-            conn.close()
-            return papers
-            
-        except Exception as e:
-            logger.error(f"Error getting papers needing questions: {e}")
-            return []
-    
-    def get_completion_status(self, subject: str, level: str) -> Dict[str, Any]:
-        """Get completion status for a subject/level combination"""
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-            SELECT 
-                COUNT(*) as total_papers,
-                SUM(total_questions) as total_questions,
-                SUM(cached_questions) as cached_questions,
-                MAX(paper_year) as latest_year,
-                MIN(paper_year) as earliest_year
-            FROM paper_metadata
-            WHERE subject = ? AND level = ?
-            ''', (subject, level))
-            
-            row = cursor.fetchone()
-            conn.close()
-            
-            if not row or row[0] == 0:
-                return {
-                    'total_papers': 0,
-                    'total_questions': 0,
-                    'cached_questions': 0,
-                    'completion_percentage': 0,
-                    'latest_year': None,
-                    'earliest_year': None
-                }
-            
-            total_papers, total_questions, cached_questions, latest_year, earliest_year = row
-            
-            completion_percentage = 0
-            if total_questions > 0:
-                completion_percentage = (cached_questions / total_questions) * 100
+        with self.lock:
+            try:
+                cursor = self.conn.cursor()
+                cursor.execute('SELECT data, timestamp FROM cache WHERE key = ?', (key,))
+                result = cursor.fetchone()
                 
-            return {
-                'total_papers': total_papers,
-                'total_questions': total_questions,
-                'cached_questions': cached_questions,
-                'completion_percentage': completion_percentage,
-                'latest_year': latest_year,
-                'earliest_year': earliest_year
-            }
+                if result:
+                    data, timestamp = result
+                    return {
+                        'data': json.loads(data),
+                        'status': self._get_status(timestamp),
+                        'timestamp': timestamp
+                    }
+                return None
+            except sqlite3.Error as e:
+                logger.error(f"Error retrieving from cache: {e}")
+                return None
+                
+    def set(self, key: str, data: Any, sync: bool = True) -> bool:
+        """
+        Store an item in the cache.
+        
+        Args:
+            key: The cache key
+            data: The data to cache
+            sync: Whether to sync this change to the server
             
-        except Exception as e:
-            logger.error(f"Error getting completion status: {e}")
-            return {
-                'total_papers': 0,
-                'total_questions': 0,
-                'cached_questions': 0,
-                'completion_percentage': 0,
-                'latest_year': None,
-                'earliest_year': None
-            }
+        Returns:
+            True if successful, False otherwise
+        """
+        timestamp = int(time.time())
+        json_data = json.dumps(data)
+        sync_status = 'pending' if sync else 'synced'
+        
+        with self.lock:
+            try:
+                cursor = self.conn.cursor()
+                cursor.execute(
+                    'INSERT OR REPLACE INTO cache (key, data, timestamp, sync_status) VALUES (?, ?, ?, ?)',
+                    (key, json_data, timestamp, sync_status)
+                )
+                self.conn.commit()
+                
+                # If sync is required, add to sync queue
+                if sync and services.sync_service is not None:
+                    # Here we're using the services registry instead of direct import
+                    service = services.sync_service
+                    service.queue_update(model_type=key.split(':')[0], 
+                                        model_id=key.split(':')[1], 
+                                        data=data,
+                                        priority=QueuePriority.NORMAL)
+                
+                return True
+            except sqlite3.Error as e:
+                logger.error(f"Error storing in cache: {e}")
+                return False
+                
+    def _get_status(self, timestamp: int) -> CacheStatus:
+        """
+        Determine the status of a cached item based on its timestamp.
+        
+        Args:
+            timestamp: The cache entry timestamp
+            
+        Returns:
+            The appropriate CacheStatus
+        """
+        now = int(time.time())
+        age = now - timestamp
+        
+        if age < self.ttl_fresh:
+            return CacheStatus.FRESH
+        elif age < self.ttl_stale:
+            return CacheStatus.STALE
+        else:
+            return CacheStatus.EXPIRED
+            
+    # Additional methods for cache management
+    
+    def invalidate(self, key: str) -> bool:
+        """
+        Invalidate a specific cache entry.
+        
+        Args:
+            key: The cache key to invalidate
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        with self.lock:
+            try:
+                cursor = self.conn.cursor()
+                cursor.execute('DELETE FROM cache WHERE key = ?', (key,))
+                self.conn.commit()
+                return cursor.rowcount > 0
+            except sqlite3.Error as e:
+                logger.error(f"Error invalidating cache: {e}")
+                return False
+                
+    def invalidate_collection(self, collection: str) -> int:
+        """
+        Invalidate all cache entries for a collection.
+        
+        Args:
+            collection: The collection name (prefix of the cache keys)
+            
+        Returns:
+            Number of invalidated entries
+        """
+        with self.lock:
+            try:
+                cursor = self.conn.cursor()
+                cursor.execute('DELETE FROM cache WHERE key LIKE ?', (f"{collection}:%",))
+                self.conn.commit()
+                return cursor.rowcount
+            except sqlite3.Error as e:
+                logger.error(f"Error invalidating collection: {e}")
+                return 0
+                
+    def cleanup(self) -> int:
+        """
+        Remove expired entries from the cache.
+        
+        Returns:
+            Number of removed entries
+        """
+        expiry_time = int(time.time()) - self.ttl_stale
+        
+        with self.lock:
+            try:
+                cursor = self.conn.cursor()
+                cursor.execute('DELETE FROM cache WHERE timestamp < ?', (expiry_time,))
+                self.conn.commit()
+                return cursor.rowcount
+            except sqlite3.Error as e:
+                logger.error(f"Error during cache cleanup: {e}")
+                return 0
+                
+    def get_collection(self, collection: str) -> List[Dict[str, Any]]:
+        """
+        Retrieve all items for a collection.
+        
+        Args:
+            collection: The collection name (prefix of the cache keys)
+            
+        Returns:
+            List of cache entries
+        """
+        with self.lock:
+            try:
+                cursor = self.conn.cursor()
+                cursor.execute('SELECT key, data, timestamp FROM cache WHERE key LIKE ?', (f"{collection}:%",))
+                results = cursor.fetchall()
+                
+                return [{
+                    'key': key,
+                    'data': json.loads(data),
+                    'status': self._get_status(timestamp),
+                    'timestamp': timestamp
+                } for key, data, timestamp in results]
+            except sqlite3.Error as e:
+                logger.error(f"Error retrieving collection: {e}")
+                return []
+                
+    def close(self):
+        """Close the database connection"""
+        if self.conn:
+            self.conn.close()
+            logger.info("Cache database connection closed")

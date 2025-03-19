@@ -9,6 +9,9 @@ import json
 from datetime import datetime
 import re
 
+# Import our credential manager
+from .credential_manager import CredentialManager
+
 # Set up logging
 logger = logging.getLogger(__name__)
 
@@ -80,25 +83,72 @@ class MongoDBClient:
             'June': 'winter'
         }
         
-        # Load credentials and initialize connection
+        # Create credential manager
+        self.credential_manager = CredentialManager()
+        
+        # Load credentials
         self._load_credentials()
         self.initialized = True
     
     def _load_credentials(self):
         """
-        Load MongoDB connection credentials.
-        This is a placeholder that will be replaced with secure credential management.
+        Load MongoDB connection credentials from secure storage.
         """
-        # TODO: Replace with secure credential management using CredentialManager
-        # For now, use environment variables or a placeholder
+        # Get credentials from secure storage
+        self.connection_uri, self.db_name = self.credential_manager.get_credentials()
         
-        # Placeholder for development - this will be replaced with secure credential storage
-        self.connection_uri = os.environ.get("MONGODB_URI", "")
-        self.db_name = os.environ.get("MONGODB_DB", "exam_questions")
-        
-        # If no URI is set, log a warning
+        # If no credentials found, log a warning
         if not self.connection_uri:
-            logger.warning("MongoDB URI not set. Please configure credentials.")
+            logger.warning("MongoDB credentials not found in secure storage. Please configure credentials.")
+    
+    def setup_credentials(self, uri: str, db_name: str) -> bool:
+        """
+        Set up MongoDB credentials and store them securely.
+        
+        Args:
+            uri: MongoDB connection URI
+            db_name: Database name to use
+            
+        Returns:
+            bool: True if credentials were stored successfully
+        """
+        # Validate connection before storing
+        try:
+            # Test connection with provided credentials
+            test_client = MongoClient(
+                uri,
+                serverSelectionTimeoutMS=5000
+            )
+            test_client.admin.command('ping')
+            test_db = test_client[db_name]
+            
+            # Check if we can access the questions collection
+            test_db.questions.find_one({})
+            
+            # Close test connection
+            test_client.close()
+            
+            # Store credentials securely
+            if self.credential_manager.store_credentials(uri, db_name):
+                # Update current instance
+                self.connection_uri = uri
+                self.db_name = db_name
+                
+                # Reconnect with new credentials
+                if self.connected:
+                    self.disconnect()
+                    
+                return self.connect()
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Failed to validate MongoDB credentials: {e}")
+            return False
+    
+    def has_credentials(self) -> bool:
+        """Check if we have stored credentials"""
+        return self.credential_manager.has_credentials()
     
     @backoff.on_exception(backoff.expo, 
                          (ConnectionFailure, ServerSelectionTimeoutError),
