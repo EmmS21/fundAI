@@ -6,6 +6,11 @@ from src.utils.constants import PRIMARY_COLOR
 from src.data.database.operations import UserOperations
 from src.utils.country_flags import get_country_flag
 from src.core.firebase.client import FirebaseClient
+from src.core.mongodb.client import MongoDBClient
+from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ProfileHeader(QWidget):
     def __init__(self, user_data):
@@ -207,52 +212,137 @@ class ProfileHeader(QWidget):
                     self.status_label = status_label
                     
                 def run(self):
+                    """Get subscription status from Firebase in a background thread"""
                     try:
+                        # First check - is MongoDB connected? If so, we know subscription is active
+                        mongo_client = MongoDBClient()
+                        
+                        if mongo_client.initialized and mongo_client.connected:
+                            # If MongoDB is connected, subscription is definitely active
+                            logger.info("MongoDB is connected - subscription is active")
+                            self.status_label.setText("Active")
+                            self.status_label.setStyleSheet("""
+                                padding: 3px 8px;
+                                border-radius: 10px;
+                                font-size: 12px;
+                                font-weight: bold;
+                                background-color: #e7f5e7;
+                                color: #1e7e34;
+                                border: 1px solid #a3d9a3;
+                            """)
+                            return
+                            
+                        # Fallback to Firebase check if MongoDB isn't available
                         firebase = FirebaseClient()
-                        status = firebase.check_subscription_status()
+                        data = firebase.check_subscription_status()
                         
-                        # Pass result to main thread
-                        QMetaObject.invokeMethod(
-                            self.status_label, 
-                            "setText",
-                            Qt.QueuedConnection,
-                            Q_ARG(str, self._format_status(status))
-                        )
-                        QMetaObject.invokeMethod(
-                            self.status_label, 
-                            "setStyleSheet",
-                            Qt.QueuedConnection,
-                            Q_ARG(str, self._get_status_style(status))
-                        )
+                        if 'error' in data:
+                            logger.error(f"Error checking subscription: {data['error']}")
+                            self.status_label.setText("Unknown")
+                            self.status_label.setStyleSheet("""
+                                padding: 3px 8px;
+                                border-radius: 10px;
+                                font-size: 12px;
+                                font-weight: bold;
+                                background-color: #e9ecef;
+                                color: #495057;
+                                border: 1px solid #ced4da;
+                            """)
+                            return
+                            
+                        # Extract subscription info from response (handle nested structure)
+                        if 'fields' in data:
+                            fields = data['fields']
+                        else:
+                            fields = data
+                            
+                        subscription_type = None
+                        is_expired = False
+                        
+                        # Extract subscription type - handle both formats
+                        if 'subscribed' in fields:
+                            sub_field = fields['subscribed']
+                            if isinstance(sub_field, dict) and 'stringValue' in sub_field:
+                                subscription_type = sub_field['stringValue'].lower()
+                            elif isinstance(sub_field, str):
+                                subscription_type = sub_field.lower()
+                                
+                        # Check expiration if we found a subscription type
+                        if subscription_type in ["trial", "annual", "monthly"]:
+                            # Check expiration date if available
+                            if 'sub_end' in fields:
+                                try:
+                                    # Handle different date formats
+                                    end_field = fields['sub_end']
+                                    date_str = None
+                                    
+                                    if isinstance(end_field, dict) and 'stringValue' in end_field:
+                                        date_str = end_field['stringValue']
+                                    elif isinstance(end_field, str):
+                                        date_str = end_field
+                                        
+                                    # Only try to parse if we have a non-empty string
+                                    if date_str and len(date_str.strip()) > 0:
+                                        # Remove Z or timezone offset if present
+                                        if date_str.endswith('Z'):
+                                            date_str = date_str[:-1]
+                                        sub_end = datetime.fromisoformat(date_str)
+                                        is_expired = datetime.now() > sub_end
+                                except ValueError as e:
+                                    logger.error(f"Error parsing date: {e}")
+                                    # Continue with default expiration status
+                            
+                            # Determine final status
+                            if is_expired:
+                                status_text = "Expired"
+                                status_style = """
+                                    padding: 3px 8px;
+                                    border-radius: 10px;
+                                    font-size: 12px;
+                                    font-weight: bold;
+                                    background-color: #f8d7da;
+                                    color: #721c24;
+                                    border: 1px solid #f5c6cb;
+                                """
+                            else:
+                                status_text = "Active"
+                                status_style = """
+                                    padding: 3px 8px;
+                                    border-radius: 10px;
+                                    font-size: 12px;
+                                    font-weight: bold;
+                                    background-color: #e7f5e7;
+                                    color: #1e7e34;
+                                    border: 1px solid #a3d9a3;
+                                """
+                        else:
+                            status_text = "Inactive"
+                            status_style = """
+                                padding: 3px 8px;
+                                border-radius: 10px;
+                                font-size: 12px;
+                                font-weight: bold;
+                                background-color: #f8d7da;
+                                color: #721c24;
+                                border: 1px solid #f5c6cb;
+                            """
+                            
+                        logger.info(f"Subscription status: {status_text}")
+                        self.status_label.setText(status_text)
+                        self.status_label.setStyleSheet(status_style)
+                        
                     except Exception as e:
-                        print(f"Error in subscription checker: {e}")
-                        QMetaObject.invokeMethod(
-                            self.status_label,
-                            "setText",
-                            Qt.QueuedConnection,
-                            Q_ARG(str, "Unknown")
-                        )
-                        QMetaObject.invokeMethod(
-                            self.status_label,
-                            "setStyleSheet",
-                            Qt.QueuedConnection,
-                            Q_ARG(str, "color: orange;")
-                        )
-                        
-                def _format_status(self, status):
-                    """Format subscription status for display"""
-                    if status.get('is_active', False):
-                        subscription_type = status.get('type', 'active').capitalize()
-                        return f"Active ({subscription_type})"
-                    else:
-                        return "Inactive"
-                        
-                def _get_status_style(self, status):
-                    """Get style for subscription status"""
-                    if status.get('is_active', False):
-                        return "color: green; font-weight: bold;"
-                    else:
-                        return "color: red; font-weight: bold;"
+                        logger.error(f"Error in subscription checker: {e}")
+                        self.status_label.setText("Unknown")
+                        self.status_label.setStyleSheet("""
+                            padding: 3px 8px;
+                            border-radius: 10px;
+                            font-size: 12px;
+                            font-weight: bold;
+                            background-color: #e9ecef;
+                            color: #495057;
+                            border: 1px solid #ced4da;
+                        """)
             
             # Start background check
             checker = SubscriptionChecker(self.subscription_status)
@@ -331,4 +421,48 @@ class ProfileHeader(QWidget):
             painter.end()
             
             self.profile_pic.setPixmap(result)
+        
+    def _format_status(self, status):
+        """Format the status text for display"""
+        status_map = {
+            "active": "Active",
+            "expired": "Expired",
+            "inactive": "Inactive",
+            "unknown": "Unknown"
+        }
+        return status_map.get(status, "Unknown")
+        
+    def _get_status_style(self, status):
+        """Get the CSS style for the status label"""
+        base_style = """
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: bold;
+        """
+        
+        if status == "active":
+            return base_style + """
+                background-color: #e7f5e7;
+                color: #1e7e34;
+                border: 1px solid #a3d9a3;
+            """
+        elif status == "expired":
+            return base_style + """
+                background-color: #f8d7da;
+                color: #721c24;
+                border: 1px solid #f5c6cb;
+            """
+        elif status == "inactive":
+            return base_style + """
+                background-color: #f8d7da;
+                color: #721c24;
+                border: 1px solid #f5c6cb;
+            """
+        else:  # unknown
+            return base_style + """
+                background-color: #e9ecef;
+                color: #495057;
+                border: 1px solid #ced4da;
+            """
         

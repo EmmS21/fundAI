@@ -4,11 +4,13 @@ import json
 import base64
 from typing import Optional, Dict, Tuple, Any
 import uuid
+import sys
 
 # Platform-specific imports
 try:
     # Try to import keyring for secure credential storage
     import keyring # type: ignore
+    import keyring.errors
     KEYRING_AVAILABLE = True
 except ImportError:
     KEYRING_AVAILABLE = False
@@ -39,6 +41,14 @@ class CredentialManager:
     CREDENTIAL_KEY = "mongodb_uri"
     CONFIG_FILE = os.path.expanduser("~/.config/exam-assistant/credentials.enc")
     
+    # Constants for credential storage
+    SERVICE_NAME = "examiner_app"
+    ACCOUNT_NAME = "mongodb_uri"
+    
+    # Fallback file for systems without keychain support
+    CREDENTIALS_DIR = os.path.join(os.path.expanduser("~"), ".examiner", "credentials")
+    CREDENTIALS_FILE = os.path.join(CREDENTIALS_DIR, "mongodb_credentials.enc")
+    
     def __new__(cls):
         """Singleton pattern to ensure only one instance exists"""
         if cls._instance is None:
@@ -57,6 +67,10 @@ class CredentialManager:
         
         # Ensure config directory exists
         os.makedirs(os.path.dirname(self.CONFIG_FILE), exist_ok=True)
+        
+        # Ensure directories exist for fallback storage
+        if not KEYRING_AVAILABLE:
+            os.makedirs(self.CREDENTIALS_DIR, exist_ok=True)
         
         self.initialized = True
         logger.info(f"Credential Manager initialized. Keyring: {self.keyring_available}, Encryption: {self.encryption_available}")
@@ -83,10 +97,10 @@ class CredentialManager:
         if self.keyring_available:
             try:
                 # Store the full credential object as JSON
-                keyring.set_password(self.APP_NAME, self.CREDENTIAL_KEY, json.dumps(credentials))
+                keyring.set_password(self.SERVICE_NAME, self.ACCOUNT_NAME, uri)
                 logger.info("Credentials stored in system keychain")
                 return True
-            except Exception as e:
+            except keyring.errors.KeyringError as e:
                 logger.warning(f"Failed to store credentials in keychain: {e}")
         
         # Fall back to file-based storage with encryption
@@ -94,7 +108,7 @@ class CredentialManager:
             try:
                 # Encrypt and save to file
                 encrypted_data = self._encrypt_credentials(credentials)
-                with open(self.CONFIG_FILE, 'wb') as f:
+                with open(self.CREDENTIALS_FILE, 'wb') as f:
                     f.write(encrypted_data)
                 logger.info("Credentials stored with encryption in config file")
                 return True
@@ -116,17 +130,17 @@ class CredentialManager:
         # First try system keychain
         if self.keyring_available:
             try:
-                cred_str = keyring.get_password(self.APP_NAME, self.CREDENTIAL_KEY)
+                cred_str = keyring.get_password(self.SERVICE_NAME, self.ACCOUNT_NAME)
                 if cred_str:
                     credentials = json.loads(cred_str)
                     logger.info("Credentials retrieved from system keychain")
-            except Exception as e:
+            except keyring.errors.KeyringError as e:
                 logger.warning(f"Failed to retrieve credentials from keychain: {e}")
         
         # Fall back to file-based storage with encryption
-        if not credentials and self.encryption_available and os.path.exists(self.CONFIG_FILE):
+        if not credentials and self.encryption_available and os.path.exists(self.CREDENTIALS_FILE):
             try:
-                with open(self.CONFIG_FILE, 'rb') as f:
+                with open(self.CREDENTIALS_FILE, 'rb') as f:
                     encrypted_data = f.read()
                 credentials = self._decrypt_credentials(encrypted_data)
                 logger.info("Credentials retrieved from encrypted config file")
@@ -147,20 +161,17 @@ class CredentialManager:
         Returns:
             bool: True if credentials exist in any storage
         """
-        # Check system keychain
-        if self.keyring_available:
+        if KEYRING_AVAILABLE:
             try:
-                cred_str = keyring.get_password(self.APP_NAME, self.CREDENTIAL_KEY)
-                if cred_str:
-                    return True
-            except:
-                pass
-        
-        # Check file-based storage
-        if self.encryption_available and os.path.exists(self.CONFIG_FILE):
-            return True
-            
-        return False
+                # Try to get credentials from keychain
+                creds = keyring.get_password(self.SERVICE_NAME, self.ACCOUNT_NAME)
+                return creds is not None
+            except keyring.errors.KeyringError:
+                logger.warning("Error accessing keychain. Falling back to file-based storage.")
+                return os.path.exists(self.CREDENTIALS_FILE)
+        else:
+            # Use file-based storage
+            return os.path.exists(self.CREDENTIALS_FILE)
     
     def clear_credentials(self) -> bool:
         """
@@ -174,16 +185,16 @@ class CredentialManager:
         # Clear from system keychain
         if self.keyring_available:
             try:
-                keyring.delete_password(self.APP_NAME, self.CREDENTIAL_KEY)
+                keyring.delete_password(self.SERVICE_NAME, self.ACCOUNT_NAME)
                 success = True
                 logger.info("Credentials cleared from system keychain")
             except:
                 pass
         
         # Clear from file storage
-        if os.path.exists(self.CONFIG_FILE):
+        if os.path.exists(self.CREDENTIALS_FILE):
             try:
-                os.remove(self.CONFIG_FILE)
+                os.remove(self.CREDENTIALS_FILE)
                 success = True
                 logger.info("Encrypted credentials file removed")
             except:
@@ -264,4 +275,157 @@ class CredentialManager:
         decrypted_data = cipher.decrypt(encrypted_data)
         credentials = json.loads(decrypted_data.decode())
         
-        return credentials 
+        return credentials
+    
+    def get_mongodb_uri(self) -> Optional[str]:
+        """
+        Get the MongoDB connection URI from secure storage
+        
+        Returns:
+            str: MongoDB connection URI or None if not found
+        """
+        if KEYRING_AVAILABLE:
+            try:
+                # Try to get from keychain
+                uri = keyring.get_password(self.SERVICE_NAME, self.ACCOUNT_NAME)
+                if uri:
+                    return uri
+                # Fall back to file if not in keychain
+                return self._get_from_file()
+            except keyring.errors.KeyringError as e:
+                logger.warning(f"Failed to get credentials from keychain: {e}")
+                return self._get_from_file()
+        else:
+            # Use file-based storage
+            return self._get_from_file()
+    
+    def set_mongodb_uri(self, uri: str) -> bool:
+        """
+        Store the MongoDB connection URI in secure storage
+        
+        Args:
+            uri: MongoDB connection URI
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if KEYRING_AVAILABLE:
+            try:
+                # Try to store in keychain
+                keyring.set_password(self.SERVICE_NAME, self.ACCOUNT_NAME, uri)
+                logger.info("Stored MongoDB URI in system keychain")
+                return True
+            except keyring.errors.KeyringError as e:
+                logger.warning(f"Failed to store credentials in keychain: {e}")
+                # Fall back to file
+                return self._save_to_file(uri)
+        else:
+            # Use file-based storage
+            return self._save_to_file(uri)
+    
+    def _get_from_file(self) -> Optional[str]:
+        """Get MongoDB URI from file-based storage with simple encryption"""
+        try:
+            if not os.path.exists(self.CREDENTIALS_FILE):
+                return None
+                
+            # Read encrypted file
+            with open(self.CREDENTIALS_FILE, 'rb') as f:
+                encrypted_data = f.read()
+                
+            # Simple decryption using hardware ID as key
+            key = HardwareIdentifier.get_hardware_id()
+            decrypted_data = self._simple_decrypt(encrypted_data, key)
+            
+            # Parse JSON data
+            creds_data = json.loads(decrypted_data)
+            return creds_data.get('uri')
+            
+        except Exception as e:
+            logger.error(f"Error reading MongoDB credentials from file: {e}")
+            return None
+    
+    def _save_to_file(self, uri: str) -> bool:
+        """Save MongoDB URI to file-based storage with simple encryption"""
+        try:
+            # Prepare data
+            creds_data = {'uri': uri}
+            json_data = json.dumps(creds_data)
+            
+            # Simple encryption using hardware ID as key
+            key = HardwareIdentifier.get_hardware_id()
+            encrypted_data = self._simple_encrypt(json_data, key)
+            
+            # Write to file
+            with open(self.CREDENTIALS_FILE, 'wb') as f:
+                f.write(encrypted_data)
+                
+            # Set secure permissions on file
+            self._set_secure_permissions(self.CREDENTIALS_FILE)
+            
+            logger.info("Stored MongoDB URI in encrypted file")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error saving MongoDB credentials to file: {e}")
+            return False
+    
+    def _simple_encrypt(self, data: str, key: str) -> bytes:
+        """
+        Simple XOR encryption for file-based storage (not cryptographically secure)
+        
+        Args:
+            data: String data to encrypt
+            key: Encryption key
+            
+        Returns:
+            bytes: Encrypted data
+        """
+        # Convert data to bytes
+        data_bytes = data.encode('utf-8')
+        key_bytes = key.encode('utf-8')
+        
+        # Ensure key is at least as long as data
+        while len(key_bytes) < len(data_bytes):
+            key_bytes += key_bytes
+            
+        # XOR encryption
+        encrypted = bytearray(len(data_bytes))
+        for i in range(len(data_bytes)):
+            encrypted[i] = data_bytes[i] ^ key_bytes[i % len(key_bytes)]
+            
+        return bytes(encrypted)
+    
+    def _simple_decrypt(self, encrypted_data: bytes, key: str) -> str:
+        """
+        Simple XOR decryption for file-based storage (not cryptographically secure)
+        
+        Args:
+            encrypted_data: Encrypted data bytes
+            key: Decryption key
+            
+        Returns:
+            str: Decrypted data string
+        """
+        key_bytes = key.encode('utf-8')
+        
+        # Ensure key is at least as long as data
+        while len(key_bytes) < len(encrypted_data):
+            key_bytes += key_bytes
+            
+        # XOR decryption (same as encryption)
+        decrypted = bytearray(len(encrypted_data))
+        for i in range(len(encrypted_data)):
+            decrypted[i] = encrypted_data[i] ^ key_bytes[i % len(key_bytes)]
+            
+        return decrypted.decode('utf-8')
+    
+    def _set_secure_permissions(self, filepath: str):
+        """Set secure permissions on the credentials file"""
+        try:
+            # Only set permissions on Unix-like systems
+            if sys.platform != 'win32':
+                # 0o600 = read/write for owner only
+                os.chmod(filepath, 0o600)
+        except Exception as e:
+            logger.warning(f"Could not set secure permissions on credentials file: {e}") 

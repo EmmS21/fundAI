@@ -3,4 +3,6 @@
 from .client import MongoDBClient
 from .credential_manager import CredentialManager
 
-__all__ = ['MongoDBClient', 'CredentialManager'] 
+__all__ = ['MongoDBClient', 'CredentialManager']
+
+# MongoDB module initialization 
