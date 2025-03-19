@@ -43,8 +43,9 @@
 
 - [x] Enhance `NetworkMonitor` for more robust detection
   - [x] Fix method reference (switched from status attribute to get_status() method)
+  - [x] Implement missing `status_changed` signal for component communication
   - [ ] Add validation check with lightweight request
-  - [ ] Implement "settling time" to prevent rapid toggling
+  - [x] Implement "settling time" to prevent rapid toggling
   - [ ] Add connection quality detection (not just binary online/offline)
 
 - [ ] Create network-aware fetching strategy

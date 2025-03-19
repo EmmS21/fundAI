@@ -53,6 +53,11 @@ class NetworkMonitor:
         
         # Add the status_changed signal
         self.status_changed = Signal()
+        
+        # Settling time parameters
+        self.SETTLING_TIME = 5  # Seconds to wait before confirming a status change
+        self._potential_status = None
+        self._status_change_time = None
 
     def start(self):
         """Start monitoring only when needed"""
@@ -115,11 +120,44 @@ class NetworkMonitor:
         while not self._stop_flag.is_set():
             current_status = NetworkStatus.ONLINE if self._check_connection() else NetworkStatus.OFFLINE
             
-            if current_status != self._status:
-                self._status = current_status
-                self._notify_callbacks()
+            # Different handling based on whether we're in a settling period
+            if self._potential_status is None:
+                # Not in a settling period - check if status has changed
+                if current_status != self._status:
+                    # Start settling period
+                    self._potential_status = current_status
+                    self._status_change_time = time.time()
+                    logger.debug(f"Potential network status change detected: {self._status} -> {current_status}")
+            else:
+                # In settling period - check if status is consistent
+                if current_status == self._potential_status:
+                    # Check if settling time has elapsed
+                    elapsed = time.time() - self._status_change_time
+                    if elapsed >= self.SETTLING_TIME:
+                        # Settling time has elapsed, confirm the status change
+                        logger.info(f"Network status changed from {self._status} to {self._potential_status} after {elapsed:.1f}s settling time")
+                        self._status = self._potential_status
+                        self._potential_status = None
+                        self._status_change_time = None
+                        self._notify_callbacks()
+                else:
+                    # Status changed during settling period, reset settling period
+                    if current_status != self._status:
+                        # Start a new settling period
+                        logger.debug(f"Network status fluctuated during settling period, resetting ({self._potential_status} -> {current_status})")
+                        self._potential_status = current_status
+                        self._status_change_time = time.time()
+                    else:
+                        # Status reverted to original, cancel settling period
+                        logger.debug(f"Network status reverted during settling period, canceling change")
+                        self._potential_status = None
+                        self._status_change_time = None
             
-            time.sleep(self.CHECK_INTERVAL)
+            # Shorter sleep interval during settling period
+            if self._potential_status is not None:
+                time.sleep(min(1.0, self.SETTLING_TIME / 5))  # Check more frequently during settling
+            else:
+                time.sleep(self.CHECK_INTERVAL)
 
     def _notify_callbacks(self):
         """Notify all registered callbacks of current status"""
@@ -131,4 +169,16 @@ class NetworkMonitor:
                 
         # Also emit the signal
         self.status_changed.emit(self._status)
+        
+    def set_settling_time(self, seconds: float):
+        """
+        Set the settling time in seconds.
+        
+        Args:
+            seconds: Time in seconds to wait before confirming a status change
+        """
+        if seconds < 0:
+            raise ValueError("Settling time cannot be negative")
+        self.SETTLING_TIME = seconds
+        logger.info(f"Network monitor settling time set to {seconds} seconds")
 
