@@ -28,6 +28,12 @@ class CacheStatus:
     EXPIRED = "expired"   
     INVALID = "invalid"   
 
+class SubscriptionStatus:
+    """Enumeration of subscription statuses"""
+    ACTIVE = "active"        # Subscription is active
+    EXPIRING = "expiring"    # Subscription will expire soon (within warning period)
+    EXPIRED = "expired"      # Subscription has expired
+
 class CacheManager:
     _instance = None
     
@@ -42,6 +48,13 @@ class CacheManager:
     CHECK_INTERVAL = 3600    
     PAPERS_PER_SUBJECT = 5   
     
+    # Subscription settings
+    SUBSCRIPTION_CACHE_TTL = 3600  # Cache subscription status for 1 hour
+    SUBSCRIPTION_WARNING_DAYS = 7  # Warn when 7 days from expiration
+
+    # Valid subscription types
+    VALID_SUBSCRIPTION_TYPES = ["trial", "annual", "monthly"]
+
     DB_FILE = "cache.db"
     
     def __new__(cls):
@@ -70,6 +83,10 @@ class CacheManager:
         # Thread control
         self.running = False
         self.thread = None
+        
+        # Subscription cache
+        self.subscription_cache = None
+        self.subscription_cache_time = 0
         
         # Ensure required tables exist
         self._ensure_tables()
@@ -167,15 +184,15 @@ class CacheManager:
         """Check for new content that needs to be cached"""
         try:
             # Check subscription status first
-            if not self._verify_subscription():
-                print("Skipping content update - no active subscription")
+            if not self.is_subscribed():
+                logger.warning("Skipping content update - no active subscription")
                 return
                 
             # Get user subjects
             with get_db_session() as session:
                 user = UserOperations.get_current_user()
                 if not user:
-                    print("No user found, skipping cache update")
+                    logger.warning("No user found, skipping cache update")
                     return
                 
                 user_subjects = UserOperations.get_user_subjects(user.id)
@@ -200,28 +217,159 @@ class CacheManager:
                         self._queue_questions_for_caching(subject_name, level_key, mongo_level)
                 
         except Exception as e:
-            print(f"Error checking for updates: {e}")
+            logger.error(f"Error checking for updates: {e}")
     
-    def _verify_subscription(self) -> bool:
+    def _verify_subscription(self) -> str:
         """
-        Verify user has active subscription
+        Verify user subscription status
         
         Returns:
-            bool: True if subscription is active, False otherwise
+            str: Subscription status (SubscriptionStatus enum value)
         """
-        try:
-            # Get subscription status
-            firebase = FirebaseClient()
-            subscription = firebase.check_subscription_status()
+        # Check if we have cached subscription info that's still valid
+        current_time = time.time()
+        if (self.subscription_cache is not None and 
+            current_time - self.subscription_cache_time < self.SUBSCRIPTION_CACHE_TTL):
+            # Use cached value if it's fresh
+            return self.subscription_cache
             
-            return subscription.get('is_active', False)
+        try:
+            # Get subscription status from Firebase
+            firebase = FirebaseClient()
+            subscription_data = firebase.check_subscription_status()
+            
+            # Get key fields
+            subscription_type = subscription_data.get('subscribed', '').lower()
+            sub_end_str = subscription_data.get('sub_end', '')
+            
+            # Parse expiration date
+            try:
+                if sub_end_str:
+                    sub_end_date = datetime.fromisoformat(sub_end_str)
+                else:
+                    # No expiration date provided
+                    logger.warning("No subscription end date found in user data")
+                    sub_end_date = None
+            except ValueError:
+                logger.error(f"Invalid date format for subscription end: {sub_end_str}")
+                sub_end_date = None
+            
+            # Determine subscription status
+            current_date = datetime.now()
+            
+            # Check subscription type first
+            if subscription_type not in self.VALID_SUBSCRIPTION_TYPES:
+                status = SubscriptionStatus.EXPIRED
+            elif not sub_end_date:
+                # If valid type but no end date, assume active
+                status = SubscriptionStatus.ACTIVE
+            else:
+                # Check if expired
+                if current_date > sub_end_date:
+                    status = SubscriptionStatus.EXPIRED
+                else:
+                    # Check if nearing expiration
+                    warning_date = sub_end_date - timedelta(days=self.SUBSCRIPTION_WARNING_DAYS)
+                    if current_date >= warning_date:
+                        status = SubscriptionStatus.EXPIRING
+                        days_left = (sub_end_date - current_date).days
+                        logger.info(f"Subscription expiring soon! {days_left} days remaining")
+                        self._show_expiration_warning(sub_end_date)
+                    else:
+                        status = SubscriptionStatus.ACTIVE
+            
+            # Show expiration alert if applicable
+            if status == SubscriptionStatus.EXPIRED:
+                self._show_expiration_alert()
+            
+            # Cache the result
+            self.subscription_cache = status
+            self.subscription_cache_time = current_time
+            
+            return status
             
         except Exception as e:
             logger.error(f"Error verifying subscription: {e}")
             
             # For exceptions during verification, allow content access
             # (better user experience to show content than to block incorrectly)
-            return True
+            return SubscriptionStatus.ACTIVE
+    
+    def _show_expiration_warning(self, expiration_date: datetime):
+        """Display a warning that subscription will expire soon"""
+        days_left = (expiration_date - datetime.now()).days
+        message = f"Your subscription will expire in {days_left} days. Please renew to maintain access."
+        logger.warning(message)
+        
+        # Here you could trigger a UI notification if appropriate
+    
+    def _show_expiration_alert(self):
+        """Display an alert that subscription has expired"""
+        message = "Your subscription has expired. You can only access previously cached content."
+        logger.warning(message)
+        
+        # Here you could trigger a UI notification if appropriate
+    
+    def is_subscribed(self) -> bool:
+        """
+        Check if user has an active subscription
+        
+        Returns:
+            bool: True if subscription is active or expiring soon
+        """
+        status = self._verify_subscription()
+        return status in [SubscriptionStatus.ACTIVE, SubscriptionStatus.EXPIRING]
+    
+    def get_subscription_info(self) -> Dict[str, Any]:
+        """
+        Get detailed subscription information
+        
+        Returns:
+            Dict containing subscription status and details
+        """
+        try:
+            # Get subscription status from Firebase
+            firebase = FirebaseClient()
+            subscription_data = firebase.check_subscription_status()
+            
+            # Get key fields
+            subscription_type = subscription_data.get('subscribed', '').lower()
+            sub_end_str = subscription_data.get('sub_end', '')
+            
+            # Parse expiration date
+            try:
+                if sub_end_str:
+                    sub_end_date = datetime.fromisoformat(sub_end_str)
+                    days_remaining = (sub_end_date - datetime.now()).days
+                else:
+                    sub_end_date = None
+                    days_remaining = None
+            except ValueError:
+                logger.error(f"Invalid date format for subscription end: {sub_end_str}")
+                sub_end_date = None
+                days_remaining = None
+            
+            # Get status
+            status = self._verify_subscription()
+            
+            return {
+                "status": status,
+                "type": subscription_type,
+                "end_date": sub_end_date.isoformat() if sub_end_date else None,
+                "days_remaining": days_remaining,
+                "is_active": status in [SubscriptionStatus.ACTIVE, SubscriptionStatus.EXPIRING]
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting subscription info: {e}")
+            return {
+                "status": SubscriptionStatus.ACTIVE,  # Default to active on error
+                "type": "unknown",
+                "end_date": None,
+                "days_remaining": None,
+                "is_active": True,
+                "error": str(e)
+            }
     
     def _convert_level_to_mongo_format(self, level_key: str) -> str:
         """Convert internal level key to MongoDB level format"""
@@ -426,9 +574,8 @@ class CacheManager:
         Returns:
             Question data or None if not found
         """
-        # For cached content, we check subscription but don't strictly enforce it
-        # This allows users to access content they've already downloaded
-        subscription_active = self._verify_subscription()
+        # Check subscription status but don't block access to already cached content
+        is_active = self.is_subscribed()
         
         try:
             # Create subject path
@@ -475,7 +622,7 @@ class CacheManager:
             self._resolve_asset_paths(question_data)
                 
             # If we found content but subscription is expired, add warning
-            if not subscription_active and question_data:
+            if not is_active:
                 question_data['subscription_expired'] = True
                 
             return question_data
@@ -780,7 +927,7 @@ class CacheManager:
                 if result:
                     data, timestamp = result
                     return {
-                                        'data': json.loads(data),
+                                'data': json.loads(data),
                                 'status': self._get_status(timestamp),
                                 'timestamp': timestamp
                             }

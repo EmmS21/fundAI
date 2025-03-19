@@ -83,25 +83,42 @@ class FirebaseClient:
                 self.token_expiry = time.time() + int(auth_data['expiresIn'])
                 logger.info(f"Anonymous authentication successful. User ID: {self.user_id}")
                 
-                # Find or initialize user document
-                user_doc = self._get_user_document()
-                if not user_doc:
+                # Check if user document exists by hardware ID using REST API
+                user_doc_id = self._get_user_document_id()
+                
+                if not user_doc_id:
                     # Initialize subscription for new user
                     today = datetime.now()
                     end_of_month = (today.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
-                    end_of_month = end_of_month.replace(hour=23, minute=59, second=59)
                     
-                    subscription_data = {
-                        'is_active': True,
-                        'subscription_type': 'trial',
-                        'subscription_expiry': end_of_month.isoformat(),
-                        'hardware_id': hardware_id,
-                        'user_id': self.user_id
+                    # Create document using REST API
+                    url = f"{self.firestore_base_url}/examiner-users"
+                    headers = {
+                        "Authorization": f"Bearer {self.id_token}",
+                        "Content-Type": "application/json"
+                    }
+                    
+                    # Format for Firestore REST API - note the Z suffix for timestamps
+                    doc_data = {
+                        "fields": {
+                            "subscribed": {"stringValue": "trial"},
+                            "sub_end": {"stringValue": end_of_month.isoformat() + "Z"},
+                            "hardware_id": {"stringValue": hardware_id},
+                            "user_id": {"stringValue": self.user_id},
+                            "full_name": {"stringValue": "New User"},
+                            "country": {"stringValue": ""},
+                            "school_level": {"stringValue": ""},
+                            "birthday": {"stringValue": ""}
+                        }
                     }
                     
                     # Create new document in examiner-users collection
-                    self.db.collection('examiner-users').document().set(subscription_data)
-                    logger.info("Created new user document with subscription data")
+                    doc_response = requests.post(url, headers=headers, json=doc_data)
+                    
+                    if doc_response.status_code in (200, 201):
+                        logger.info("Created new user document with subscription data")
+                    else:
+                        logger.error(f"Failed to create user document: {doc_response.text}")
                 
                 return True
             else:
@@ -112,109 +129,29 @@ class FirebaseClient:
             return False
 
     def _get_user_document(self):
-        """Get the user document from Firestore using hardware_id"""
+        """Get the user document from Firestore"""
         try:
-            # Ensure we're authenticated
             self._ensure_authenticated()
             
-            # Get hardware ID
-            hardware_id = HardwareIdentifier.get_hardware_id()
-            
-            # Make the request to get all documents
-            url = f"{self.firestore_base_url}/examiner-users"
-            headers = {"Authorization": f"Bearer {self.id_token}"}
+            # Get the document ID for the current user
+            doc_id = self._get_user_document_id()
+            if not doc_id:
+                logger.warning("No document ID found for user")
+                return None
+                
+            # Get the document from Firestore
+            url = f"https://firestore.googleapis.com/v1/projects/adalchemyai-432120/databases/(default)/documents/users/{doc_id}"
+            headers = {
+                "Authorization": f"Bearer {self.id_token}",
+                "Content-Type": "application/json"
+            }
             
             response = requests.get(url, headers=headers)
+            response.raise_for_status()
             
-            if response.status_code == 200:
-                data = response.json()
-                
-                # First, try to find document with matching hardware_id
-                if 'documents' in data:
-                    # Look for hardware_id match
-                    for doc in data['documents']:
-                        if 'fields' in doc and 'hardware_id' in doc['fields']:
-                            doc_hardware_id = doc['fields']['hardware_id'].get('stringValue')
-                            if doc_hardware_id == hardware_id:
-                                logger.info(f"Found document with matching hardware_id: {doc['name']}")
-                                # Simple print of the document
-                                print("DOCUMENT FOUND:", doc)
-                                
-                                # Check if subscription fields exist
-                                fields = doc['fields']
-                                has_subscribed = 'subscribed' in fields
-                                has_sub_end = 'sub_end' in fields
-                                
-                                # If subscription fields don't exist, add them
-                                if not has_subscribed or not has_sub_end:
-                                    print("First sync detected - subscription fields missing. Adding trial subscription.")
-                                    
-                                    # Extract document ID from the document name
-                                    doc_id = doc['name'].split('/')[-1]
-                                    
-                                    # Calculate one month from now
-                                    now = datetime.now()
-                                    one_month_later = now + timedelta(days=30)
-                                    sub_end_iso = one_month_later.isoformat()
-                                    
-                                    # Prepare update data with Firestore typed values
-                                    update_data = {
-                                        "fields": {
-                                            "subscribed": {"stringValue": "trial"},
-                                            "sub_end": {"stringValue": sub_end_iso}
-                                        }
-                                    }
-                                    
-                                    # Update the document
-                                    update_url = f"{self.firestore_base_url}/examiner-users/{doc_id}"
-                                    update_headers = {
-                                        "Content-Type": "application/json",
-                                        "Authorization": f"Bearer {self.id_token}"
-                                    }
-                                    # Add mask to only update these specific fields
-                                    update_url += "?updateMask.fieldPaths=subscribed&updateMask.fieldPaths=sub_end"
-                                    
-                                    update_response = requests.patch(update_url, headers=update_headers, json=update_data)
-                                    
-                                    if update_response.status_code == 200:
-                                        print("Successfully updated subscription fields:")
-                                        print(f"- subscribed: trial")
-                                        print(f"- sub_end: {sub_end_iso}")
-                                        
-                                        # Get the updated document
-                                        updated_doc_response = requests.get(f"{self.firestore_base_url}/examiner-users/{doc_id}", headers=headers)
-                                        if updated_doc_response.status_code == 200:
-                                            updated_doc = updated_doc_response.json()
-                                            print("UPDATED DOCUMENT:", updated_doc)
-                                    else:
-                                        print(f"Failed to update subscription fields: {update_response.text}")
-                                
-                                return doc['fields']
-                    
-                    # If we get here, no hardware_id match was found
-                    # Try to match by full_name as a fallback
-                    with get_db_session() as session:
-                        user = UserOperations.get_current_user()
-                        if user and user.full_name:
-                            full_name = user.full_name
-                            logger.info(f"Trying to find document by full_name: {full_name}")
-                            
-                            for doc in data['documents']:
-                                if 'fields' in doc and 'full_name' in doc['fields']:
-                                    doc_full_name = doc['fields']['full_name'].get('stringValue')
-                                    if doc_full_name == full_name:
-                                        logger.info(f"Found document with matching full_name: {doc['name']}")
-                                        # Simple print of the document
-                                        print("DOCUMENT FOUND:", doc)
-                                        return doc['fields']
-                
-                # If we get here, no matching document was found by either method
-                logger.warning(f"No document found with hardware_id: {hardware_id} or by full_name")
-                return None
-            else:
-                logger.error(f"Failed to get documents: {response.text}")
-                return None
-                
+            # Return the full document
+            return response.json()
+            
         except Exception as e:
             logger.error(f"Error getting user document: {e}")
             return None
@@ -387,86 +324,58 @@ class FirebaseClient:
 
     def check_subscription_status(self, force_refresh=False) -> dict:
         """
-        Check the user's subscription status in Firebase.
+        Check subscription status for the current user
         
         Args:
-            force_refresh: If True, bypass cache and fetch fresh data
+            force_refresh: Force a refresh from the server
             
         Returns:
-            dict: Subscription status information with keys:
-                - is_active: bool - Whether subscription is active
-                - type: str - Subscription type (monthly, annual, trial)
-                - expiry_date: str - ISO format expiry date
-                - cached_at: str - When this status was last verified with server
+            dict: Subscription status containing subscribed status and end date
         """
-        # Ensure user is authenticated
-        self._ensure_authenticated()
-        
-        # Check if we have cached subscription data that's still valid
-        cached_data = self._get_cached_subscription()
-        
-        if cached_data and not force_refresh:
-            # If we have cached data and it's still valid, use it
-            return cached_data
-        
         try:
-            # Fetch subscription data from Firebase
-            user_id = self.get_user_id()
-            path = f"users/{user_id}/subscription"
-            subscription_data = self.get_data(path)
+            # Try to use cached status first (unless forced refresh)
+            if not force_refresh:
+                cached = self._get_cached_subscription()
+                if cached:
+                    logger.info("Using cached subscription status")
+                    return cached
             
-            if not subscription_data:
-                # No subscription data found
-                status = {
-                    'is_active': False,
-                    'type': 'none',
-                    'expiry_date': None,
-                    'cached_at': datetime.now().isoformat()
-                }
-            else:
-                # Parse expiry date
-                expiry_date = subscription_data.get('expiry_date')
+            # Get the document ID for the current user
+            doc_id = self._get_user_document_id()
+            if not doc_id:
+                logger.warning("No document ID found for user")
+                # Try to initialize subscription
+                self.initialize_subscription()
+                doc_id = self._get_user_document_id()
+                if not doc_id:
+                    logger.error("Failed to create or retrieve user document")
+                    return {"error": "Failed to retrieve user document"}
                 
-                # Check if subscription is active
-                is_active = False
-                if expiry_date:
-                    # Parse the expiry date string to datetime
-                    if isinstance(expiry_date, str):
-                        expiry_dt = datetime.fromisoformat(expiry_date.replace('Z', '+00:00'))
-                    else:
-                        # Assume it's already a datetime or timestamp
-                        expiry_dt = datetime.fromtimestamp(expiry_date)
-                        
-                    # Check if subscription is still valid
-                    is_active = datetime.now() < expiry_dt
+            # Get the document with the subscription info
+            url = f"{self.firestore_base_url}/examiner-users/{doc_id}"
+            headers = {
+                "Authorization": f"Bearer {self.id_token}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(url, headers=headers)
+            if response.status_code != 200:
+                logger.error(f"Failed to get document: {response.text}")
+                return {"error": "Failed to get document"}
                 
-                status = {
-                    'is_active': is_active,
-                    'type': subscription_data.get('type', 'none'),
-                    'expiry_date': expiry_date,
-                    'cached_at': datetime.now().isoformat()
-                }
+            user_doc = response.json()
             
-            # Cache the status
-            self._cache_subscription_status(status)
+            # Cache the document for future use
+            self._cache_subscription_status(user_doc)
             
-            return status
+            # Log success
+            logger.info(f"Successfully retrieved subscription status for user")
+            
+            return user_doc
             
         except Exception as e:
             logger.error(f"Error checking subscription status: {e}")
-            
-            # If we have cached data, use it as fallback
-            if cached_data:
-                return cached_data
-                
-            # Otherwise return inactive status
-            return {
-                'is_active': False,
-                'type': 'error',
-                'expiry_date': None,
-                'cached_at': datetime.now().isoformat(),
-                'error': str(e)
-            }
+            return {"error": str(e)}
     
     def _get_cached_subscription(self) -> dict:
         """Get cached subscription status if available and valid"""
@@ -532,7 +441,7 @@ class FirebaseClient:
                 'Content-Type': 'application/json'
             }
             
-            # Get all documents in examiner-users collection
+            # Use the examiner-users collection as in the original code
             response = requests.get(f"{self.firestore_base_url}/examiner-users", headers=headers)
             
             if response.status_code == 200:
@@ -542,10 +451,15 @@ class FirebaseClient:
                 if 'documents' in data:
                     for doc in data['documents']:
                         if 'fields' in doc and 'hardware_id' in doc['fields']:
-                            if doc['fields']['hardware_id'].get('stringValue') == hardware_id:
+                            doc_hardware_id = doc['fields']['hardware_id'].get('stringValue')
+                            if doc_hardware_id == hardware_id:
                                 # Extract document ID from name field (last path segment)
                                 name = doc.get('name', '')
-                                return name.split('/')[-1] if name else None
+                                doc_id = name.split('/')[-1] if name else None
+                                logger.info(f"Found user document with ID: {doc_id}")
+                                return doc_id
+                
+                logger.warning(f"No document with hardware_id {hardware_id} found")
                 return None
             else:
                 logger.error(f"Failed to get documents: {response.text}")
@@ -557,64 +471,45 @@ class FirebaseClient:
     def initialize_subscription(self):
         """Initialize subscription fields for user if they don't exist"""
         try:
-            # Find user's document
-            doc_id = self._get_user_document_id()
-            if not doc_id:
-                logger.warning("Could not find user document")
-                return False
-
-            # Headers for Firestore REST API
-            headers = {
-                'Authorization': f'Bearer {self.id_token}',
-                'Content-Type': 'application/json'
-            }
-
-            # Get current document data
-            doc_url = f"{self.firestore_base_url}/examiner-users/{doc_id}"
-            response = requests.get(doc_url, headers=headers)
+            # Get hardware ID
+            hardware_id = HardwareIdentifier.get_hardware_id()
             
-            if response.status_code != 200:
-                logger.error(f"Failed to get document: {response.text}")
+            # Create document using REST API
+            url = f"{self.firestore_base_url}/examiner-users"
+            headers = {
+                "Authorization": f"Bearer {self.id_token}",
+                "Content-Type": "application/json"
+            }
+            
+            # Calculate end of month for trial expiry
+            today = datetime.now()
+            end_of_month = (today.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+            end_of_month = end_of_month.replace(hour=23, minute=59, second=59)
+            
+            # Format for Firestore REST API - note the Z suffix for timestamps
+            doc_data = {
+                "fields": {
+                    "subscribed": {"stringValue": "trial"},
+                    "sub_end": {"stringValue": end_of_month.isoformat() + "Z"},
+                    "hardware_id": {"stringValue": hardware_id},
+                    "user_id": {"stringValue": self.user_id},
+                    "full_name": {"stringValue": "New User"},
+                    "country": {"stringValue": ""},
+                    "school_level": {"stringValue": ""},
+                    "birthday": {"stringValue": ""}
+                }
+            }
+            
+            # Create new document in examiner-users collection
+            doc_response = requests.post(url, headers=headers, json=doc_data)
+            
+            if doc_response.status_code in (200, 201):
+                logger.info("Created new user document with subscription data")
+                return True
+            else:
+                logger.error(f"Failed to create user document: {doc_response.text}")
                 return False
                 
-            doc_data = response.json()
-
-            # Check if subscription fields exist
-            has_subscription = False
-            if 'fields' in doc_data:
-                has_subscription = 'subscription_type' in doc_data['fields']
-
-            # Only initialize if subscription fields don't exist
-            if not has_subscription:
-                # Calculate end of month for trial expiry
-                today = datetime.now()
-                end_of_month = (today.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
-                end_of_month = end_of_month.replace(hour=23, minute=59, second=59)
-
-                # Create subscription fields in Firestore format
-                update_data = {
-                    "fields": {
-                        "is_active": {"booleanValue": True},
-                        "subscription_type": {"stringValue": "trial"},
-                        "subscription_expiry": {"stringValue": end_of_month.isoformat()}
-                    }
-                }
-
-                # Use PATCH to update specific fields
-                update_response = requests.patch(
-                    doc_url, 
-                    headers=headers,
-                    json=update_data
-                )
-                
-                if update_response.status_code in (200, 201):
-                    logger.info(f"Initialized subscription fields for user document {doc_id}")
-                    return True
-                else:
-                    logger.error(f"Failed to update subscription: {update_response.text}")
-                    return False
-
-            return True  # Fields already exist
         except Exception as e:
             logger.error(f"Error initializing subscription: {e}")
             return False

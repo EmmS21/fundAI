@@ -345,44 +345,39 @@ class SyncService:
             raise
 
     def _sync_question(self, item: QueueItem):
-        """Sync a question from the server to local cache"""
+        """Sync a question to the local cache"""
         try:
-            question_id = item.data['question_id']
-            
-            # Fetch question data from server
-            path = f"questions/{question_id}"
-            question_data = self.firebase.get_data(path)
-            
-            if not question_data:
-                logger.warning(f"Question {question_id} not found on server")
-                raise SyncError(f"Question {question_id} not found")
+            # Check subscription status before syncing
+            if not self._verify_subscription():
+                logger.warning(f"Skipping question sync - subscription not active")
+                return False
                 
-            # Fetch assets for this question
-            assets_path = f"question_assets/{question_id}"
-            assets_data = self.firebase.get_data(assets_path) or {}
+            # Extract data from queue item
+            question_data = item.data
+            subject = question_data.get('subject')
+            level = question_data.get('level')
             
-            # Convert assets to list format
-            assets = []
-            for asset_id, asset_data in assets_data.items():
-                assets.append({
-                    'asset_id': asset_id,
-                    'question_id': question_id,
-                    'asset_type': asset_data['asset_type'],
-                    'content': asset_data['content']
-                })
+            if not subject or not level:
+                logger.error(f"Missing required fields in question data")
+                return False
                 
-            # Save to local cache
-            success = self._cache_manager.save_question(question_data, assets)
+            # Get CacheManager instance
+            cache_manager = services.cache_manager
             
-            if not success:
-                raise SyncError(f"Failed to save question {question_id} to cache")
+            # Save question to file-based cache
+            result = cache_manager.save_question_from_mongodb(question_data, subject, level)
+            
+            if result:
+                logger.info(f"Successfully synced question for {subject} at {level} level")
+                return True
+            else:
+                logger.error(f"Failed to save question to cache")
+                return False
                 
-            logger.info(f"Successfully synced question {question_id}")
-            
         except Exception as e:
-            logger.error(f"Failed to sync question: {e}")
-            raise
-
+            logger.error(f"Error syncing question: {e}")
+            return False
+            
     def _sync_system_metrics(self, item: QueueItem):
         """Sync system metrics using Firebase REST API"""
         try:
@@ -472,15 +467,98 @@ class SyncService:
             raise
 
     def _sync_batch_questions(self, items: List[QueueItem]):
-        """Sync multiple questions"""
-        # Questions need to be processed individually due to their assets
-        for item in items:
+        """Sync multiple questions in a batch"""
+        try:
+            # Check subscription status before syncing
+            if not self._verify_subscription():
+                logger.warning(f"Skipping batch question sync - subscription not active")
+                return False
+                
+            success_count = 0
+            
+            # Get CacheManager instance
+            cache_manager = services.cache_manager
+            
+            for item in items:
+                try:
+                    # Extract data from queue item
+                    question_data = item.data
+                    subject = question_data.get('subject')
+                    level = question_data.get('level')
+                    
+                    if not subject or not level:
+                        logger.error(f"Missing required fields in question data")
+                        continue
+                        
+                    # Save question to file-based cache
+                    result = cache_manager.save_question_from_mongodb(question_data, subject, level)
+                    
+                    if result:
+                        success_count += 1
+                        self._queue_manager.mark_completed(item.id)
+                    else:
+                        logger.error(f"Failed to save question to cache")
+                        self._queue_manager.mark_failed(item.id)
+                        
+                except Exception as e:
+                    logger.error(f"Error processing question in batch: {e}")
+                    self._queue_manager.mark_failed(item.id)
+            
+            logger.info(f"Batch question sync completed: {success_count}/{len(items)} successful")
+            return success_count > 0
+                
+        except Exception as e:
+            logger.error(f"Error in batch question sync: {e}")
+            return False
+            
+    def _verify_subscription(self) -> bool:
+        """
+        Verify if user has active subscription for syncing
+        
+        Returns:
+            bool: True if subscription is active, False otherwise
+        """
+        try:
+            # Get Firebase client
+            firebase = FirebaseClient()
+            
+            # Get user document with subscription info
+            user_doc = firebase._get_user_document()
+            
+            # If no user document, no subscription
+            if not user_doc:
+                return False
+                
+            # Extract subscription fields
+            subscribed = user_doc.get('subscribed', {}).get('stringValue')
+            sub_end_str = user_doc.get('sub_end', {}).get('stringValue')
+            
+            # If subscription fields don't exist, no subscription
+            if not subscribed or not sub_end_str:
+                return False
+                
+            # Check if subscription is inactive
+            if subscribed == "inactive":
+                return False
+                
+            # Check if subscription has expired
             try:
-                self._sync_question(item)
-            except Exception as e:
-                logger.error(f"Failed to sync question item {item.id}: {e}")
-                self._queue_manager.mark_failed(item.id)
-
+                from datetime import datetime
+                sub_end = datetime.fromisoformat(sub_end_str)
+                if datetime.now() > sub_end:
+                    return False
+            except (ValueError, TypeError):
+                # If date parsing fails, assume expired
+                return False
+                
+            # If we've passed all checks, subscription is active
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error verifying subscription for sync: {e}")
+            # For exceptions, deny sync to be safe
+            return False
+            
     def queue_user_data(self, user_data: Dict[str, Any]) -> str:
         """Queue user data for sync"""
         return self._queue_manager.add_to_queue(
@@ -514,11 +592,25 @@ class SyncService:
         )
         
     def queue_questions(self, questions: List[Dict[str, Any]]) -> str:
-        """Queue multiple questions as a batch"""
+        """
+        Queue multiple questions for syncing
+        
+        Args:
+            questions: List of question data objects
+            
+        Returns:
+            str: Batch ID
+        """
+        # Check subscription before queuing
+        if not self._verify_subscription():
+            logger.warning("Not queuing questions - subscription not active")
+            return ""
+            
+        # Add to queue with medium priority
         return self._queue_manager.add_batch_to_queue(
-            items=questions,
-            item_type='question',
-            priority=QueuePriority.HIGH  # T2: Question cache updates
+            questions, 
+            item_type="question", 
+            priority=QueuePriority.MEDIUM
         )
 
     def queue_system_metrics(self, metrics_data: Dict[str, Any]) -> str:
