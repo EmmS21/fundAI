@@ -1,7 +1,6 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, 
                               QPushButton, QLabel, QCheckBox, QFrame,
                               QMenu, QWidgetAction)
-from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt, Signal, QObject, QEvent
 from src.data.database.operations import UserOperations
 

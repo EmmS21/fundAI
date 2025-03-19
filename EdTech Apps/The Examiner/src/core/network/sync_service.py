@@ -9,6 +9,8 @@ import time
 import threading
 from src.data.cache.cache_manager import CacheManager
 from src.core import services
+from enum import Enum
+import json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -102,10 +104,14 @@ class SyncService:
                 time.sleep(5)
                 continue
                 
+            # Get adaptive batch size based on connection quality
+            adaptive_batch_size = self._network_monitor.get_recommended_batch_size(self.BATCH_SIZE)
+                
             # Process batches first
             batch_ids = self.get_pending_batch_ids()
             if batch_ids:
-                for batch_id in batch_ids[:self.BATCH_SIZE]:
+                # Only process up to adaptive_batch_size batches at a time
+                for batch_id in batch_ids[:adaptive_batch_size]:
                     self._process_batch(batch_id)
                 continue
                 
@@ -118,34 +124,40 @@ class SyncService:
                 time.sleep(1)
 
     def _process_batch(self, batch_id: str):
-        """Process all items in a batch together"""
-        batch_items = self._queue_manager.get_batch_items(batch_id)
-        if not batch_items:
+        """
+        Process a batch of sync items
+        
+        Args:
+            batch_id: The batch ID to process
+        """
+        # Get all items in this batch
+        items = self._queue_manager.get_batch_items(batch_id)
+        
+        if not items:
             logger.warning(f"No items found for batch {batch_id}")
             return
             
-        logger.info(f"Processing batch {batch_id} with {len(batch_items)} items")
-        
-        # Group items by type for efficient processing
+        # Group items by type
         items_by_type = {}
-        for item in batch_items:
-            if item.type not in items_by_type:
-                items_by_type[item.type] = []
-            items_by_type[item.type].append(item)
-        
+        for item in items:
+            item_type = item.item_type
+            if item_type not in items_by_type:
+                items_by_type[item_type] = []
+            items_by_type[item_type].append(item)
+            
         # Process each type of item
         success = True
-        for item_type, items in items_by_type.items():
+        for item_type, type_items in items_by_type.items():
             try:
                 if item_type == 'exam_result':
-                    self._sync_batch_exam_results(items)
+                    self._sync_batch_exam_results(type_items)
                 elif item_type == 'question_response':
-                    self._sync_batch_question_responses(items)
+                    self._sync_batch_question_responses(type_items)
                 elif item_type == 'question':
-                    self._sync_batch_questions(items)
+                    self._sync_batch_questions(type_items)
                 elif item_type == 'user':
                     # Process user items individually
-                    for item in items:
+                    for item in type_items:
                         self._process_item(item)
                 else:
                     logger.warning(f"Unknown batch item type: {item_type}")
@@ -153,70 +165,108 @@ class SyncService:
             except Exception as e:
                 logger.error(f"Error processing batch {batch_id} items of type {item_type}: {e}")
                 success = False
-        
+                        
         # Mark batch as completed if successful
         if success:
             self._queue_manager.mark_batch_completed(batch_id)
+            logger.info(f"Successfully processed batch {batch_id}")
         else:
-            # Mark individual items as failed
-            for item in batch_items:
-                self._queue_manager.mark_failed(item.id)
+            logger.warning(f"Batch {batch_id} processing had errors")
 
     def _process_item(self, item: QueueItem):
-        """Process a single queue item"""
+        """
+        Process a single sync item
+        
+        Args:
+            item: The queue item to process
+            
+        Returns:
+            True if successful, False otherwise
+        """
         try:
-            if item.type == 'user':
+            if item.item_type == 'user_data':
                 self._sync_with_retry(self._sync_user_data, item)
-            elif item.type == 'exam_result':
+            elif item.item_type == 'exam_result':
                 self._sync_with_retry(self._sync_exam_result, item)
-            elif item.type == 'question_response':
+            elif item.item_type == 'question_response':
                 self._sync_with_retry(self._sync_question_response, item)
-            elif item.type == 'question':
+            elif item.item_type == 'question':
                 self._sync_with_retry(self._sync_question, item)
-            elif item.type == 'system_metrics':
+            elif item.item_type == 'system_metrics':
                 self._sync_with_retry(self._sync_system_metrics, item)
             else:
-                logger.warning(f"Unknown item type: {item.type}")
+                logger.warning(f"Unknown item type: {item.item_type}")
                 self._queue_manager.mark_failed(item.id)
-                return
-            
-            self._queue_manager.mark_completed(item.id)
+                return False
+            return True
         except Exception as e:
-            logger.error(f"Failed to process item {item.id}: {e}")
+            logger.error(f"Error processing item {item.id}: {e}")
             self._queue_manager.mark_failed(item.id)
+            return False
 
     def _sync_with_retry(self, sync_func: Callable, item: QueueItem) -> bool:
-        """Retry sync operations with backoff"""
-        retries = 0
-        while retries < self.MAX_RETRIES:
+        """
+        Attempt to sync with retry logic
+        
+        Args:
+            sync_func: The function to call for syncing
+            item: The queue item to sync
+            
+        Returns:
+            True if eventually successful, False if all retries failed
+        """
+        max_retries = self.MAX_RETRIES
+        
+        for attempt in range(1, max_retries + 1):
             try:
-                sync_func(item)
-                return True
+                if sync_func(item):
+                    self._queue_manager.mark_completed(item.id)
+                    return True
             except Exception as e:
-                retries += 1
-                logger.error(f"Sync attempt {retries} failed: {e}")
-                if retries < self.MAX_RETRIES:
-                    time.sleep(self.RETRY_DELAY)
+                logger.error(f"Error syncing item {item.id} (attempt {attempt}/{max_retries}): {e}")
+            
+            # Update retry count
+            self._queue_manager.update_item(item.increment_attempts())
+            
+            # Don't sleep on the last attempt
+            if attempt < max_retries:
+                # Use adaptive retry delay based on connection quality and attempt number
+                retry_delay = self._network_monitor.get_retry_delay(attempt, self.RETRY_DELAY)
+                logger.info(f"Retrying in {retry_delay:.1f} seconds (attempt {attempt}/{max_retries})")
+                time.sleep(retry_delay)
+                
+        # All retries failed
+        self._queue_manager.mark_failed(item.id)
         return False
 
     def _serialize_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert Python objects to JSON-serializable format"""
-        serialized = {}
+        """
+        Serialize data for sync operations, converting dates/times to strings
+        
+        Args:
+            data: The data to serialize
+            
+        Returns:
+            Serialized data
+        """
+        result = {}
         for key, value in data.items():
-            if isinstance(value, (datetime, date)):
-                serialized[key] = value.isoformat()
-            elif value is None:
-                serialized[key] = None
+            if isinstance(value, datetime):
+                result[key] = value.isoformat()
+            elif isinstance(value, date):
+                result[key] = value.isoformat()
+            elif isinstance(value, Enum):
+                result[key] = value.value
             elif isinstance(value, dict):
-                serialized[key] = self._serialize_data(value)
+                result[key] = self._serialize_data(value)
             elif isinstance(value, list):
-                serialized[key] = [
+                result[key] = [
                     self._serialize_data(item) if isinstance(item, dict) else item
                     for item in value
                 ]
             else:
-                serialized[key] = value
-        return serialized
+                result[key] = value
+        return result
 
     def _sync_user_data(self, item: QueueItem):
         """Sync user data using Firebase REST API"""
