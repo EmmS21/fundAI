@@ -8,6 +8,7 @@ from ...utils.hardware_identifier import HardwareIdentifier
 import time
 import threading
 from src.data.cache.cache_manager import CacheManager
+from src.core import services
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,66 +28,59 @@ class SyncService:
     BATCH_SIZE = 10  # maximum items to process in a batch
 
     def __new__(cls):
+        """Singleton pattern to ensure only one instance exists"""
         if cls._instance is None:
             cls._instance = super(SyncService, cls).__new__(cls)
-            cls._instance._initialized = False
+            cls._instance.initialized = False
         return cls._instance
 
     def __init__(self):
-        if not self._initialized:
-            self._network_monitor = None
-            self._queue_manager = None
-            self._monitor_thread = None
-            self._sync_thread = None
-            self._running = False
-            self.firebase = None
-            self.hardware_id = None
-            self._cache_manager = None
-            self._initialized = False
+        """Initialize the sync service"""
+        if self.initialized:
+            return
+            
+        # Initialize components
+        self._queue_manager = QueueManager()
+        self._network_monitor = NetworkMonitor()
+        
+        # Register self in services registry
+        services.sync_service = self
+        
+        # Thread control
+        self._running = False
+        self._sync_thread = None
+        
+        # Register for network status changes
+        self._network_monitor.status_changed.connect(self._handle_network_change)
+        
+        self.initialized = True
+        logger.info("Sync Service initialized")
 
     def initialize(self):
-        """Initialize the sync service with required dependencies"""
-        try:
-            # Initialize Firebase client
-            self.firebase = FirebaseClient()
-            
-            # Get the authenticated user ID
-            self.user_id = self.firebase.get_user_id()
-            logger.info(f"Sync service initialized with user ID: {self.user_id}")
-            
-            # Initialize network monitor
-            self._network_monitor = NetworkMonitor()
-            
-            # Initialize queue manager
-            self._queue_manager = QueueManager()
-            
-            _, _, self.hardware_id = HardwareIdentifier.get_hardware_id()
-            self._cache_manager = CacheManager()
-            self._initialized = True
-        except Exception as e:
-            logger.error(f"Failed to initialize sync service: {e}")
-            self._initialized = False
+        """Legacy initialization method for backward compatibility"""
+        pass
 
     def start(self):
         """Start the sync service"""
-        if not self._initialized:
-            self.initialize()
-        
+        if self._running:
+            logger.info("Sync service already running")
+            return
+            
         self._running = True
-        self._network_monitor.register_callback(self._handle_network_change)
-        self._network_monitor.start()
         
-        # Start sync thread
-        self._sync_thread = threading.Thread(target=self._sync_worker, daemon=True)
-        self._sync_thread.start()
-        
-        logger.info("Sync service started")
+        # Start sync thread if we're online
+        if self._network_monitor.get_status() == NetworkStatus.ONLINE:
+            self._sync_thread = threading.Thread(target=self._sync_worker, daemon=True)
+            self._sync_thread.start()
+            logger.info("Sync service started")
+        else:
+            logger.info("Sync service started (waiting for network)")
 
     def stop(self):
         """Stop the sync service"""
         self._running = False
-        if self._network_monitor:
-            self._network_monitor.stop()
+        if self._sync_thread:
+            self._sync_thread.join(timeout=1.0)
         logger.info("Sync service stopped")
 
     def _handle_network_change(self, status: NetworkStatus):
@@ -103,13 +97,13 @@ class SyncService:
     def _sync_worker(self):
         """Background thread to process sync queue"""
         while self._running:
-            if self._network_monitor.status != NetworkStatus.ONLINE:
+            if self._network_monitor.get_status() != NetworkStatus.ONLINE:
                 # Sleep and check again if network is offline
                 time.sleep(5)
                 continue
                 
             # Process batches first
-            batch_ids = self._queue_manager.get_pending_batch_ids()
+            batch_ids = self.get_pending_batch_ids()
             if batch_ids:
                 for batch_id in batch_ids[:self.BATCH_SIZE]:
                     self._process_batch(batch_id)
@@ -484,3 +478,16 @@ class SyncService:
             item_type='system_metrics',
             priority=QueuePriority.MEDIUM  # T3: System metrics
         )
+
+    def get_pending_batch_ids(self) -> List[str]:
+        """
+        Get a list of all unique batch IDs for pending items in the queue.
+        
+        Returns:
+            List of batch IDs
+        """
+        batch_ids = set()
+        for item in self._queue_manager.queue:
+            if item.batch_id and item.status == QueueStatus.PENDING:
+                batch_ids.add(item.batch_id)
+        return list(batch_ids)

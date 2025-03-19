@@ -16,6 +16,33 @@ class NetworkStatus(Enum):
     OFFLINE = "offline"
     UNKNOWN = "unknown"
 
+class Signal:
+    """Simple signal class to support the connect/disconnect pattern"""
+    def __init__(self):
+        self._callbacks = []
+        
+    def connect(self, callback):
+        """Connect a callback to this signal"""
+        if callback not in self._callbacks:
+            self._callbacks.append(callback)
+            return True
+        return False
+        
+    def disconnect(self, callback):
+        """Disconnect a callback from this signal"""
+        if callback in self._callbacks:
+            self._callbacks.remove(callback)
+            return True
+        return False
+        
+    def emit(self, *args, **kwargs):
+        """Emit the signal, calling all connected callbacks"""
+        for callback in self._callbacks:
+            try:
+                callback(*args, **kwargs)
+            except Exception as e:
+                logger.error(f"Error in signal callback {callback}: {e}")
+
 class NetworkMonitor:
     def __init__(self):
         self._callbacks = []
@@ -23,6 +50,9 @@ class NetworkMonitor:
         self._stop_flag = Event()
         self._monitor_thread = None
         self.CHECK_INTERVAL = 300  # 5 minutes default
+        
+        # Add the status_changed signal
+        self.status_changed = Signal()
 
     def start(self):
         """Start monitoring only when needed"""
@@ -49,12 +79,18 @@ class NetworkMonitor:
         if callback not in self._callbacks:
             self._callbacks.append(callback)
             logger.debug(f"Registered callback: {callback}")
+            
+        # Also register with the signal for compatibility
+        self.status_changed.connect(callback)
 
     def unregister_callback(self, callback):
         """Remove a callback"""
         if callback in self._callbacks:
             self._callbacks.remove(callback)
             logger.debug(f"Unregistered callback: {callback}")
+            
+        # Also unregister from the signal
+        self.status_changed.disconnect(callback)
 
     def get_status(self) -> NetworkStatus:
         """Get current network status"""
@@ -92,4 +128,7 @@ class NetworkMonitor:
                 callback(self._status)
             except Exception as e:
                 logger.error(f"Error in callback {callback}: {e}")
+                
+        # Also emit the signal
+        self.status_changed.emit(self._status)
 

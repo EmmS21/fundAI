@@ -2,30 +2,30 @@
 
 ## 1. MongoDB Connection Management
 
-- [ ] Create `MongoDBClient` class
-  - [ ] Implement connection handling with retry logic
-  - [ ] Add methods for querying questions by subject/level/topic
-  - [ ] Include error handling and connection pooling
-  - [ ] Add logging for connection events
+- [x] Create `MongoDBClient` class
+  - [x] Implement connection handling with retry logic
+  - [x] Add methods for querying questions by subject/level/topic
+  - [x] Include error handling and connection pooling
+  - [x] Add logging for connection events
 
-- [ ] Implement secure credential storage
-  - [ ] Create `CredentialManager` class
-  - [ ] Add support for system keychain (macOS/Linux)
-  - [ ] Implement hardware-derived key fallback
-  - [ ] Create first-run setup flow for MongoDB URI input
+- [x] Implement secure credential storage
+  - [x] Create `CredentialManager` class
+  - [x] Add support for system keychain (macOS/Linux)
+  - [x] Implement hardware-derived key fallback
+  - [x] Create first-run setup flow for MongoDB URI input
 
 ## 2. Cache System Enhancements
 
-- [ ] Update `CacheManager` for MongoDB integration
-  - [ ] Modify `_run` method to check for new content when online
-  - [ ] Adjust `save_question` to handle MongoDB document structure
-  - [ ] Update cache invalidation logic for question-based model
-  - [ ] Add handling for question assets (images, diagrams)
+- [x] Update `CacheManager` for MongoDB integration
+  - [x] Modify `_run` method to check for new content when online
+  - [x] Adjust `save_question` to handle MongoDB document structure
+  - [x] Update cache invalidation logic for question-based model
+  - [x] Add handling for question assets (images, diagrams)
 
-- [ ] Implement intelligent prefetching
-  - [ ] Create prioritization based on user subjects
-  - [ ] Add background fetching during idle periods
-  - [ ] Implement storage space management
+- [x] Implement intelligent prefetching
+  - [x] Create prioritization based on user subjects
+  - [x] Add background fetching during idle periods
+  - [x] Implement storage space management
 
 ## 3. Sync System Integration
 
@@ -41,7 +41,8 @@
 
 ## 4. Network Detection Improvements
 
-- [ ] Enhance `NetworkMonitor` for more robust detection
+- [x] Enhance `NetworkMonitor` for more robust detection
+  - [x] Fix method reference (switched from status attribute to get_status() method)
   - [ ] Add validation check with lightweight request
   - [ ] Implement "settling time" to prevent rapid toggling
   - [ ] Add connection quality detection (not just binary online/offline)

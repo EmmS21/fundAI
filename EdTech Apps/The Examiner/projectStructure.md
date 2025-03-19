@@ -18,7 +18,8 @@ exam-assistant/
 │   │   │
 │   │   ├── mongodb/                   # NEW: MongoDB integration
 │   │   │   ├── __init__.py            # Module initialization
-│   │   │   └── client.py              # MongoDBClient implementation
+│   │   │   ├── client.py              # MongoDBClient implementation
+│   │   │   └── credential_manager.py  # Secure credential storage
 │   │   │
 │   │   ├── queue_manager.py           # Enhanced with batch processing
 │   │   └── firebase/
