@@ -17,5 +17,9 @@ def get_db_session():
     session = Session()
     try:
         yield session
+        session.commit()  # Commit the transaction if no exceptions
+    except Exception as e:
+        session.rollback()  # Roll back on exceptions
+        raise  # Re-raise the exception
     finally:
         session.close()

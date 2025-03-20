@@ -71,12 +71,18 @@
   - [x] Implement graceful handling of expired subscriptions
   - [x] Add alerts for subscription expiration
 
+- [x] Fix subscription verification issues
+  - [x] Update Firebase client to handle Firestore document structure correctly
+  - [x] Fix subscription status display in UI
+  - [x] Ensure MongoDB client correctly extracts subscription data
+  - [x] Add support for trial subscription verification
+
 ## 6. User Interface Updates
 
-- [ ] Add cache status indicators
-  - [ ] Create visual indicators for cache freshness
-  - [ ] Show download progress for new content
-  - [ ] Add subject-specific completion status
+- [x] Add cache status indicators
+  - [x] Create visual indicators for cache freshness
+  - [x] Show download progress for new content
+  - [x] Add subject-specific completion status
 
 - [ ] Implement cache management controls
   - [ ] Add ability to force refresh for specific subjects

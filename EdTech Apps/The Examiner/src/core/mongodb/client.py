@@ -9,10 +9,12 @@ import json
 from datetime import datetime
 import re
 import time
+from bson import ObjectId
 
 # Import our credential manager
 from .credential_manager import CredentialManager
 from src.core.firebase.client import FirebaseClient
+from src.utils.hardware_identifier import HardwareIdentifier
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -49,8 +51,9 @@ class MongoDBClient:
         "October/November": "Term 2"
     }
     
-    # Subject standardization mapping
+    # Subject standardization mapping - expanded to handle more variations
     SUBJECT_MAPPING = {
+        # All uppercase variations
         "ACCOUNTING": "Accounting",
         "ADDITIONAL MATHEMATICS": "Additional Mathematics",
         "BIOLOGY": "Biology",
@@ -59,9 +62,77 @@ class MongoDBClient:
         "ENGLISH LANGUAGE": "English Language",
         "ENGLISHLANGUAGE": "English Language",
         "HISTORY": "History",
+        
+        # Title case variations
+        "Accounting": "Accounting",
+        "Additional Mathematics": "Additional Mathematics", 
+        "Biology": "Biology",
+        "Computer Science": "Computer Science",
+        "Economics": "Economics",
+        "English Language": "English Language",
+        "History": "History",
         "Mathematics": "Mathematics",
         "Physics": "Physics",
         "Science": "Science"
+    }
+    
+    # Level standardization mapping for both questions and answers
+    QUESTION_LEVEL_MAPPING = {
+        # Common variations for question documents
+        "o level": "olevel",
+        "olevel": "olevel",
+        "O level": "olevel",
+        "O Level": "olevel",
+        "o_level": "olevel",
+        "OLevel": "olevel",
+        
+        "a level": "aslevel",
+        "A level": "aslevel",
+        "A Level": "aslevel",
+        "as level": "aslevel",
+        "AS level": "aslevel",
+        "AS Level": "aslevel",
+        "aslevel": "aslevel",
+        "a_level": "aslevel",
+        "ASLevel": "aslevel",
+        
+        "primary": "primary school",
+        "Primary": "primary school",
+        "primary school": "primary school",
+        "Primary School": "primary school",
+        "grade_7": "primary school",
+        "grade7": "primary school",
+        "Grade 7": "primary school",
+        "grade 7": "primary school"
+    }
+    
+    ANSWER_LEVEL_MAPPING = {
+        # Common variations for answer documents
+        "o level": "OLevel",
+        "olevel": "OLevel",
+        "O level": "OLevel",
+        "O Level": "OLevel",
+        "o_level": "OLevel",
+        "OLevel": "OLevel",
+        
+        "a level": "ASLevel",
+        "A level": "ASLevel", 
+        "A Level": "ASLevel",
+        "as level": "ASLevel",
+        "AS level": "ASLevel",
+        "AS Level": "ASLevel",
+        "aslevel": "ASLevel",
+        "a_level": "ASLevel",
+        "ASLevel": "ASLevel",
+        
+        "primary": "Primary School",
+        "Primary": "Primary School",
+        "primary school": "Primary School",
+        "Primary School": "Primary School",
+        "grade_7": "Primary School",
+        "grade7": "Primary School",
+        "Grade 7": "Primary School",
+        "grade 7": "Primary School"
     }
     
     # Valid subscription types
@@ -79,13 +150,19 @@ class MongoDBClient:
         if self.initialized:
             return
             
+        # Initialize connection objects
         self.client = None
         self.db = None
-        self.connected = False
-        self.credential_manager = None  # We won't need this anymore with hardcoded credentials
         
-        # Initialize connection
-        self.connect()
+        # Set instance variables from class constants
+        self.db_name = self.DB_NAME  # Fix: Store DB_NAME as instance attribute
+        self.uri = self.MONGODB_URI
+        
+        # Load credentials
+        self._load_credentials()
+        
+        # Connection status
+        self.connected = False
         
         self.initialized = True
         logger.info("MongoDB client initialized")
@@ -161,6 +238,11 @@ class MongoDBClient:
             
             logger.info(f"Connected to MongoDB database: {db_name}")
             self.connected = True
+            
+            # Report successful connection to NetworkMonitor
+            from src.core.network.monitor import NetworkMonitor
+            NetworkMonitor().report_mongodb_connection()
+            
             return True
             
         except Exception as e:
@@ -210,61 +292,273 @@ class MongoDBClient:
         """Convert specific term names to Term 1 or Term 2"""
         return self.TERM_MAPPING.get(term, term)
     
-    def get_questions_by_subject_level(self, subject: str, level: str, 
-                                   limit: int = 50, year: Optional[str] = None) -> List[Dict]:
+    def get_questions_by_subject_level(self, subject: str, level: str, limit: int = 30) -> List[Dict]:
         """
         Get questions for a specific subject and level
         
         Args:
             subject: Subject name
-            level: Level (Primary School, OLevel, ASLevel)
+            level: Education level
             limit: Maximum number of questions to return
-            year: Optional filter by year
             
         Returns:
             List of question documents
         """
+        logger.info(f"Getting questions for {subject} at {level} level (limit: {limit})")
+        
         try:
-            # First verify subscription and connection
-            if not self._ensure_connected():
+            # Verify DB attributes are set correctly
+            if not hasattr(self, 'db_name') or not self.db_name:
+                logger.error("db_name attribute is not set properly")
                 return []
                 
-            # Standardize inputs for consistent querying
-            std_subject = self._standardize_subject(subject)
-            std_level = self._standardize_level(level)
+            # Check subscription before accessing MongoDB
+            if not self._check_subscription():
+                logger.warning("Subscription not active, cannot fetch questions")
+                return []
+                
+            # Ensure we're connected
+            if not self._ensure_connected():
+                logger.error("Failed to connect to MongoDB")
+                return []
             
-            # Build query
+            # Get database references
+            try:
+                db = self.client[self.db_name]
+                logger.debug(f"Successfully accessed database: {self.db_name}")
+                
+                # Check collections exist
+                collections = db.list_collection_names()
+                logger.debug(f"Available collections: {collections}")
+                
+                if "extracted-questions" not in collections:
+                    logger.error(f"'extracted-questions' collection not found in database {self.db_name}")
+                    return []
+                
+                if "extracted-answers" not in collections:
+                    logger.warning(f"'extracted-answers' collection not found in database {self.db_name}")
+                
+                papers_collection = db["extracted-questions"]
+                answers_collection = db["extracted-answers"]
+            except Exception as e:
+                logger.error(f"Error accessing collections: {e}")
+                return []
+            
+            # Standardize subject and level names
+            standardized_subject = self._standardize_subject_name(subject)
+            standardized_level_q = self.QUESTION_LEVEL_MAPPING.get(level.lower(), level.lower())
+            standardized_level_a = self.ANSWER_LEVEL_MAPPING.get(level.lower(), level)
+            
+            logger.info(f"Standardized subject: '{standardized_subject}', Question level: '{standardized_level_q}', Answer level: '{standardized_level_a}'")
+            
+            # Create query for questions
             query = {
-                "subject": {"$regex": f"^{std_subject}$", "$options": "i"},
-                "level": {"$regex": f"^{std_level}$", "$options": "i"}
+                "paper_meta.Subject": {"$regex": standardized_subject, "$options": "i"},  # Case-insensitive subject match
+                "paper_meta.Level": standardized_level_q  # Case-sensitive level match for questions
             }
             
-            # Add year filter if provided
-            if year:
-                query["Year"] = year
+            logger.info(f"Executing MongoDB query: {query}")
+            
+            # Find questions matching the query
+            try:
+                cursor = papers_collection.find(query).limit(limit)
                 
-            # Get questions collection
-            questions_collection = self.db["extracted-questions"]
-            
-            # Execute query
-            cursor = questions_collection.find(query).limit(limit)
-            
-            # Process results
-            results = []
-            for doc in cursor:
-                # Process document
-                self._process_document_id(doc)
-                results.append(doc)
+                # Convert cursor to list and process each document
+                question_docs = list(cursor)
+                logger.info(f"Found {len(question_docs)} question documents")
                 
-            logger.info(f"Retrieved {len(results)} questions for {std_subject} at {std_level} level")
-            return results
+                if len(question_docs) == 0:
+                    # Try an alternate query with just the subject
+                    alt_query = {"paper_meta.Subject": {"$regex": standardized_subject, "$options": "i"}}
+                    logger.info(f"No questions found with original query. Trying alternate query: {alt_query}")
+                    cursor = papers_collection.find(alt_query).limit(5)
+                    sample_docs = list(cursor)
+                    
+                    if sample_docs:
+                        # Log the actual levels in the database to help debug
+                        levels = set()
+                        for doc in sample_docs:
+                            paper_meta = doc.get('paper_meta', {})
+                            level_val = paper_meta.get('Level')
+                            if level_val:
+                                levels.add(level_val)
+                        
+                        logger.info(f"Found documents with subject '{standardized_subject}' and levels: {levels}")
+                        logger.info(f"Expected level '{standardized_level_q}' not found. Make sure mapping is correct.")
+                    else:
+                        logger.warning(f"No documents found for subject '{standardized_subject}' at all")
+            except Exception as e:
+                logger.error(f"Error executing query: {e}")
+                return []
             
-        except SubscriptionRequiredError as e:
-            logger.warning(f"Subscription error: {e}")
-            return []
+            # Filter questions to only include those with matching answers
+            filtered_questions = []
+            for doc in question_docs:
+                # Extract paper metadata for matching with answers
+                paper_meta = doc.get('paper_meta', {})
+                
+                # Create query to find matching answer documents
+                answer_query = {
+                    "paper_meta.Subject": paper_meta.get("Subject"),
+                    "paper_meta.Level": standardized_level_a,  # Use answer-specific level format
+                    "paper_meta.Year": paper_meta.get("Year"),
+                    "paper_meta.PaperNumber": paper_meta.get("PaperNumber"),
+                    "paper_meta.Examining Board": paper_meta.get("Examining Board", paper_meta.get("ExaminingBoard"))
+                }
+                
+                # Check if an answer document exists
+                answer_exists = answers_collection.find_one(answer_query)
+                
+                if answer_exists:
+                    # If matching answer exists, include this question
+                    filtered_questions.append(doc)
+                else:
+                    logger.debug(f"Skipping question without matching answer: {paper_meta}")
+            
+            logger.info(f"Filtered to {len(filtered_questions)} questions with matching answers")
+            
+            # If no questions found with exact match, try a more flexible search
+            if not filtered_questions:
+                logger.info("No questions found with matching answers, trying more flexible search")
+                
+                # Try with just subject and level
+                alt_query = {
+                    "paper_meta.Subject": {"$regex": standardized_subject, "$options": "i"},
+                    "paper_meta.Level": standardized_level_q
+                }
+                
+                cursor = papers_collection.find(alt_query).limit(limit)
+                question_docs = list(cursor)
+                logger.info(f"Found {len(question_docs)} question documents with flexible search")
+                
+                # Still filter for matching answers
+                for doc in question_docs:
+                    paper_meta = doc.get('paper_meta', {})
+                    answer_query = {
+                        "paper_meta.Subject": paper_meta.get("Subject"),
+                        "paper_meta.Level": standardized_level_a
+                    }
+                    
+                    answer_exists = answers_collection.find_one(answer_query)
+                    if answer_exists:
+                        filtered_questions.append(doc)
+                
+                logger.info(f"Filtered to {len(filtered_questions)} questions with matching answers")
+            
+            return filtered_questions
+            
         except Exception as e:
-            logger.error(f"Error retrieving questions by subject/level: {e}")
+            logger.error(f"Error fetching questions: {str(e)}", exc_info=True)
             return []
+            
+    def _standardize_subject_name(self, subject: str) -> str:
+        """Standardize subject name to match MongoDB schema"""
+        # Remove spaces and convert to lowercase
+        standardized = subject.lower().replace(" ", "")
+        
+        # Map common subject names
+        subject_map = {
+            "biology": "biology",
+            "mathematics": "mathematics",
+            "english": "englishlanguage",
+            "physics": "physics",
+            "chemistry": "chemistry",
+            "history": "history",
+            "geography": "geography",
+            "business": "businessstudies",
+            "accounting": "accounting",
+            "economics": "economics",
+            "computerscience": "computerscience"
+        }
+        
+        return subject_map.get(standardized, standardized)
+        
+    def _standardize_level_name(self, level: str) -> str:
+        """Standardize level name to match MongoDB schema"""
+        # Remove spaces and convert to lowercase
+        standardized = level.lower().replace(" ", "")
+        
+        # Map common level names
+        level_map = {
+            "grade7": "grade7",
+            "olevel": "olevel",
+            "alevel": "aslevel",  # Note 'a_level' maps to 'aslevel' in the database
+            "a_level": "aslevel",
+            "o_level": "olevel",
+            "grade_7": "grade7",
+            "primary": "grade7"
+        }
+        
+        return level_map.get(standardized, standardized)
+    
+    def count_questions(self, subject: str, level: str) -> int:
+        """
+        Count the number of questions available for a given subject and level
+        
+        Args:
+            subject: Subject name
+            level: Education level
+            
+        Returns:
+            Estimated count of questions
+        """
+        logger.info(f"Counting questions for {subject} at {level} level")
+        
+        try:
+            # Check subscription
+            if not self._check_subscription():
+                logger.warning("Subscription not active, cannot count questions")
+                return 0
+                
+            # Ensure connection
+            if not self._ensure_connected():
+                logger.error("Failed to connect to MongoDB")
+                return 0
+            
+            # Get database references
+            db = self.client[self.db_name]
+            papers_collection = db["extracted-questions"]
+            answers_collection = db["extracted-answers"]
+            
+            # Standardize subject and level names
+            standardized_subject = self._standardize_subject_name(subject)
+            standardized_level_q = self.QUESTION_LEVEL_MAPPING.get(level.lower(), level.lower())
+            standardized_level_a = self.ANSWER_LEVEL_MAPPING.get(level.lower(), level)
+            
+            # Create query for questions
+            query = {
+                "paper_meta.Subject": {"$regex": standardized_subject, "$options": "i"},
+                "paper_meta.Level": standardized_level_q
+            }
+            
+            # Count papers matching the criteria
+            paper_count = papers_collection.count_documents(query)
+            
+            # Check how many have matching answers
+            papers_with_answers = 0
+            cursor = papers_collection.find(query)
+            
+            for doc in cursor:
+                paper_meta = doc.get('paper_meta', {})
+                answer_query = {
+                    "paper_meta.Subject": paper_meta.get("Subject"),
+                    "paper_meta.Level": standardized_level_a,
+                    "paper_meta.Year": paper_meta.get("Year"),
+                    "paper_meta.PaperNumber": paper_meta.get("PaperNumber")
+                }
+                
+                if answers_collection.find_one(answer_query):
+                    papers_with_answers += 1
+            
+            logger.info(f"Found {paper_count} papers, {papers_with_answers} with matching answers")
+            
+            # Estimate number of questions (average 15 questions per paper)
+            estimated_questions = papers_with_answers * 15
+            return estimated_questions
+            
+        except Exception as e:
+            logger.error(f"Error counting questions: {str(e)}")
+            return 0
     
     def get_questions_by_topic(self, subject: str, topic: str, limit: int = 50) -> List[Dict]:
         """
@@ -317,60 +611,131 @@ class MongoDBClient:
     
     def get_matching_answer(self, question_doc: Dict) -> Optional[Dict]:
         """
-        Find the matching answer for a question document
+        Get the matching answer document for a question.
         
         Args:
-            question_doc: The question document
+            question_doc: The question document for which to find a matching answer
             
         Returns:
-            Matching answer document or None if not found
+            The answer document, or None if no match is found
         """
+        logger.info(f"Fetching matching answer for question")
+        
         try:
-            # First verify subscription and connection
+            # Check subscription before accessing MongoDB
+            if not self._check_subscription():
+                logger.warning("Subscription not active, cannot fetch answer")
+                return None
+                
+            # Ensure we're connected
             if not self._ensure_connected():
+                logger.error("Failed to connect to MongoDB")
                 return None
-                
-            # Extract matching fields
-            subject = question_doc.get("subject")
-            level = question_doc.get("level")
-            year = question_doc.get("Year")
-            paper = question_doc.get("Paper", {}).get("$numberInt")
-            term = self._standardize_term(question_doc.get("Term"))
-            question_number = question_doc.get("question_number", {}).get("$numberInt")
             
-            if not all([subject, level, year, paper, term, question_number]):
-                logger.warning("Missing required fields for answer matching")
+            # Extract question number - check multiple possible locations
+            question_number = None
+            if 'question_number' in question_doc:
+                question_number = question_doc['question_number']
+                # Handle MongoDB extended JSON format
+                if isinstance(question_number, dict) and '$numberInt' in question_number:
+                    question_number = int(question_number['$numberInt'])
+            
+            # Try other possible fields if not found
+            if question_number is None:
+                for field in ['QuestionNumber', 'Number', 'question_number', 'Question_Number']:
+                    if field in question_doc:
+                        question_number = question_doc[field]
+                        break
+                
+            # Check if question number is in a questions array
+            if question_number is None and 'questions' in question_doc and isinstance(question_doc['questions'], list):
+                for q in question_doc['questions']:
+                    if 'question_number' in q:
+                        question_number = q['question_number']
+                        break
+            
+            # Extract year from the question
+            year = None
+            if 'paper_meta' in question_doc and 'Year' in question_doc['paper_meta']:
+                year = question_doc['paper_meta']['Year']
+            elif 'year' in question_doc:
+                year = question_doc['year']
+            
+            # Extract subject from the question
+            subject = None
+            if 'paper_meta' in question_doc and 'Subject' in question_doc['paper_meta']:
+                subject = question_doc['paper_meta']['Subject']
+            elif 'subject' in question_doc:
+                subject = question_doc['subject']
+            
+            if not subject:
+                logger.warning("No subject found in question, cannot find matching answer")
                 return None
-                
-            # Build query to find matching answer
-            query = {
-                "subject": {"$regex": f"^{subject}$", "$options": "i"},
-                "level": {"$regex": f"^{level}$", "$options": "i"},
-                "Year": year,
-                "Paper.$numberInt": paper,
-                "Term": {"$regex": f".*{term}.*", "$options": "i"},
-                "question_number.$numberInt": question_number
-            }
-                
-            # Get answers collection
-            answers_collection = self.db["extracted-answers"]
             
-            # Execute query
-            answer_doc = answers_collection.find_one(query)
+            # Get level from paper_meta
+            level = None
+            if 'paper_meta' in question_doc and 'Level' in question_doc['paper_meta']:
+                level = question_doc['paper_meta']['Level']
+            elif 'level' in question_doc:
+                level = question_doc['level']
             
-            if answer_doc:
-                self._process_document_id(answer_doc)
-                logger.info(f"Found matching answer for question {question_number} in {subject} {level} {year}")
-                return answer_doc
-            else:
-                logger.warning(f"No matching answer found for question {question_number} in {subject} {level} {year}")
-                return None
+            # Build a query to find the answer
+            query = {}
+            
+            # Standardize and add subject to query
+            if subject:
+                std_subject = self._standardize_subject(subject)
+                # Use regex for case-insensitive subject matching
+                query['$or'] = [
+                    {'paper_meta.Subject': {'$regex': std_subject, '$options': 'i'}},
+                    {'subject': {'$regex': std_subject, '$options': 'i'}}
+                ]
+            
+            # Try to find answers using question_number and year if available
+            if question_number is not None:
+                answer_query = query.copy()
                 
-        except SubscriptionRequiredError as e:
-            logger.warning(f"Subscription error: {e}")
+                # Use answer level mapping
+                answer_level = None
+                if level:
+                    answer_level = self._standardize_level_name(level)
+                    if answer_level in self.ANSWER_LEVEL_MAPPING.values():
+                        answer_query['paper_meta.Level'] = answer_level
+                
+                # Add question number to query
+                answer_query['$or'] = answer_query.get('$or', []) + [
+                    {'question_number': question_number},
+                    {'QuestionNumber': question_number},
+                    {'answers.question_number': question_number}
+                ]
+                
+                # Add year to query if available
+                if year:
+                    answer_query['$or'].append({'paper_meta.Year': year})
+                
+                # Try to find the answer
+                answer_collection = self.db['extracted-answers']
+                answer = answer_collection.find_one(answer_query)
+                
+                if answer:
+                    self._process_document_id(answer)
+                    logger.info(f"Found matching answer for question number {question_number}")
+                    return answer
+            
+            # If no match found, try more flexible search - just use subject
+            answer_collection = self.db['extracted-answers']
+            answer = answer_collection.find_one(query)
+            
+            if answer:
+                self._process_document_id(answer)
+                logger.info(f"Found answer for subject {subject}")
+                return answer
+            
+            logger.warning(f"No matching answer found for question with subject {subject}")
             return None
+                
         except Exception as e:
-            logger.error(f"Error retrieving matching answer: {e}")
+            logger.error(f"Error fetching matching answer: {e}", exc_info=True)
             return None
     
     def get_available_subjects(self) -> List[str]:
@@ -446,14 +811,12 @@ class MongoDBClient:
         return doc
     
     def _check_subscription(self) -> bool:
-        """
-        Verify user has active subscription before allowing MongoDB access
-        
-        Returns:
-            bool: True if subscription is active or in grace period
-        """
+        """Check if user has an active subscription"""
         try:
-            # Get subscription status from Firebase
+            # Defer import to avoid circular dependency
+            from src.core.network.sync_service import SyncService
+            
+            # Try Firebase client first for subscription status
             firebase = FirebaseClient()
             user_doc = firebase.check_subscription_status()
             

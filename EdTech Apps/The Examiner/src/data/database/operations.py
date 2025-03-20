@@ -8,54 +8,121 @@ from typing import Dict, List, Optional
 from datetime import datetime
 import os
 import tempfile
+import logging
 
 class UserOperations:
     @staticmethod
     def create_user(user_data: dict):
+        """Create or update a user in the database"""
+        logger = logging.getLogger(__name__)
+        
         # Get hardware ID
-        hardware_id = HardwareIdentifier.get_hardware_id()[0]
+        hardware_id_info = HardwareIdentifier.get_hardware_id()
+        hardware_id = hardware_id_info[0] if hardware_id_info else "default-id"
+        
+        logger.info(f"Creating/updating user with hardware ID: {hardware_id}")
         
         # Add hardware_id to user_data
         user_data['hardware_id'] = hardware_id
         
         with get_db_session() as session:
             try:
-                # Check if user already exists
+                # Check if user already exists with this hardware ID
                 existing_user = session.query(User).filter_by(hardware_id=hardware_id).first()
+                
+                # If no user with this hardware ID, check if we have any user (might be first run after ID change)
+                if not existing_user:
+                    existing_user = session.query(User).first()
+                    if existing_user:
+                        logger.info(f"Found existing user with different hardware ID. Updating ID from {existing_user.hardware_id} to {hardware_id}")
                 
                 if existing_user:
                     # Update existing user
                     for key, value in user_data.items():
                         setattr(existing_user, key, value)
                     user = existing_user
+                    logger.info(f"Updated existing user: {user.full_name} (ID: {user.id})")
                 else:
                     # Create new user
                     user = User(**user_data)
                     session.add(user)
+                    logger.info(f"Created new user with data: {user_data}")
                 
+                # Commit changes directly here (don't rely on context manager in this case)
                 session.commit()
+                logger.info("User data committed to database")
                 
-                # Refresh the user object with a new session
-                return UserOperations.get_current_user()  # This will return a fresh, session-bound user
+                # Return the user directly rather than calling get_current_user again
+                return user
                 
             except Exception as e:
-                print(f"Error creating user: {e}")
+                logger.error(f"Error creating user: {e}", exc_info=True)
                 session.rollback()
                 return None
 
     @staticmethod
     def get_current_user():
-        """Get current user based on hardware ID"""
-        with Session() as session:
-            # Get hardware ID from system
-            hardware_id = HardwareIdentifier.get_hardware_id()[0]
+        """Get the current user based on hardware ID, with fallback to first user"""
+        from src.utils.hardware_identifier import HardwareIdentifier
+        from src.utils.db import get_db_session
+        from src.data.database.models import User
+        
+        logger = logging.getLogger(__name__)
+        
+        try:
+            # Get the current hardware ID
+            hardware_id_info = HardwareIdentifier.get_hardware_id()
+            hardware_id = hardware_id_info[0] if hardware_id_info else None
             
-            # Query user with subjects relationship loaded
-            user = session.query(User).options(
-                joinedload(User.subjects)
-            ).filter_by(hardware_id=hardware_id).first()
-            
-            return user
+            with get_db_session() as session:
+                # Try to find user by hardware ID first
+                if hardware_id:
+                    logger.debug(f"Looking for user with hardware ID: {hardware_id}")
+                    user = session.query(User).filter(User.hardware_id == hardware_id).first()
+                    
+                    if user:
+                        logger.info(f"Found user by hardware ID: {user.full_name} (ID: {user.id})")
+                        # Create a simple dictionary with all the attributes we need
+                        user_dict = {
+                            'id': user.id,
+                            'full_name': user.full_name,
+                            'hardware_id': user.hardware_id,
+                            'country': user.country,
+                            'school_level': user.school_level,
+                            'grade': user.grade
+                        }
+                        return user_dict
+                    
+                    logger.warning(f"No user found for hardware ID: {hardware_id}, falling back to first user")
+                
+                # Fallback: Get the first user in the database (most apps will only have one user)
+                fallback_user = session.query(User).first()
+                
+                if fallback_user:
+                    logger.info(f"Using fallback user: {fallback_user.full_name} (ID: {fallback_user.id})")
+                    
+                    # Optional: Update the hardware ID to prevent future mismatches
+                    if hardware_id and fallback_user.hardware_id != hardware_id:
+                        logger.info(f"Updating user's hardware ID from {fallback_user.hardware_id} to {hardware_id}")
+                        fallback_user.hardware_id = hardware_id
+                    
+                    # Create a simple dictionary with all the attributes we need
+                    user_dict = {
+                        'id': fallback_user.id,
+                        'full_name': fallback_user.full_name,
+                        'hardware_id': fallback_user.hardware_id,
+                        'country': fallback_user.country,
+                        'school_level': fallback_user.school_level,
+                        'grade': fallback_user.grade
+                    }
+                    return user_dict
+                
+                logger.warning("No users found in database")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error retrieving current user: {e}", exc_info=True)
+            return None
 
     @classmethod
     def update_user_profile_picture(cls, user_id: str, image_data: bytes):
@@ -151,37 +218,57 @@ class UserOperations:
 
     @staticmethod
     def get_user_subjects(user_id: int) -> List[Dict]:
-        """Get all subjects and their level selections for a user"""
-        print(f"\nGetting subjects for user {user_id}")
-        with Session() as session:
-            try:
-                results = session.query(
-                    Subject.name,
-                    UserSubject.grade_7,
-                    UserSubject.o_level,
-                    UserSubject.a_level,
-                    UserSubject.created_at
-                ).join(UserSubject)\
-                 .filter(UserSubject.user_id == user_id)\
-                 .all()
+        """
+        Get a user's selected subjects with their levels
+        
+        Args:
+            user_id: The user ID
+            
+        Returns:
+            List of dictionaries with subject name and level selections
+        """
+        from src.utils.db import get_db_session
+        from src.data.database.models import UserSubject, Subject
+        
+        try:
+            with get_db_session() as session:
+                # Query to join UserSubject with Subject to get names
+                user_subjects = session.query(
+                    UserSubject, Subject
+                ).join(
+                    Subject, UserSubject.subject_id == Subject.id
+                ).filter(
+                    UserSubject.user_id == user_id
+                ).all()
                 
-                subjects = [
-                    {
-                        'name': r.name,
-                        'levels': {
-                            'grade_7': r.grade_7,
-                            'o_level': r.o_level,
-                            'a_level': r.a_level
-                        },
-                        'created_at': r.created_at
+                # No subjects found
+                if not user_subjects:
+                    logging.info(f"No subjects found for user {user_id}")
+                    return []
+                
+                # Format results
+                results = []
+                for user_subject, subject in user_subjects:
+                    # Create levels dictionary
+                    levels = {
+                        'grade_7': user_subject.grade_7,
+                        'o_level': user_subject.o_level,
+                        'a_level': user_subject.a_level
                     }
-                    for r in results
-                ]
-                print(f"Found subjects: {subjects}")
-                return subjects
-            except Exception as e:
-                print(f"Error getting subjects: {e}")
-                return []
+                    
+                    # Add to results
+                    results.append({
+                        'id': user_subject.id,
+                        'name': subject.name,
+                        'levels': levels
+                    })
+                
+                logging.info(f"Found {len(results)} subjects for user {user_id}")
+                return results
+                
+        except Exception as e:
+            logging.error(f"Error retrieving user subjects: {e}")
+            return []
 
     @staticmethod
     def remove_subject(user_id: int, subject_name: str) -> bool:

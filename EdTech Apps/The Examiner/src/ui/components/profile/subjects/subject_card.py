@@ -1,8 +1,15 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, 
                               QPushButton, QLabel, QCheckBox, QFrame,
-                              QMenu, QWidgetAction)
-from PySide6.QtCore import Qt, Signal, QObject, QEvent
+                              QMenu, QWidgetAction, QToolButton,
+                              QSpacerItem, QSizePolicy, QProgressBar)
+from PySide6.QtCore import Qt, Signal, QObject, QEvent, QTimer
+from PySide6.QtGui import QCursor, QIcon, QColor, QAction
 from src.data.database.operations import UserOperations
+from src.utils.constants import PRIMARY_COLOR
+from src.data.cache.cache_manager import CacheStatus, CacheProgressStatus, CacheManager
+import logging
+
+logger = logging.getLogger(__name__)
 
 class SubjectCard(QWidget):
     deleted = Signal(str)
@@ -13,7 +20,18 @@ class SubjectCard(QWidget):
         self.subject_name = subject_name
         print(f"SubjectCard init - Subject: {subject_name}, Initial levels: {levels}")
         self.levels = levels or {'grade_7': False, 'o_level': False, 'a_level': False}
+        self.cache_manager = CacheManager()
+        self.level_cache_status = {}
+        self.level_status_labels = {}
+        self.level_progress_bars = {}
+        
+        # Timer for updating cache status
+        self.status_timer = QTimer(self)
+        self.status_timer.timeout.connect(self._update_cache_status)
+        self.status_timer.start(10000)  # Update every 10 seconds
+        
         self._setup_ui()
+        self._update_cache_status()  # Initial update
     
     def _setup_ui(self):
         # Main card layout with grey background
@@ -247,168 +265,193 @@ class SubjectCard(QWidget):
         print("5. Level changed signal emitted")
 
     def _show_test_level_dropdown(self):
-        """Show dropdown with selected levels and start button"""
-        # Create dropdown menu
-        dropdown = QMenu(self)
-        dropdown.setStyleSheet("""
+        # Create popup menu
+        menu = QMenu(self)
+        menu.setStyleSheet("""
             QMenu {
                 background-color: white;
-                border: 1px solid #D1D5DB;
+                border: 1px solid #E5E7EB;
                 border-radius: 8px;
-                padding: 8px;
-                min-width: 200px;
-            }
-            QMenu::item {
-                padding: 8px 16px;
-                border-radius: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #F3F4F6;
+                padding: 5px;
             }
         """)
         
-        # Add header
-        header_label = QLabel("Select the test level:")
-        header_label.setStyleSheet("""
-            QLabel {
-                font-size: 14px;
-                font-weight: bold;
-                color: #1F2937;
-                padding: 8px 16px;
-            }
-        """)
-        header_action = QWidgetAction(dropdown)
-        header_action.setDefaultWidget(header_label)
-        dropdown.addAction(header_action)
+        # Get available levels
+        available_levels = [key for key, enabled in self.levels.items() if enabled]
         
-        # Add selected levels
-        selected_levels = []
-        level_labels = {
-            'grade_7': 'Grade 7',
-            'o_level': 'O Level',
-            'a_level': 'A Level'
-        }
+        # Update cache status before showing menu
+        self._update_cache_status()
         
-        # Check which levels are selected
-        for level_key, checkbox in self.checkboxes.items():
-            if checkbox.isChecked():
-                selected_levels.append((level_key, level_labels[level_key]))
-        
-        # If no levels selected, show message
-        if not selected_levels:
-            no_levels_label = QLabel("No levels selected. Please select at least one level.")
-            no_levels_label.setStyleSheet("""
-                QLabel {
-                    font-size: 14px;
-                    color: #EF4444;
-                    padding: 8px 16px;
+        for level_key in available_levels:
+            level_name = self._get_level_display_name(level_key)
+            
+            # Create level container widget
+            level_item = QWidget()
+            level_item.setObjectName(f"level_{level_key}")
+            level_item.setFixedWidth(200)
+            level_item.setStyleSheet("""
+                QWidget {
+                    background-color: transparent;
+                    border-radius: 6px;
+                    padding: 8px;
+                }
+                QWidget:hover {
+                    background-color: #F5F3FF;
                 }
             """)
-            no_levels_action = QWidgetAction(dropdown)
-            no_levels_action.setDefaultWidget(no_levels_label)
-            dropdown.addAction(no_levels_action)
-        else:
-            # Create a container for the level list
-            levels_container = QWidget()
-            levels_layout = QVBoxLayout(levels_container)
-            levels_layout.setContentsMargins(8, 4, 8, 4)
-            levels_layout.setSpacing(4)
             
-            # Add each level as a button with play icon
-            for level_key, level_name in selected_levels:
-                # Create a container for each level item
-                level_item = QWidget()
-                level_item.setObjectName(f"levelItem_{level_key}")
-                level_item.setCursor(Qt.PointingHandCursor)
-                
-                # Set hover effect with light purple background
-                level_item.setStyleSheet("""
-                    QWidget {
-                        border-radius: 6px;
-                        padding: 8px;
-                    }
-                    QWidget:hover {
-                        background-color: #F5F3FF;
-                    }
-                """)
-                
-                # Create horizontal layout for level name and play button
-                item_layout = QHBoxLayout(level_item)
-                item_layout.setContentsMargins(8, 4, 8, 4)
-                
-                # Level name
-                name_label = QLabel(level_name)
-                name_label.setStyleSheet("""
-                    QLabel {
-                        font-size: 14px;
-                        color: #4B5563;
-                    }
-                """)
-                
-                # Play button - initially hidden
-                play_button = QPushButton("▶")
-                play_button.setObjectName("playButton")
-                play_button.setCursor(Qt.PointingHandCursor)
-                play_button.setFixedSize(28, 28)
-                play_button.setStyleSheet("""
-                    QPushButton {
-                        background-color: #A855F7;
-                        color: white;
-                        border: none;
-                        border-radius: 14px;
-                        font-size: 12px;
-                        font-weight: bold;
-                    }
-                    QPushButton:hover {
-                        background-color: #D8B4FE;
-                    }
-                """)
-                play_button.setVisible(False)  # Initially hidden
-                
-                # Connect the play button to start the test
-                play_button.clicked.connect(lambda _, lk=level_key: self._start_test_for_level(lk))
-                
-                # Add widgets to layout
-                item_layout.addWidget(name_label)
-                item_layout.addStretch()
-                item_layout.addWidget(play_button)
-                
-                # Create event filters for hover effects
-                class HoverEventFilter(QObject):
-                    def __init__(self, parent, play_button):
-                        super().__init__(parent)
-                        self.play_button = play_button
-                        
-                    def eventFilter(self, obj, event):
-                        if event.type() == QEvent.Enter:
-                            self.play_button.setVisible(True)
-                            return True
-                        elif event.type() == QEvent.Leave:
-                            self.play_button.setVisible(False)
-                            return True
-                        return False
-                
-                # Install event filter to show/hide play button on hover
-                hover_filter = HoverEventFilter(level_item, play_button)
-                level_item.installEventFilter(hover_filter)
-                
-                # Make the entire item clickable
-                level_item.mousePressEvent = lambda event, lk=level_key: self._start_test_for_level(lk)
-                
-                # Add to levels layout
-                levels_layout.addWidget(level_item)
+            # Create horizontal layout for level name and play button
+            item_layout = QHBoxLayout(level_item)
+            item_layout.setContentsMargins(8, 4, 8, 4)
             
-            # Add a widget action for the levels container
-            levels_action = QWidgetAction(dropdown)
-            levels_action.setDefaultWidget(levels_container)
-            dropdown.addAction(levels_action)
-        
-        # Show dropdown below the button
-        button = self.sender()
-        dropdown.exec_(button.mapToGlobal(button.rect().bottomLeft()))
+            # Level name
+            name_label = QLabel(level_name)
+            name_label.setStyleSheet("""
+                QLabel {
+                    font-size: 14px;
+                    color: #4B5563;
+                }
+            """)
+            
+            # Play button - initially hidden
+            play_button = QPushButton("▶")
+            play_button.setObjectName("playButton")
+            play_button.setCursor(Qt.PointingHandCursor)
+            play_button.setFixedSize(28, 28)
+            play_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #A855F7;
+                    color: white;
+                    border: none;
+                    border-radius: 14px;
+                    font-size: 12px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #D8B4FE;
+                }
+            """)
+            play_button.setVisible(False)  # Initially hidden
+            
+            # Cache status indicator
+            status_label = QLabel()
+            status_label.setFixedSize(16, 16)
+            status_label.setStyleSheet("""
+                QLabel {
+                    border-radius: 8px;
+                    background-color: #D1D5DB;  /* Default gray */
+                }
+            """)
+            
+            # Store reference to status label
+            self.level_status_labels[level_key] = status_label
+            
+            # Progress bar for download/sync status - initially hidden
+            progress_bar = QProgressBar()
+            progress_bar.setRange(0, 100)
+            progress_bar.setValue(0)
+            progress_bar.setFixedHeight(6)
+            progress_bar.setTextVisible(False)
+            progress_bar.setStyleSheet("""
+                QProgressBar {
+                    background-color: #E5E7EB;
+                    border-radius: 3px;
+                    border: none;
+                }
+                QProgressBar::chunk {
+                    background-color: #A855F7;
+                    border-radius: 3px;
+                }
+            """)
+            progress_bar.setVisible(False)
+            
+            # Store reference to progress bar
+            self.level_progress_bars[level_key] = progress_bar
+            
+            # Add widgets to layout
+            item_layout.addWidget(status_label)
+            item_layout.addWidget(name_label)
+            item_layout.addStretch()
+            item_layout.addWidget(play_button)
+            
+            # Create vertical layout to add progress bar below
+            v_layout = QVBoxLayout()
+            v_layout.setContentsMargins(0, 0, 0, 0)
+            v_layout.setSpacing(2)
+            v_layout.addLayout(item_layout)
+            v_layout.addWidget(progress_bar)
+            
+            level_item.setLayout(v_layout)
+            
+            # Create action and add widget
+            action = QAction(self)
+            menu.addAction(action)
+            
+            # Create hover event filter to show/hide play button
+            hover_filter = HoverEventFilter(level_item, play_button)
+            level_item.installEventFilter(hover_filter)
+            
+            # Connect play button to start test
+            play_button.clicked.connect(lambda checked=False, lkey=level_key: self._start_test_for_level(lkey))
+            
+            # Set widget for action
+            menu.setActionWidget(action, level_item)
+            
+        # Show menu
+        menu.popup(QCursor.pos())
     
     def _start_test_for_level(self, level_key):
         """Start the test for the specified level"""
         print(f"Starting test for subject: {self.subject_name}, level: {level_key}")
         # Here you would implement the actual test starting logic
         # For now, we just print the selection
+
+    # Add method to update cache status
+    def _update_cache_status(self):
+        """Update the cache status for each level"""
+        try:
+            for level_key, enabled in self.levels.items():
+                if not enabled or level_key not in self.level_status_labels:
+                    continue
+                    
+                # Get cache status from CacheManager
+                cache_data = self.cache_manager.get_subject_cache_status(self.subject_name, level_key)
+                status = cache_data.get('status', CacheStatus.INVALID)
+                progress_status = cache_data.get('progress_status', CacheProgressStatus.IDLE)
+                completion = cache_data.get('completion_percentage', 0)
+                
+                # Store status for later use
+                self.level_cache_status[level_key] = cache_data
+                
+                # Update status indicator color
+                status_label = self.level_status_labels[level_key]
+                progress_bar = self.level_progress_bars[level_key]
+                
+                # Set color based on status
+                if status == CacheStatus.FRESH:
+                    status_label.setStyleSheet("QLabel { background-color: #10B981; border-radius: 8px; }")  # Green
+                    status_label.setToolTip("Cache is fresh")
+                elif status == CacheStatus.STALE:
+                    status_label.setStyleSheet("QLabel { background-color: #F59E0B; border-radius: 8px; }")  # Yellow/amber
+                    status_label.setToolTip("Cache is stale")
+                elif status == CacheStatus.EXPIRED:
+                    status_label.setStyleSheet("QLabel { background-color: #EF4444; border-radius: 8px; }")  # Red
+                    status_label.setToolTip("Cache has expired")
+                else:
+                    status_label.setStyleSheet("QLabel { background-color: #D1D5DB; border-radius: 8px; }")  # Gray
+                    status_label.setToolTip("No cached content")
+                
+                # Update progress bar if syncing or downloading
+                if progress_status in [CacheProgressStatus.SYNCING, CacheProgressStatus.DOWNLOADING]:
+                    progress_bar.setVisible(True)
+                    progress_bar.setValue(int(completion))
+                    
+                    if progress_status == CacheProgressStatus.SYNCING:
+                        progress_bar.setToolTip(f"Syncing: {completion:.1f}% complete")
+                    else:
+                        progress_bar.setToolTip(f"Downloading: {completion:.1f}% complete")
+                else:
+                    progress_bar.setVisible(False)
+                    
+        except Exception as e:
+            logger.error(f"Error updating cache status: {e}")

@@ -1,0 +1,48 @@
+{
+  "id": "67d50f7779dac53b183510c3",
+  "subject": "Biology",
+  "level": "o_level",
+  "year": "2024",
+  "question_number": "5",
+  "text": "Study of Bacillus subtilis bacterium and its use in biotechnology",
+  "images": [],
+  "original_question": {
+    "question_number": 5,
+    "question_text": "Study of Bacillus subtilis bacterium and its use in biotechnology",
+    "topic": "Biology",
+    "subtopic": "Biotechnology and Microorganisms",
+    "difficulty": {
+      "level": "Hard",
+      "justification": "Combines microbiology, biotechnology, and data analysis"
+    },
+    "sub_questions": [
+      {
+        "sub_number": "a",
+        "text": "Questions about bacterial structure and function",
+        "marks": 7
+      },
+      {
+        "sub_number": "b",
+        "text": "Questions about bacterial growth",
+        "marks": 7
+      },
+      {
+        "sub_number": "c",
+        "text": "Question about lipase function",
+        "marks": 3
+      }
+    ],
+    "images": [
+      {
+        "label": "Fig. 5.1",
+        "description": "Diagram of B. subtilis"
+      },
+      {
+        "label": "Fig. 5.2",
+        "description": "Graphs showing bacterial growth"
+      }
+    ],
+    "marks": 17
+  },
+  "answer_ref": "5.json"
+}
