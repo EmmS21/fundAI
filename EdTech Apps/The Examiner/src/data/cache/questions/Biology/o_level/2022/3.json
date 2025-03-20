@@ -1,0 +1,38 @@
+{
+  "id": "67d42cf3b2ed25f8c739ec59",
+  "subject": "Biology",
+  "level": "o_level",
+  "year": "2022",
+  "question_number": "3",
+  "text": "Guinea pigs are small mammals bred for food and as pets.",
+  "images": [],
+  "original_question": {
+    "question_number": 3,
+    "question_text": "Guinea pigs are small mammals bred for food and as pets.",
+    "topic": "Genetics",
+    "subtopic": "Inheritance",
+    "difficulty": {
+      "level": "Medium",
+      "justification": "Involves genetic crosses and comparison of mammalian development"
+    },
+    "sub_questions": [
+      {
+        "sub_number": "a",
+        "text": "Questions about genes, alleles and genetic crosses for hair type in guinea pigs",
+        "marks": 6
+      },
+      {
+        "sub_number": "b",
+        "text": "Compare development of guinea pig and human offspring",
+        "marks": 4
+      }
+    ],
+    "images": [
+      {
+        "description": "Diagram of guinea pig uterus with developing offspring"
+      }
+    ],
+    "marks": 10
+  },
+  "answer_ref": "3.json"
+}

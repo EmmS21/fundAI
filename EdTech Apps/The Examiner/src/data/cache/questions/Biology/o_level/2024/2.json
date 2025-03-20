@@ -1,0 +1,54 @@
+{
+  "id": "67d50f7779dac53b183510c3",
+  "subject": "Biology",
+  "level": "o_level",
+  "year": "2024",
+  "question_number": "2",
+  "text": "Brown bread, made from the flour of whole wheat grains, contains both starch and fibre.",
+  "images": [],
+  "original_question": {
+    "question_number": 2,
+    "question_text": "Brown bread, made from the flour of whole wheat grains, contains both starch and fibre.",
+    "topic": "Biology",
+    "subtopic": "Digestion and Nutrition",
+    "difficulty": {
+      "level": "Medium",
+      "justification": "Requires understanding of digestive processes and interpretation of data"
+    },
+    "sub_questions": [
+      {
+        "sub_number": "a(i)",
+        "text": "Describe where and how starch digestion takes place in the digestive system",
+        "marks": 4
+      },
+      {
+        "sub_number": "a(ii)",
+        "text": "Describe what happens to fibre as it passes through the digestive system",
+        "marks": 2
+      },
+      {
+        "sub_number": "b",
+        "text": "Give two ways in which active transport is different from diffusion",
+        "marks": 2
+      },
+      {
+        "sub_number": "c",
+        "text": "Questions about blood glucose concentration graph",
+        "marks": 5
+      },
+      {
+        "sub_number": "d",
+        "text": "Describe two methods scientists could use to produce wheat with increased fiber content",
+        "marks": 4
+      }
+    ],
+    "images": [
+      {
+        "label": "Fig. 2.1",
+        "description": "Graph showing blood glucose concentration over time for different types of starch"
+      }
+    ],
+    "marks": 17
+  },
+  "answer_ref": "2.json"
+}

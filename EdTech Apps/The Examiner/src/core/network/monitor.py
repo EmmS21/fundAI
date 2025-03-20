@@ -10,6 +10,7 @@ from threading import Thread, Event
 import http.client
 import ssl
 import random  # For jitter in retry calculations
+import requests
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ class ConnectionQuality(Enum):
     GOOD = "good"            # Normal connection
     POOR = "poor"            # Slow or intermittent connection
     NONE = "none"            # No connection
+    UNKNOWN = "unknown"      # Initial or undetermined quality
 
 class Signal:
     """Simple signal class to support the connect/disconnect pattern"""
@@ -54,59 +56,118 @@ class Signal:
                 logger.error(f"Error in signal callback {callback}: {e}")
 
 class NetworkMonitor:
+    _instance = None
+    
+    def __new__(cls):
+        """Singleton pattern to ensure only one instance exists"""
+        if cls._instance is None:
+            cls._instance = super(NetworkMonitor, cls).__new__(cls)
+            cls._instance.initialized = False
+        return cls._instance
+    
     def __init__(self):
-        self._callbacks = []
-        self._status = NetworkStatus.UNKNOWN
-        self._stop_flag = Event()
-        self._monitor_thread = None
-        self.CHECK_INTERVAL = 300  # 5 minutes default
+        """Initialize network monitor"""
+        if self.initialized:
+            return
+            
+        # Default to ONLINE status until we know otherwise
+        self._status = NetworkStatus.ONLINE
         
-        # Add the status_changed signal
+        # Signal for notifying status changes
         self.status_changed = Signal()
         
-        # Settling time parameters
-        self.SETTLING_TIME = 5  # Seconds to wait before confirming a status change
-        self._potential_status = None
-        self._status_change_time = None
+        # Add a timer for regular status checks
+        self.timer = None
+        self.check_interval = 60  # seconds
         
-        # Validation parameters
-        self._connection_quality = ConnectionQuality.NONE
-        self._validation_urls = [
-            "https://www.google.com",  # Popular service
-            "https://www.cloudflare.com",  # Alternative CDN
-            "https://www.example.com"   # Lightweight option
-        ]
-        self._last_response_time = 0
-        self._mongodb_service_available = False
+        # Track "settling time" to prevent rapid status switching
+        self.last_change_time = 0
+        self.settling_time = 3.0  # seconds
         
-        # Network adaptation parameters
-        self._default_batch_size = 10
-        self._default_retry_delay = 5  # seconds
-        self._max_retry_delay = 300    # 5 minutes max
+        # Track connection quality
+        self._quality = ConnectionQuality.UNKNOWN
+        self._quality_history = []
         
-        # Quality trend tracking
-        self._quality_history = []     # Store recent quality measurements 
-        self._quality_history_limit = 5  # Number of measurements to keep
-
-    def start(self):
-        """Start monitoring only when needed"""
-        if not self._stop_flag.is_set():
-            self._stop_flag.clear()
-            self._monitor_thread = Thread(target=self._monitor_loop)
-            self._monitor_thread.daemon = True
-            self._monitor_thread.start()
-            logger.info("Network monitoring started")
-
-    def stop(self):
-        """Stop monitoring gracefully"""
-        self._stop_flag.set()
-        if self._monitor_thread and self._monitor_thread.is_alive():
-            try:
-                self._monitor_thread.join(timeout=1.0)  # Wait up to 1 second
-            except RuntimeError:
-                # Handle case where thread is current thread
-                pass
-        logger.info("Network monitoring stopped")
+        # Track external service connections
+        self._last_mongodb_connection = 0  # timestamp of last successful MongoDB connection
+        self._mongodb_connection_ttl = 300  # consider MongoDB connection valid for 5 minutes
+        
+        # Validation URLs for checking connectivity
+        self._validation_urls = ["https://www.google.com", "https://www.cloudflare.com"]
+        
+        # Perform initial check immediately
+        self._check_network_status()
+        
+        # Start regular checking
+        self._start_timer()
+        
+        self.initialized = True
+        logger.info(f"Network monitor initialized with status: {self._status}")
+    
+    def _start_timer(self):
+        """Start the timer for regular network checks"""
+        if self.timer is None:
+            self.timer = threading.Timer(self.check_interval, self._timer_callback)
+            self.timer.daemon = True
+            self.timer.start()
+    
+    def _timer_callback(self):
+        """Called when timer expires, check status and restart timer"""
+        self._check_network_status()
+        
+        # Restart timer
+        self.timer = None
+        self._start_timer()
+    
+    def _check_network_status(self):
+        """Check current network status"""
+        try:
+            # Check current connection
+            is_connected, quality = self._validate_connection()
+            current_time = time.time()
+            
+            # Check if MongoDB has a recent successful connection
+            mongodb_connected = self._is_mongodb_recently_connected()
+            
+            if mongodb_connected and not is_connected:
+                logger.info("Network appears offline, but MongoDB is connected. Considering network ONLINE.")
+                is_connected = True
+                quality = ConnectionQuality.GOOD
+                
+            # Determine new status
+            new_status = NetworkStatus.ONLINE if is_connected else NetworkStatus.OFFLINE
+            
+            # Only update if status has changed and settling time has passed
+            if new_status != self._status and (current_time - self.last_change_time) >= self.settling_time:
+                old_status = self._status
+                self._status = new_status
+                self._quality = quality
+                self.last_change_time = current_time
+                
+                logger.info(f"Network status changed: {old_status.value} -> {new_status.value}")
+                
+                # Notify connected callbacks
+                self._notify_callbacks()
+                
+        except Exception as e:
+            logger.error(f"Error checking network status: {e}")
+    
+    def _is_mongodb_recently_connected(self) -> bool:
+        """Check if there was a recent successful MongoDB connection"""
+        current_time = time.time()
+        return (current_time - self._last_mongodb_connection) < self._mongodb_connection_ttl
+    
+    def get_status(self) -> NetworkStatus:
+        """Get current network status"""
+        # Perform a fresh check if it's been a while
+        if time.time() - self.last_change_time > self.check_interval:
+            self._check_network_status()
+        return self._status
+    
+    def force_check(self) -> NetworkStatus:
+        """Force an immediate status check and return result"""
+        self._check_network_status()
+        return self._status
 
     def register_callback(self, callback):
         """Register a callback to be called on network status change"""
@@ -126,17 +187,13 @@ class NetworkMonitor:
         # Also unregister from the signal
         self.status_changed.disconnect(callback)
 
-    def get_status(self) -> NetworkStatus:
-        """Get current network status"""
-        return self._status
-        
     def get_connection_quality(self) -> ConnectionQuality:
         """Get assessed connection quality based on response times"""
-        return self._connection_quality
+        return self._quality
         
     def is_service_available(self) -> bool:
         """Check if the MongoDB service is available"""
-        return self._mongodb_service_available
+        return self._status == NetworkStatus.ONLINE
     
     def get_recommended_batch_size(self, default_size: int = None) -> int:
         """
@@ -149,24 +206,23 @@ class NetworkMonitor:
             Recommended batch size for current network conditions
         """
         if default_size is None:
-            default_size = self._default_batch_size
+            default_size = 20  # Default batch size
             
-        # If offline, recommend very small batch to minimize wasted attempts
         if self._status != NetworkStatus.ONLINE:
-            return 1
+            return 5  # Minimal batch size when offline
             
         # Scale batch size based on connection quality
         quality_factors = {
             ConnectionQuality.EXCELLENT: 1.5,  # 150% of default for excellent connections
             ConnectionQuality.GOOD: 1.0,      # 100% of default for good connections
-            ConnectionQuality.POOR: 0.3,      # 30% of default for poor connections
-            ConnectionQuality.NONE: 0.1       # 10% of default as fallback
+            ConnectionQuality.POOR: 0.5,      # 50% of default for poor connections
+            ConnectionQuality.NONE: 0.25      # 25% of default as fallback
         }
         
-        factor = quality_factors.get(self._connection_quality, 0.5)
-        recommended_size = max(1, int(default_size * factor))
+        factor = quality_factors.get(self._quality, 1.0)
+        recommended_size = max(5, int(default_size * factor))
         
-        logger.debug(f"Recommended batch size {recommended_size} for {self._connection_quality.value} connection")
+        logger.debug(f"Recommended batch size {recommended_size} for {self._quality.value} connection")
         return recommended_size
     
     def get_retry_delay(self, attempt: int = 1, base_delay: float = None) -> float:
@@ -181,37 +237,35 @@ class NetworkMonitor:
             Recommended delay in seconds before retry
         """
         if base_delay is None:
-            base_delay = self._default_retry_delay
+            base_delay = 5.0  # Default 5 second base delay
             
-        # Quality-based factors
+        if self._status != NetworkStatus.ONLINE:
+            # When offline, use longer delays
+            return min(300, base_delay * (2 ** (attempt - 1)))
+            
+        # Scale based on connection quality
         quality_factors = {
-            ConnectionQuality.EXCELLENT: 0.7,  # Shorter delays for excellent connections
-            ConnectionQuality.GOOD: 1.0,      # Standard delay for good connections
-            ConnectionQuality.POOR: 1.5,      # Longer delays for poor connections
-            ConnectionQuality.NONE: 2.0       # Much longer delays when connection appears down
+            ConnectionQuality.EXCELLENT: 0.5,  # 50% of base delay
+            ConnectionQuality.GOOD: 1.0,      # 100% of base delay
+            ConnectionQuality.POOR: 2.0,      # 200% of base delay
+            ConnectionQuality.NONE: 4.0       # 400% of base delay
         }
         
-        # Calculate exponential backoff with quality factor
-        factor = quality_factors.get(self._connection_quality, 1.0)
-        delay = min(
-            self._max_retry_delay,  # Cap at max delay
-            base_delay * (2 ** (attempt - 1)) * factor  # Exponential backoff with quality factor
-        )
+        factor = quality_factors.get(self._quality, 1.0)
         
-        # Add jitter (±15%) to prevent thundering herd
-        jitter = random.uniform(0.85, 1.15)
-        delay = delay * jitter
+        # Apply exponential backoff with quality factor
+        delay = base_delay * factor * (1.5 ** (attempt - 1))
         
-        logger.debug(f"Recommended retry delay {delay:.1f}s for attempt {attempt} on {self._connection_quality.value} connection")
-        return delay
+        # Cap at reasonable values
+        return min(300, max(1, delay))
     
     def _update_quality_history(self, quality: ConnectionQuality):
         """Track connection quality history to detect trends"""
         self._quality_history.append((time.time(), quality))
         
-        # Keep history within limit
-        if len(self._quality_history) > self._quality_history_limit:
-            self._quality_history = self._quality_history[1:]
+        # Trim history to recent entries (last hour)
+        cutoff = time.time() - 3600
+        self._quality_history = [q for q in self._quality_history if q[0] >= cutoff]
 
     def _check_connection(self) -> bool:
         """Check if we have internet connection"""
@@ -219,7 +273,7 @@ class NetworkMonitor:
         is_online, quality = self._validate_connection()
         
         # Update connection quality
-        self._connection_quality = quality
+        self._quality = quality
         self._update_quality_history(quality)
         
         if is_online:
@@ -306,50 +360,6 @@ class NetworkMonitor:
         # All validation attempts failed
         return False, ConnectionQuality.NONE
 
-    def _monitor_loop(self):
-        """Monitor network and stop when no longer needed"""
-        while not self._stop_flag.is_set():
-            current_status = NetworkStatus.ONLINE if self._check_connection() else NetworkStatus.OFFLINE
-            
-            # Different handling based on whether we're in a settling period
-            if self._potential_status is None:
-                # Not in a settling period - check if status has changed
-                if current_status != self._status:
-                    # Start settling period
-                    self._potential_status = current_status
-                    self._status_change_time = time.time()
-                    logger.debug(f"Potential network status change detected: {self._status} -> {current_status}")
-            else:
-                # In settling period - check if status is consistent
-                if current_status == self._potential_status:
-                    # Check if settling time has elapsed
-                    elapsed = time.time() - self._status_change_time
-                    if elapsed >= self.SETTLING_TIME:
-                        # Settling time has elapsed, confirm the status change
-                        logger.info(f"Network status changed from {self._status} to {self._potential_status} after {elapsed:.1f}s settling time")
-                        self._status = self._potential_status
-                        self._potential_status = None
-                        self._status_change_time = None
-                        self._notify_callbacks()
-                else:
-                    # Status changed during settling period, reset settling period
-                    if current_status != self._status:
-                        # Start a new settling period
-                        logger.debug(f"Network status fluctuated during settling period, resetting ({self._potential_status} -> {current_status})")
-                        self._potential_status = current_status
-                        self._status_change_time = time.time()
-                    else:
-                        # Status reverted to original, cancel settling period
-                        logger.debug(f"Network status reverted during settling period, canceling change")
-                        self._potential_status = None
-                        self._status_change_time = None
-            
-            # Shorter sleep interval during settling period
-            if self._potential_status is not None:
-                time.sleep(min(1.0, self.SETTLING_TIME / 5))  # Check more frequently during settling
-            else:
-                time.sleep(self.CHECK_INTERVAL)
-
     def _notify_callbacks(self):
         """Notify all registered callbacks of current status"""
         for callback in self._callbacks:
@@ -370,7 +380,7 @@ class NetworkMonitor:
         """
         if seconds < 0:
             raise ValueError("Settling time cannot be negative")
-        self.SETTLING_TIME = seconds
+        self.settling_time = seconds
         logger.info(f"Network monitor settling time set to {seconds} seconds")
         
     def set_validation_urls(self, urls: List[str]):
@@ -384,4 +394,17 @@ class NetworkMonitor:
             raise ValueError("At least one validation URL must be provided")
         self._validation_urls = urls
         logger.info(f"Network monitor validation URLs updated: {', '.join(urls)}")
+
+    def report_mongodb_connection(self) -> None:
+        """
+        Report a successful MongoDB connection.
+        This method should be called whenever a successful MongoDB connection is established.
+        """
+        logger.info("Successful MongoDB connection reported to NetworkMonitor")
+        self._last_mongodb_connection = time.time()
+        
+        # If we're currently offline, initiate a status check to potentially update to online
+        if self._status != NetworkStatus.ONLINE:
+            logger.info("Network status is currently OFFLINE but MongoDB is connected - rechecking status")
+            self._check_network_status()
 

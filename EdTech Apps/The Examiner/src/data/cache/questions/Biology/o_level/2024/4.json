@@ -1,0 +1,43 @@
+{
+  "id": "67d50f7779dac53b183510c3",
+  "subject": "Biology",
+  "level": "o_level",
+  "year": "2024",
+  "question_number": "4",
+  "text": "Study of Selaginella lepidophylla plant adaptation to extreme dehydration",
+  "images": [],
+  "original_question": {
+    "question_number": 4,
+    "question_text": "Study of Selaginella lepidophylla plant adaptation to extreme dehydration",
+    "topic": "Biology",
+    "subtopic": "Plant Adaptation",
+    "difficulty": {
+      "level": "Medium",
+      "justification": "Combines plant biology concepts with scientific naming conventions"
+    },
+    "sub_questions": [
+      {
+        "sub_number": "a",
+        "text": "Questions about plant adaptation to water availability",
+        "marks": 8
+      },
+      {
+        "sub_number": "b",
+        "text": "Questions about species classification and naming",
+        "marks": 4
+      }
+    ],
+    "images": [
+      {
+        "label": "Fig. 4.1",
+        "description": "Images of S. lepidophylla before and after rainfall"
+      },
+      {
+        "label": "Fig. 4.2",
+        "description": "Diagram of plant cell after dehydration"
+      }
+    ],
+    "marks": 12
+  },
+  "answer_ref": "4.json"
+}

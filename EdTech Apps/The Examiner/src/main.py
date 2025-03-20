@@ -3,13 +3,10 @@ import os
 from PySide6.QtWidgets import QApplication
 from src.ui.components.onboarding.onboarding_window import OnboardingWindow
 from src.ui.main_window import MainWindow
-from src.core.network.sync_service import SyncService
-from src.data.database.operations import UserOperations
 from src.data.database.models import Base
 from src.utils.db import engine, Session
-from src.data.cache.cache_manager import CacheManager
 from src.data.database.models import User
-
+from src.core import services
 
 def main():
     app = QApplication(sys.argv)
@@ -20,18 +17,13 @@ def main():
     # Create/update tables
     Base.metadata.create_all(engine)
     
-    # Start services
-    sync_service = SyncService()
-    sync_service.start()
-    
-    cache_manager = CacheManager()
-    cache_manager.start()
+    # Initialize all services
+    services.initialize_services()
     
     # Set up cleanup
     def cleanup():
         print("Performing application cleanup...")
-        cache_manager.stop()
-        sync_service.stop()
+        services.shutdown_services()
     
     app.aboutToQuit.connect(cleanup)
     

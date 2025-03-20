@@ -7,17 +7,16 @@ import os
 import json
 import logging
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import uuid
 import requests
 from PIL import Image
 import hashlib
-from src.core import services
-from src.core.network.monitor import NetworkMonitor, NetworkStatus
-from src.core.mongodb.client import MongoDBClient
+from src.core.network.monitor import NetworkStatus, NetworkMonitor
 from src.core.queue_manager import QueuePriority
 from src.data.database.models import Base as BaseModel
 from src.core.firebase.client import FirebaseClient
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +32,13 @@ class SubscriptionStatus:
     ACTIVE = "active"        # Subscription is active
     EXPIRING = "expiring"    # Subscription will expire soon (within warning period)
     EXPIRED = "expired"      # Subscription has expired
+
+class CacheProgressStatus:
+    """Enumeration of cache progress statuses"""
+    IDLE = "idle"            # No active caching operations
+    SYNCING = "syncing"      # Actively syncing content
+    DOWNLOADING = "downloading"  # Downloading new content
+    ERROR = "error"          # Error during sync/download
 
 class CacheManager:
     _instance = None
@@ -74,7 +80,8 @@ class CacheManager:
         os.makedirs(self.ASSETS_DIR, exist_ok=True)
         os.makedirs(self.QUESTIONS_DIR, exist_ok=True)
         
-        # Initialize MongoDB client
+        # Initialize MongoDB client - import here to avoid circular import
+        from src.core.mongodb.client import MongoDBClient
         self.mongodb_client = MongoDBClient()
         
         # Network monitor for connection status
@@ -100,8 +107,8 @@ class CacheManager:
         self.ttl_fresh = 3600  # 1 hour
         self.ttl_stale = 86400  # 24 hours
         
-        # Register in services registry
-        services.cache_manager = self
+        # We don't manually register in services registry anymore
+        # Services.py will handle this by importing us
         
         self._initialize_db()
         self.initialized = True
@@ -141,6 +148,67 @@ class CacheManager:
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
         logger.info("Cache Manager started")
+        
+        # Immediately check for updates in a separate thread to avoid blocking
+        update_thread = threading.Thread(target=self._initial_update_check, daemon=True)
+        update_thread.start()
+        
+    def _initial_update_check(self):
+        """Perform an immediate check for updates on startup"""
+        try:
+            logger.info("Performing initial content check on startup...")
+            time.sleep(3)  # Delay to let other systems initialize
+            
+            # Only proceed if subscription is active - do this check first
+            subscription_status = self._verify_subscription()
+            if subscription_status != SubscriptionStatus.ACTIVE:
+                logger.warning(f"Subscription not active (status: {subscription_status}), skipping content check")
+                return
+            
+            logger.info("Subscription is active, checking network status...")    
+                
+            # Force a fresh network status check
+            network_status = self.network_monitor.force_check()
+            logger.info(f"Network status check result: {network_status}")
+            
+            # If NetworkMonitor reports offline but we suspect we're online, do an additional check
+            if network_status != NetworkStatus.ONLINE:
+                logger.info("NetworkMonitor reports offline status, performing additional connection test...")
+                # Try to connect to a reliable service
+                try:
+                    import socket
+                    socket.create_connection(("8.8.8.8", 53), timeout=1)
+                    # If we get here, we're actually online
+                    logger.info("Additional connection test successful - we are actually online")
+                    network_status = NetworkStatus.ONLINE
+                except Exception as e:
+                    logger.warning(f"Additional connection test failed: {e}")
+            
+            # Only proceed if we're online
+            if network_status == NetworkStatus.ONLINE:
+                logger.info("Network is online, checking MongoDB credentials...")
+                
+                # Check MongoDB connection
+                if self.mongodb_client.has_credentials():
+                    logger.info("MongoDB credentials found, connecting...")
+                    
+                    # Connect to MongoDB if not already connected
+                    if not self.mongodb_client.connected:
+                        connection_result = self.mongodb_client.connect()
+                        logger.info(f"MongoDB connection result: {connection_result}")
+                    
+                    if self.mongodb_client.connected:
+                        logger.info("MongoDB connected, checking for new content...")
+                        # Directly call the method to check for updates
+                        self._check_for_updates()
+                    else:
+                        logger.warning("MongoDB not connected, skipping content check")
+                else:
+                    logger.warning("No MongoDB credentials configured, skipping content check")
+            else:
+                logger.warning("Network is offline, skipping initial content check")
+        except Exception as e:
+            logger.error(f"Error during initial content check: {e}", exc_info=True)
         
     def stop(self):
         """Stop the cache manager background thread"""
@@ -183,41 +251,48 @@ class CacheManager:
     def _check_for_updates(self):
         """Check for new content that needs to be cached"""
         try:
-            # Check subscription status first
-            if not self.is_subscribed():
-                logger.warning("Skipping content update - no active subscription")
+            # Get current user from database
+            from src.data.database.operations import UserOperations
+            
+            # First, check if MongoDB is properly connected - we need this regardless of user
+            if not self.mongodb_client or not self.mongodb_client.connected:
+                logger.warning("MongoDB not connected, skipping content update")
                 return
                 
-            # Get user subjects
-            with get_db_session() as session:
-                user = UserOperations.get_current_user()
-                if not user:
-                    logger.warning("No user found, skipping cache update")
-                    return
+            # Get the current user - this now includes fallback logic and returns a dictionary
+            user = UserOperations.get_current_user()
+            
+            if not user:
+                logger.warning("No user found in database, skipping cache update")
+                return
+
+            # Use dictionary access instead of attribute access
+            logger.info(f"Checking for content updates for user {user['id']} ({user['full_name']})")
+            
+            # Get user's selected subjects with levels - use the user ID from the dictionary
+            subjects = UserOperations.get_user_subjects(user['id'])
+            if not subjects:
+                logger.warning(f"No subjects configured for user {user['id']}, skipping content update")
+                return
                 
-                user_subjects = UserOperations.get_user_subjects(user.id)
+            logger.info(f"Found {len(subjects)} subjects to check for updates")
+            
+            # Check each subject+level combination
+            for subject in subjects:
+                subject_name = subject['name']
+                subject_levels = subject['levels']
                 
-            # For each subject, check if we need to cache more questions
-            for subj in user_subjects:
-                subject_name = subj['name']
+                logger.info(f"Checking updates for subject: {subject_name}, levels: {subject_levels}")
                 
-                # Check which levels are enabled
-                for level_key, enabled in subj['levels'].items():
-                    if not enabled:
-                        continue
-                    
-                    # Convert internal level key to MongoDB level format
-                    mongo_level = self._convert_level_to_mongo_format(level_key)
-                    
-                    # Get number of cached questions for this subject/level
-                    cached_count = self._get_cached_question_count(subject_name, level_key)
-                    
-                    # If we have fewer than threshold, cache more
-                    if cached_count < 50:  # Aim for at least 50 questions per subject/level
+                # Process each level that is selected
+                for level_key, is_selected in subject_levels.items():
+                    if is_selected:
+                        # Convert level key to MongoDB format
+                        mongo_level = self._convert_level_to_mongo_format(level_key)
+                        logger.info(f"Queuing content update for {subject_name}/{level_key} (MongoDB level: {mongo_level})")
                         self._queue_questions_for_caching(subject_name, level_key, mongo_level)
-                
         except Exception as e:
-            logger.error(f"Error checking for updates: {e}")
+            logger.error(f"Error checking for updates: {e}", exc_info=True)
     
     def _verify_subscription(self) -> str:
         """
@@ -234,49 +309,91 @@ class CacheManager:
             return self.subscription_cache
             
         try:
+            # Import services here to avoid circular import
+            from src.core import services
+            
             # Get subscription status from Firebase
-            firebase = FirebaseClient()
-            subscription_data = firebase.check_subscription_status()
+            subscription_data = services.firebase_client.check_subscription_status()
             
-            # Get key fields
-            subscription_type = subscription_data.get('subscribed', '').lower()
-            sub_end_str = subscription_data.get('sub_end', '')
+            # Debug the full document structure
+            logger.debug(f"Full subscription data from Firebase: {subscription_data}")
             
-            # Parse expiration date
-            try:
-                if sub_end_str:
-                    sub_end_date = datetime.fromisoformat(sub_end_str)
-                else:
-                    # No expiration date provided
-                    logger.warning("No subscription end date found in user data")
-                    sub_end_date = None
-            except ValueError:
-                logger.error(f"Invalid date format for subscription end: {sub_end_str}")
-                sub_end_date = None
+            # CRITICAL FIX: The document might be in one of two formats:
+            # 1. Direct Firestore format with fields at the top level
+            # 2. Nested format with fields inside a 'fields' key
+            
+            # First, try to extract fields if they're in a nested structure
+            if 'fields' in subscription_data:
+                fields = subscription_data['fields']
+            else:
+                # If 'fields' key doesn't exist, assume the document itself contains the fields
+                fields = subscription_data
+                
+            logger.debug(f"Extracted fields: {fields}")
+            
+            # Extract subscription type from fields
+            subscription_type = None
+            if 'subscribed' in fields:
+                sub_field = fields['subscribed']
+                # It could be a direct string value or nested in a stringValue field
+                if isinstance(sub_field, dict) and 'stringValue' in sub_field:
+                    subscription_type = sub_field['stringValue'].lower()
+                elif isinstance(sub_field, str):
+                    subscription_type = sub_field.lower()
+            
+            logger.info(f"Extracted subscription type: {subscription_type}")
+            
+            # Extract expiration date from fields
+            sub_end_str = None
+            if 'sub_end' in fields:
+                end_field = fields['sub_end']
+                # It could be a direct string value or nested in a stringValue field
+                if isinstance(end_field, dict) and 'stringValue' in end_field:
+                    sub_end_str = end_field['stringValue']
+                elif isinstance(end_field, str):
+                    sub_end_str = end_field
+            
+            logger.info(f"Extracted subscription end date: {sub_end_str}")
             
             # Determine subscription status
             current_date = datetime.now()
             
             # Check subscription type first
             if subscription_type not in self.VALID_SUBSCRIPTION_TYPES:
+                logger.warning(f"Invalid subscription type: {subscription_type}")
                 status = SubscriptionStatus.EXPIRED
-            elif not sub_end_date:
-                # If valid type but no end date, assume active
-                status = SubscriptionStatus.ACTIVE
-            else:
-                # Check if expired
-                if current_date > sub_end_date:
-                    status = SubscriptionStatus.EXPIRED
+            elif not sub_end_str:
+                # No expiration date provided
+                logger.warning("No subscription end date found in user data")
+                # For trial subscriptions without end date, consider them active
+                if subscription_type == "trial":
+                    logger.info("Trial subscription without end date - considering active")
+                    status = SubscriptionStatus.ACTIVE
                 else:
-                    # Check if nearing expiration
-                    warning_date = sub_end_date - timedelta(days=self.SUBSCRIPTION_WARNING_DAYS)
-                    if current_date >= warning_date:
-                        status = SubscriptionStatus.EXPIRING
-                        days_left = (sub_end_date - current_date).days
-                        logger.info(f"Subscription expiring soon! {days_left} days remaining")
-                        self._show_expiration_warning(sub_end_date)
+                    status = SubscriptionStatus.EXPIRED
+            else:
+                # Parse expiration date
+                try:
+                    sub_end_date = datetime.fromisoformat(sub_end_str)
+                    
+                    # Check if expired
+                    if current_date > sub_end_date:
+                        logger.warning(f"Subscription expired on {sub_end_date.isoformat()}")
+                        status = SubscriptionStatus.EXPIRED
                     else:
-                        status = SubscriptionStatus.ACTIVE
+                        # Check if nearing expiration
+                        warning_date = sub_end_date - timedelta(days=self.SUBSCRIPTION_WARNING_DAYS)
+                        if current_date >= warning_date:
+                            status = SubscriptionStatus.EXPIRING
+                            days_left = (sub_end_date - current_date).days
+                            logger.info(f"Subscription expiring soon! {days_left} days remaining")
+                            self._show_expiration_warning(sub_end_date)
+                        else:
+                            status = SubscriptionStatus.ACTIVE
+                            logger.info(f"Subscription is active until {sub_end_date.isoformat()}")
+                except ValueError as e:
+                    logger.error(f"Invalid date format for subscription end: {sub_end_str} - {e}")
+                    status = SubscriptionStatus.EXPIRED
             
             # Show expiration alert if applicable
             if status == SubscriptionStatus.EXPIRED:
@@ -323,7 +440,7 @@ class CacheManager:
     def get_subscription_info(self) -> Dict[str, Any]:
         """
         Get detailed subscription information
-        
+            
         Returns:
             Dict containing subscription status and details
         """
@@ -374,10 +491,11 @@ class CacheManager:
     def _convert_level_to_mongo_format(self, level_key: str) -> str:
         """Convert internal level key to MongoDB level format"""
         level_mapping = {
-            'grade_7': 'primary school',
-            'o_level': 'olevel',
-            'a_level': 'aslevel'
+            'grade_7': 'primary school',  # MongoDB uses lowercase for questions
+            'o_level': 'olevel',           # MongoDB uses lowercase for questions 
+            'a_level': 'aslevel'           # MongoDB uses lowercase for questions
         }
+        logger.debug(f"Converting UI level '{level_key}' to MongoDB format: '{level_mapping.get(level_key, level_key)}'")
         return level_mapping.get(level_key, level_key)
     
     def _get_cached_question_count(self, subject: str, level: str) -> int:
@@ -400,164 +518,410 @@ class CacheManager:
             logger.error(f"Error counting cached questions: {e}")
             return 0
     
-    def _queue_questions_for_caching(self, subject: str, level_key: str, mongo_level: str):
-        """Queue questions for download and caching"""
-        try:
-            # Skip if we're not connected to MongoDB
-            if not self.mongodb_client.connected:
-                logger.warning("Not connected to MongoDB, skipping question download")
-                return
-                
-            # Get questions from MongoDB
-            questions = self.mongodb_client.get_questions_by_subject_level(
-                subject=subject,
-                level=mongo_level,
-                limit=30  # Fetch a batch of questions
-            )
-            
-            if not questions:
-                logger.info(f"No questions found for {subject} at {level_key} level")
-                return
-                
-            logger.info(f"Queueing {len(questions)} questions for {subject} at {level_key} level")
-            
-            # Save each question to cache
-            for question_doc in questions:
-                self.save_question_from_mongodb(question_doc, subject, level_key)
-                
-        except Exception as e:
-            logger.error(f"Error queueing questions: {e}")
-    
-    def save_question_from_mongodb(self, question_doc: Dict, subject: str, level: str) -> bool:
+    def _extract_question_number(self, question: Dict) -> Optional[str]:
         """
-        Save a MongoDB question document to the local cache.
+        Extract question number from question document
         
         Args:
-            question_doc: The MongoDB document containing questions
-            subject: The subject name
-            level: The level key (grade_7, o_level, a_level)
+            question: Question document
             
         Returns:
-            bool: True if successful
+            Question number as string, or None if not found
         """
         try:
-            # Extract document ID
-            doc_id = question_doc.get('_id')
-            if not doc_id:
-                logger.error("Question document has no ID")
-                return False
-                
-            # Extract paper metadata
-            paper_meta = question_doc.get('paper_meta', {})
-            year = paper_meta.get('Year', 'unknown')
-            paper_number = paper_meta.get('Paper', {}).get('$numberInt', '1')
-            term = paper_meta.get('Term', 'unknown')
+            # Use a unique identifier if no question number is available
+            # This ensures we don't skip questions just because they don't have a standard question number
+            doc_id = str(question.get('_id', ''))
+            if doc_id:
+                # Use a shortened version of the document ID as a fallback question number
+                fallback_number = doc_id[-6:]  # Last 6 chars of the ID
+            else:
+                fallback_number = str(uuid.uuid4())[-6:]  # Random ID if no document ID
             
-            # Process each question in the document
-            questions_list = question_doc.get('questions', [])
-            if not questions_list:
-                logger.warning(f"No questions found in document {doc_id}")
-                return False
-                
-            # Create directory structure
-            subject_dir = os.path.join(self.QUESTIONS_DIR, self._safe_filename(subject), level, year)
-            os.makedirs(subject_dir, exist_ok=True)
+            # Try to extract from various possible locations
+            # 1. Direct field access
+            for field in ['question_number', 'QuestionNumber', 'Number', 'Question_Number', 'number']:
+                if field in question:
+                    value = question[field]
+                    # Handle MongoDB extended JSON format
+                    if isinstance(value, dict) and '$numberInt' in value:
+                        return str(value['$numberInt'])
+                    return str(value)
             
-            # Save each question
-            for q_item in questions_list:
-                question_number = q_item.get('question_number', {}).get('$numberInt', '0')
-                if not question_number:
-                    question_number = str(uuid.uuid4())[:8]  # Fallback ID if no number
-                
-                # Create filename
-                filename = f"{year}_paper{paper_number}_q{question_number}.json"
-                filepath = os.path.join(subject_dir, filename)
-                
-                # Save question data
-                with open(filepath, 'w', encoding='utf-8') as f:
-                    # Add metadata to help with retrieval
-                    question_data = {
-                        'doc_id': doc_id,
-                        'subject': subject,
-                        'level': level,
-                        'year': year,
-                        'paper': paper_number,
-                        'term': term,
-                        'question_number': question_number,
-                        'data': q_item,
-                        'cached_at': datetime.now().isoformat()
-                    }
-                    json.dump(question_data, f, ensure_ascii=False, indent=2)
-                
-                # Process and save images/assets
-                self._save_question_assets(q_item, doc_id, subject, level, year, question_number)
-                
-            logger.info(f"Saved {len(questions_list)} questions from document {doc_id}")
-            return True
+            # 2. Check if question number is in 'paper_meta'
+            if 'paper_meta' in question:
+                paper_meta = question['paper_meta']
+                for field in ['QuestionNumber', 'Number', 'question_number']:
+                    if field in paper_meta:
+                        return str(paper_meta[field])
+            
+            # 3. Check in 'questions' array
+            if 'questions' in question and isinstance(question['questions'], list):
+                for q in question['questions']:
+                    if 'question_number' in q:
+                        return str(q['question_number'])
+            
+            # 4. Generate from other metadata if available
+            if 'paper_meta' in question:
+                paper_meta = question['paper_meta']
+                if 'Year' in paper_meta and 'PaperNumber' in paper_meta:
+                    return f"{paper_meta['Year']}_{paper_meta['PaperNumber']}"
+            
+            # Return the fallback identifier
+            logger.info(f"Using fallback question number {fallback_number} for document {doc_id}")
+            return fallback_number
             
         except Exception as e:
-            logger.error(f"Error saving question from MongoDB: {e}")
-            return False
+            logger.error(f"Error extracting question number: {e}")
+            return None
+    
+    def _mongo_to_json_serializable(self, obj):
+        """Convert MongoDB document with special types to JSON-serializable dict"""
+        if isinstance(obj, dict):
+            # Convert all dict keys/values
+            return {k: self._mongo_to_json_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            # Convert all list items
+            return [self._mongo_to_json_serializable(item) for item in obj]
+        elif str(type(obj)) == "<class 'bson.objectid.ObjectId'>":
+            # Convert ObjectId to string
+            return str(obj)
+        elif isinstance(obj, (datetime, date)):
+            # Convert datetime objects to ISO format strings
+            return obj.isoformat()
+        else:
+            # Return other types as is
+            return obj
+            
+    def _queue_questions_for_caching(self, subject: str, level_key: str, mongo_level: str):
+        """Queue questions for the specified subject and level for caching."""
+        try:
+            logger.info(f"Queueing questions for caching: {subject} at {level_key} (MongoDB level: {mongo_level})")
+            
+            # Get MongoDB client
+            from src.core.mongodb.client import MongoDBClient
+            client = MongoDBClient()
+            
+            # Fetch documents for the subject and level
+            documents = client.get_questions_by_subject_level(subject, mongo_level, limit=50)
+            logger.info(f"Found {len(documents)} question documents to cache for {subject} at {level_key}")
+            
+            if not documents:
+                logger.warning(f"No questions found for {subject} at {mongo_level} level")
+                return
+            
+            # Create directories
+            subject_dir = os.path.join(self.QUESTIONS_DIR, subject)
+            answers_dir = os.path.join(self.CACHE_DIR, "answers", subject)
+            
+            os.makedirs(subject_dir, exist_ok=True)
+            os.makedirs(answers_dir, exist_ok=True)
+            
+            level_dir = os.path.join(subject_dir, level_key)
+            level_answers_dir = os.path.join(answers_dir, level_key)
+            
+            os.makedirs(level_dir, exist_ok=True)
+            os.makedirs(level_answers_dir, exist_ok=True)
+            
+            # Track progress
+            saved_questions = 0
+            saved_answers = 0
+            
+            # Process each document
+            for doc in documents:
+                # First, convert MongoDB-specific types
+                safe_doc = self._mongo_to_json_serializable(doc)
+                
+                # Extract document ID
+                doc_id = str(doc.get('_id', str(uuid.uuid4())))
+                
+                # Extract year from document
+                paper_meta = doc.get('paper_meta', {})
+                year = str(paper_meta.get('Year', datetime.now().year))
+                
+                # Create year directories
+                year_dir = os.path.join(level_dir, year)
+                year_answers_dir = os.path.join(level_answers_dir, year)
+                
+                os.makedirs(year_dir, exist_ok=True)
+                os.makedirs(year_answers_dir, exist_ok=True)
+                
+                # MAIN FIX: Extract individual questions from the 'questions' array
+                if 'questions' in doc and isinstance(doc['questions'], list):
+                    logger.info(f"Found {len(doc['questions'])} individual questions in document {doc_id}")
+                    
+                    # Process each question in the array
+                    for question in doc['questions']:
+                        # Extract question number
+                        q_num = question.get('question_number')
+                        if isinstance(q_num, dict) and '$numberInt' in q_num:
+                            question_number = q_num['$numberInt']
+                        else:
+                            question_number = str(q_num) if q_num is not None else str(saved_questions + 1)
+                            
+                        # Extract question text
+                        question_text = question.get('question_text', '')
+                        
+                        # Get matching answer
+                        answer_doc = client.get_matching_answer(doc)
+                        
+                        # Filenames
+                        question_filename = os.path.join(year_dir, f"{question_number}.json")
+                        answer_filename = os.path.join(year_answers_dir, f"{question_number}.json")
+                        
+                        # Extract and save images
+                        local_images = []
+                        if 'images' in question and isinstance(question['images'], list):
+                            for i, img in enumerate(question['images']):
+                                if 'url' in img:
+                                    try:
+                                        img_url = img['url']
+                                        img_data = requests.get(img_url, timeout=10).content
+                                        img_filename = f"{question_number}_img_{i}.jpg"
+                                        img_path = os.path.join(year_dir, img_filename)
+                                        
+                                        with open(img_path, 'wb') as f:
+                                            f.write(img_data)
+                                        
+                                        local_images.append(img_filename)
+                                        logger.debug(f"Saved image {img_url} to {img_path}")
+                                    except Exception as e:
+                                        logger.error(f"Error saving image {img_url}: {e}")
+                        
+                        # Safe-serialize the question
+                        question_safe = self._mongo_to_json_serializable(question)
+                        
+                        # Create question data object
+                        question_data = {
+                            "id": doc_id,
+                            "subject": subject,
+                            "level": level_key,
+                            "year": year,
+                            "question_number": question_number,
+                            "text": question_text,
+                            "images": local_images,
+                            "original_question": question_safe,
+                            "answer_ref": f"{question_number}.json" if answer_doc else None
+                        }
+                        
+                        # Save the question file
+                        with open(question_filename, 'w', encoding='utf-8') as f:
+                            json.dump(question_data, f, ensure_ascii=False, indent=2)
+                        saved_questions += 1
+                        
+                        # Save the answer if available
+                        if answer_doc:
+                            # Convert answer to safe format
+                            answer_safe = self._mongo_to_json_serializable(answer_doc)
+                            
+                            # Try to find matching answer for this question
+                            answer_text = None
+                            
+                            # First check in answers array
+                            if 'answers' in answer_doc and isinstance(answer_doc['answers'], list):
+                                for ans in answer_doc['answers']:
+                                    ans_num = ans.get('question_number')
+                                    if isinstance(ans_num, dict) and '$numberInt' in ans_num:
+                                        ans_num = ans_num['$numberInt']
+                                        
+                                    if str(ans_num) == str(question_number):
+                                        answer_text = ans.get('answer_text', '')
+                                        if not answer_text:
+                                            sub_answers = ans.get('sub_answers', [])
+                                            if sub_answers:
+                                                answer_text = "\n".join([sub.get('text', '') for sub in sub_answers])
+                                        break
+                            
+                            # If not found, use whole document
+                            if not answer_text:
+                                answer_text = str(answer_safe)
+                            
+                            # Create answer data
+                            answer_data = {
+                                "id": str(answer_doc.get('_id', '')),
+                                "question_id": doc_id,
+                                "question_number": question_number,
+                                "subject": subject,
+                                "level": level_key,
+                                "year": year,
+                                "text": answer_text,
+                                "original_answer": answer_safe
+                            }
+                            
+                            # Save the answer file
+                            with open(answer_filename, 'w', encoding='utf-8') as f:
+                                json.dump(answer_data, f, ensure_ascii=False, indent=2)
+                            saved_answers += 1
+                else:
+                    # Handle documents that don't have a questions array
+                    logger.warning(f"Document {doc_id} doesn't have a questions array, treating as single question")
+                    
+                    # Use document ID as question number if not available
+                    question_number = "1"  # Default question number
+                    
+                    # Find text directly in document
+                    question_text = doc.get('question_text', doc.get('text', str(doc)))
+                    
+                    # Get matching answer
+                    answer_doc = client.get_matching_answer(doc)
+                    
+                    # Filenames
+                    question_filename = os.path.join(year_dir, f"{question_number}.json")
+                    answer_filename = os.path.join(year_answers_dir, f"{question_number}.json")
+                    
+                    # Create question data
+                    question_data = {
+                        "id": doc_id,
+                        "subject": subject,
+                        "level": level_key,
+                        "year": year,
+                        "question_number": question_number,
+                        "text": question_text,
+                        "original_document": safe_doc,
+                        "answer_ref": f"{question_number}.json" if answer_doc else None
+                    }
+                    
+                    # Save the question
+                    with open(question_filename, 'w', encoding='utf-8') as f:
+                        json.dump(question_data, f, ensure_ascii=False, indent=2)
+                    saved_questions += 1
+                    
+                    # Save answer if available
+                    if answer_doc:
+                        answer_safe = self._mongo_to_json_serializable(answer_doc)
+                        answer_text = answer_doc.get('answer_text', str(answer_doc))
+                        
+                        answer_data = {
+                            "id": str(answer_doc.get('_id', '')),
+                            "question_id": doc_id,
+                            "subject": subject,
+                            "level": level_key,
+                            "year": year,
+                            "question_number": question_number,
+                            "text": answer_text,
+                            "original_answer": answer_safe
+                        }
+                        
+                        with open(answer_filename, 'w', encoding='utf-8') as f:
+                            json.dump(answer_data, f, ensure_ascii=False, indent=2)
+                        saved_answers += 1
+            
+            # Update subject cache metadata
+            self._update_subject_cache_metadata(subject, level_key)
+            
+            logger.info(f"Successfully saved {saved_questions} questions and {saved_answers} answers for {subject} at {level_key}")
+            
+        except Exception as e:
+            logger.error(f"Error queueing questions for caching: {e}", exc_info=True)
+    
+    def _extract_year_from_question(self, question: Dict) -> Optional[str]:
+        """Extract year from question document"""
+        # Try to get year from paper_meta
+        paper_meta = question.get('paper_meta', {})
+        year = paper_meta.get('Year')
+        
+        # If not found, try to extract from Paper field
+        if not year:
+            paper = paper_meta.get('Paper', '')
+            # Try to extract year from paper string (looking for 4 digit numbers)
+            year_match = re.search(r'20\d{2}', paper)
+            if year_match:
+                year = year_match.group(0)
+        
+        return str(year) if year else None
     
     def _save_question_assets(self, question: Dict, doc_id: str, subject: str, level: str, 
                              year: str, question_number: str) -> List[str]:
-        """
-        Download and save assets (images, etc.) for a question.
-        
-        Returns:
-            List of saved asset paths
-        """
+        """Save question assets (images, tables) to the cache"""
         saved_assets = []
-        try:
-            # Process images if present
-            images = question.get('images', [])
-            
-            for idx, img_data in enumerate(images):
-                # Get image URL
-                img_url = img_data.get('url')
-                if not img_url:
-                    continue
-                    
-                # Create asset directory
-                asset_dir = os.path.join(
-                    self.ASSETS_DIR, 
-                    self._safe_filename(subject), 
-                    level, 
-                    year, 
-                    str(question_number)
-                )
-                os.makedirs(asset_dir, exist_ok=True)
-                
-                # Generate filename from URL
-                filename = f"image_{idx}_{self._hash_url(img_url)}.jpg"
-                filepath = os.path.join(asset_dir, filename)
-                
-                # Skip if already downloaded
-                if os.path.exists(filepath):
-                    saved_assets.append(filepath)
-                    continue
-                
-                # Download image
+        
+        # Create assets directory if needed
+        asset_dir = os.path.join(self.ASSETS_DIR, self._safe_filename(subject), level, year, question_number)
+        os.makedirs(asset_dir, exist_ok=True)
+        
+        # Process images
+        if 'images' in question and question['images']:
+            for i, image in enumerate(question['images']):
                 try:
-                    if self.network_monitor.get_status() == NetworkStatus.ONLINE:
-                        response = requests.get(img_url, timeout=10)
-                        if response.status_code == 200:
-                            # Save image
-                            with open(filepath, 'wb') as f:
-                                f.write(response.content)
-                            
-                            saved_assets.append(filepath)
-                            logger.debug(f"Saved asset: {filepath}")
-                except Exception as img_error:
-                    logger.error(f"Error downloading image {img_url}: {img_error}")
+                    if 'url' in image:
+                        # Get image URL
+                        image_url = image['url']
+                        
+                        # Hash URL to create a filename
+                        filename = f"{self._hash_url(image_url)}.jpg"
+                        file_path = os.path.join(asset_dir, filename)
+                        
+                        # Check if we already have this asset
+                        if os.path.exists(file_path):
+                            logger.debug(f"Asset already exists: {file_path}")
+                        else:
+                            # Download the image
+                            response = requests.get(image_url, timeout=30)
+                            if response.status_code == 200:
+                                with open(file_path, 'wb') as f:
+                                    f.write(response.content)
+                                logger.info(f"Downloaded asset from {image_url} to {file_path}")
+                            else:
+                                logger.warning(f"Failed to download asset from {image_url}: {response.status_code}")
+                                continue
+                        
+                        # Update the URL to point to our local copy
+                        question['images'][i]['url'] = file_path
+                        saved_assets.append(file_path)
+                except Exception as e:
+                    logger.error(f"Error saving asset: {e}")
+        
+        return saved_assets
+    
+    def _update_subject_cache_metadata(self, subject: str, level: str):
+        """Update metadata for a subject/level combo"""
+        try:
+            # Get metadata path
+            metadata_path = os.path.join(self.METADATA_DIR, 'subjects.json')
             
-            # Process any other assets here if needed
+            # Create default metadata
+            metadata = {}
             
-            return saved_assets
+            # Load existing metadata if available
+            if os.path.exists(metadata_path):
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
+            
+            # Ensure subject exists
+            if subject not in metadata:
+                metadata[subject] = {}
+                
+            # Update level metadata
+            if level not in metadata[subject]:
+                metadata[subject][level] = {}
+                
+            # Update last updated timestamp
+            metadata[subject][level]['last_updated'] = time.time()
+            
+            # Count questions
+            subject_dir = os.path.join(self.QUESTIONS_DIR, self._safe_filename(subject), level)
+            if os.path.exists(subject_dir):
+                # Count years (subdirectories)
+                years = [d for d in os.listdir(subject_dir) if os.path.isdir(os.path.join(subject_dir, d))]
+                metadata[subject][level]['years'] = years
+                
+                # Count total questions
+                question_count = 0
+                for year in years:
+                    year_dir = os.path.join(subject_dir, year)
+                    question_files = [f for f in os.listdir(year_dir) if f.endswith('.json')]
+                    question_count += len(question_files)
+                
+                metadata[subject][level]['question_count'] = question_count
+            
+            # Save metadata
+            with open(metadata_path, 'w') as f:
+                json.dump(metadata, f, indent=2)
+                
+            logger.info(f"Updated cache metadata for {subject}/{level}: {metadata[subject][level]}")
             
         except Exception as e:
-            logger.error(f"Error saving question assets: {e}")
-            return saved_assets
+            logger.error(f"Error updating subject cache metadata: {e}")
     
     def get_cached_question(self, subject: str, level: str, year: str = None, 
                            question_number: str = None, random: bool = False) -> Optional[Dict]:
@@ -631,8 +995,7 @@ class CacheManager:
             logger.error(f"Error getting cached question: {e}")
             return None
     
-    def get_cached_questions_for_test(self, subject: str, level: str, 
-                                     count: int = 10) -> List[Dict]:
+    def get_cached_questions_for_test(self, subject: str, level: str, count: int = 10) -> List[Dict]:
         """
         Get a set of questions suitable for a test.
         
@@ -689,7 +1052,7 @@ class CacheManager:
             
             if not os.path.exists(subject_path):
                 return []
-                
+    
             # List directories in the subject path - these are years
             for item in os.listdir(subject_path):
                 if os.path.isdir(os.path.join(subject_path, item)):
@@ -706,36 +1069,38 @@ class CacheManager:
         questions = []
         try:
             year_path = os.path.join(self.QUESTIONS_DIR, self._safe_filename(subject), level, year)
-            
             if not os.path.exists(year_path):
+                logger.warning(f"Path does not exist: {year_path}")
                 return []
                 
-            # Get all question files
+            # Get all question files for this year
             question_files = [f for f in os.listdir(year_path) if f.endswith('.json')]
             
-            # Select randomly if we have more than we need
-            import random as rand
-            if len(question_files) > count:
-                question_files = rand.sample(question_files, count)
-            
-            # Load each question
-            for filename in question_files:
-                filepath = os.path.join(year_path, filename)
+            if not question_files:
+                logger.warning(f"No question files found in {year_path}")
+                return []
+                
+            # Random selection if we need a subset
+            if count < len(question_files):
+                selected_files = random.sample(question_files, count)
+            else:
+                selected_files = question_files
+                
+            # Load selected questions
+            for qfile in selected_files:
+                file_path = os.path.join(year_path, qfile)
                 try:
-                    with open(filepath, 'r', encoding='utf-8') as f:
+                    with open(file_path, 'r') as f:
                         question_data = json.load(f)
-                        
-                    # Resolve asset paths
-                    self._resolve_asset_paths(question_data)
-                    
-                    questions.append(question_data)
-                except Exception as file_error:
-                    logger.error(f"Error loading question file {filepath}: {file_error}")
+                        # Resolve asset paths
+                        self._resolve_asset_paths(question_data)
+                        questions.append(question_data)
+                except Exception as e:
+                    logger.error(f"Error loading question {file_path}: {e}")
                     
             return questions
-            
         except Exception as e:
-            logger.error(f"Error getting questions from year: {e}")
+            logger.error(f"Error getting questions from year {year}: {e}")
             return []
     
     def _resolve_asset_paths(self, question_data: Dict):
@@ -1087,3 +1452,230 @@ class CacheManager:
         if self.conn:
             self.conn.close()
             logger.info("Cache database connection closed")
+
+    def get_subject_cache_status(self, subject: str, level: str) -> dict:
+        """
+        Get cache status information for a specific subject and level.
+        
+        Returns:
+            dict: A dictionary containing:
+                - status: CacheStatus value (FRESH, STALE, EXPIRED, INVALID)
+                - last_updated: timestamp of last update
+                - completion_percentage: percentage of cached content (0-100)
+                - progress_status: CacheProgressStatus value (IDLE, SYNCING, DOWNLOADING, ERROR)
+        """
+        try:
+            # Initialize default response
+            result = {
+                'status': CacheStatus.INVALID,
+                'last_updated': None,
+                'completion_percentage': 0,
+                'progress_status': CacheProgressStatus.IDLE
+            }
+            
+            # IMPORTANT: The UI expects subject/level/year structure
+            subject_dir = os.path.join(self.QUESTIONS_DIR, self._safe_filename(subject))
+            level_dir = os.path.join(subject_dir, level)  # The UI expects level to be a direct subdirectory
+            
+            logger.debug(f"Checking cache at path: {level_dir}")
+            
+            # If the level directory doesn't exist, there's no cached content
+            if not os.path.exists(level_dir):
+                logger.debug(f"Level directory not found: {level_dir}")
+                return result
+                
+            # Check if level directory has any content (years with question files)
+            has_content = False
+            years_found = []
+            question_count = 0
+            
+            # Count questions in each year directory
+            for item in os.listdir(level_dir):
+                year_dir = os.path.join(level_dir, item)
+                if os.path.isdir(year_dir):
+                    question_files = [f for f in os.listdir(year_dir) if f.endswith('.json')]
+                    if question_files:
+                        has_content = True
+                        years_found.append(item)
+                        question_count += len(question_files)
+            
+            if not has_content:
+                logger.debug(f"No question files found in level directory: {level_dir}")
+                return result
+            
+            # If we found content, log it
+            logger.info(f"Found {question_count} cached questions for {subject}/{level} across {len(years_found)} years")
+            
+            # Try to get the last updated timestamp from metadata
+            metadata_path = os.path.join(self.METADATA_DIR, 'subjects.json')
+            if os.path.exists(metadata_path):
+                try:
+                    with open(metadata_path, 'r') as f:
+                        metadata = json.load(f)
+                    
+                    # Get the timestamp from metadata if available
+                    if subject in metadata and level in metadata[subject]:
+                        last_updated = metadata[subject][level].get('last_updated')
+                        logger.debug(f"Found metadata timestamp: {last_updated}")
+                    else:
+                        # Use directory modification time as fallback
+                        last_updated = os.path.getmtime(level_dir)
+                        logger.debug(f"Using directory modification time: {last_updated}")
+                except Exception as e:
+                    logger.error(f"Error reading metadata: {e}")
+                    # Use directory modification time as fallback
+                    last_updated = os.path.getmtime(level_dir)
+            else:
+                # Use directory modification time if no metadata
+                last_updated = os.path.getmtime(level_dir)
+                logger.debug(f"Using directory modification time (no metadata): {last_updated}")
+            
+            # Update result with found data
+            result['last_updated'] = last_updated
+            
+            # Set completion percentage based on question count
+            if question_count > 0:
+                # Simple formula: more questions = higher percentage
+                # Assume 10 questions is about 50% complete, 20+ is 100%
+                result['completion_percentage'] = min(100, 50 + question_count * 2.5)
+                
+                # Set status based on timestamp
+                if last_updated:
+                    age = time.time() - last_updated
+                    if age < self.ttl_fresh:
+                        result['status'] = CacheStatus.FRESH
+                    else:
+                        result['status'] = CacheStatus.STALE
+            
+            logger.debug(f"Final cache status for {subject}/{level}: {result}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error getting subject cache status: {e}", exc_info=True)
+            return {
+                'status': CacheStatus.INVALID,
+                'last_updated': None,
+                'completion_percentage': 0,
+                'progress_status': CacheProgressStatus.IDLE
+            }
+            
+    def _count_cached_questions(self, subject: str, level: str) -> int:
+        """Count actual cached questions for a subject/level by examining file system"""
+        try:
+            total_questions = 0
+            subject_path = os.path.join(self.QUESTIONS_DIR, self._safe_filename(subject))
+            
+            if not os.path.exists(subject_path):
+                return 0
+                
+            # Check if level directory exists
+            level_path = os.path.join(subject_path, level)
+            if os.path.exists(level_path) and os.path.isdir(level_path):
+                # Count questions in each year directory
+                for year in os.listdir(level_path):
+                    year_path = os.path.join(level_path, year)
+                    if os.path.isdir(year_path):
+                        question_files = [f for f in os.listdir(year_path) if f.endswith('.json')]
+                        total_questions += len(question_files)
+            else:
+                # Try alternate structure: check if years are direct children of subject dir
+                for year in os.listdir(subject_path):
+                    year_path = os.path.join(subject_path, year)
+                    if os.path.isdir(year_path):
+                        question_files = [f for f in os.listdir(year_path) if f.endswith('.json')]
+                        total_questions += len(question_files)
+            
+            return total_questions
+            
+        except Exception as e:
+            logger.error(f"Error counting cached questions: {e}")
+            return 0
+    
+    def _get_subject_last_updated(self, subject: str, level: str) -> Optional[float]:
+        """Get the timestamp when the subject/level was last updated"""
+        try:
+            # Check if we have metadata for this subject/level
+            subject_dir = os.path.join(self.METADATA_DIR, self._safe_filename(subject), self._safe_filename(level))
+            if not os.path.exists(subject_dir):
+                return None
+            
+            # Get the metadata file
+            metadata_file = os.path.join(subject_dir, "metadata.json")
+            if not os.path.exists(metadata_file):
+                return None
+            
+            # Load the metadata
+            with open(metadata_file, 'r') as f:
+                metadata = json.load(f)
+            
+            return metadata.get('last_updated')
+        
+        except Exception as e:
+            logger.error(f"Error getting subject last updated: {e}")
+            return None
+    
+    def _get_subject_progress_status(self, subject: str, level: str) -> str:
+        """Get the current progress status for a subject/level"""
+        try:
+            # Check if this subject/level is currently syncing or downloading
+            # This would typically be stored in a tracking variable or database
+            
+            # For now, we'll just return IDLE
+            # In a real implementation, you would track active operations
+            # and return the appropriate status
+            return CacheProgressStatus.IDLE
+            
+        except Exception as e:
+            logger.error(f"Error getting subject progress status: {e}")
+            return CacheProgressStatus.IDLE
+    
+    def get_all_subjects_cache_status(self) -> Dict[str, Dict[str, dict]]:
+        """
+        Get cache status information for all subjects and levels.
+        
+        Returns:
+            Dict[str, Dict[str, dict]]: A nested dictionary containing:
+                {
+                    'subject1': {
+                        'level1': {status_info},
+                        'level2': {status_info}
+                    },
+                    'subject2': {...}
+                }
+                
+                Where status_info is the same as returned by get_subject_cache_status()
+        """
+        try:
+            # Initialize empty result
+            result = {}
+            
+            # Check if metadata directory exists
+            if not os.path.exists(self.METADATA_DIR):
+                return result
+            
+            # Iterate through subject directories
+            for subject_dir in os.listdir(self.METADATA_DIR):
+                subject_path = os.path.join(self.METADATA_DIR, subject_dir)
+                if not os.path.isdir(subject_path):
+                    continue
+                
+                subject = subject_dir  # This assumes directory name matches subject name
+                result[subject] = {}
+                
+                # Iterate through level directories
+                for level_dir in os.listdir(subject_path):
+                    level_path = os.path.join(subject_path, level_dir)
+                    if not os.path.isdir(level_path):
+                        continue
+                    
+                    level = level_dir  # This assumes directory name matches level name
+                    
+                    # Get status for this subject/level
+                    status = self.get_subject_cache_status(subject, level)
+                    result[subject][level] = status
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error getting all subjects cache status: {e}")
+            return {}

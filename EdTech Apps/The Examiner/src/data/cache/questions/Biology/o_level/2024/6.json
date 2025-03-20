@@ -1,0 +1,33 @@
+{
+  "id": "67d50f7779dac53b183510c3",
+  "subject": "Biology",
+  "level": "o_level",
+  "year": "2024",
+  "question_number": "6",
+  "text": "Comparison of human and plant responses to light",
+  "images": [],
+  "original_question": {
+    "question_number": 6,
+    "question_text": "Comparison of human and plant responses to light",
+    "topic": "Biology",
+    "subtopic": "Coordination and Response",
+    "difficulty": {
+      "level": "Medium",
+      "justification": "Requires understanding of both human and plant responses to stimuli"
+    },
+    "sub_questions": [
+      {
+        "sub_number": "a",
+        "text": "Describe how humans and plants coordinate responses to light",
+        "marks": 6
+      },
+      {
+        "sub_number": "b",
+        "text": "Describe the role of synapses in a reflex arc",
+        "marks": 4
+      }
+    ],
+    "marks": 10
+  },
+  "answer_ref": "6.json"
+}
