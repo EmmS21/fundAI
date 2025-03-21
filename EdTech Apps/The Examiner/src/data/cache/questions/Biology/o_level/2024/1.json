@@ -1,48 +1,84 @@
 {
-  "id": "67d50f7779dac53b183510c3",
+  "id": "67d50efd3fcaaa35de32af3b",
   "subject": "Biology",
   "level": "o_level",
   "year": "2024",
   "question_number": "1",
-  "text": "The lungs are part of the human gas exchange system. Breathing moves air into and out of the lungs.",
+  "text": "Respiration which releases energy from food in living organisms can be summarised by the following equation: glucose + oxygen → carbon dioxide + water. A student investigated the rate at which oxygen was used for respiration by some small animals.",
   "images": [],
   "original_question": {
     "question_number": 1,
-    "question_text": "The lungs are part of the human gas exchange system. Breathing moves air into and out of the lungs.",
-    "topic": "Human Biology",
-    "subtopic": "Gas Exchange System",
+    "question_text": "Respiration which releases energy from food in living organisms can be summarised by the following equation: glucose + oxygen → carbon dioxide + water. A student investigated the rate at which oxygen was used for respiration by some small animals.",
+    "topic": "Biology",
+    "subtopic": "Cellular Respiration",
     "difficulty": {
       "level": "Medium",
-      "justification": "Requires understanding of respiratory system components and their functions"
+      "justification": "Requires understanding of respiration, data analysis, and graph interpretation"
     },
+    "context_materials": [],
     "sub_questions": [
       {
         "sub_number": "a(i)",
-        "text": "Match parts of the gas exchange system to their functions using Fig. 1.1",
-        "marks": 4
+        "text": "Describe what happens to the carbon dioxide they produce.",
+        "marks": 1
       },
       {
         "sub_number": "a(ii)",
-        "text": "State two features of alveoli that make them suitable for gas exchange",
+        "text": "Explain why the drop of coloured liquid moves along the capillary tube towards the small animals.",
         "marks": 2
       },
       {
-        "sub_number": "b",
-        "text": "Complete the pie chart titles and key showing gas percentages in the lungs during breathing",
+        "sub_number": "b(i)",
+        "text": "Complete Table 1.1 by inserting these readings.",
+        "marks": 2
+      },
+      {
+        "sub_number": "b(ii)",
+        "text": "Construct a graph of the data in the completed Table 1.1 on the grid below. Join your plotted points with ruled, straight lines.",
         "marks": 4
+      },
+      {
+        "sub_number": "b(iii)",
+        "text": "Use your graph to estimate the position of the drop at 25 minutes.",
+        "marks": 3
+      },
+      {
+        "sub_number": "c(i)",
+        "text": "Calculate the distance moved by the drop during the investigation.",
+        "marks": 1
+      },
+      {
+        "sub_number": "c(ii)",
+        "text": "Calculate the rate of movement of the drop during the investigation in cm per minute.",
+        "marks": 2
+      },
+      {
+        "sub_number": "d(i)",
+        "text": "Suggest why the student should repeat this investigation several times.",
+        "marks": 2
+      },
+      {
+        "sub_number": "d(ii)",
+        "text": "Suggest a control experiment for this investigation.",
+        "marks": 1
+      }
+    ],
+    "tables": [
+      {
+        "description": "Table 1.1 showing time and position of drop measurements"
       }
     ],
     "images": [
       {
         "label": "Fig. 1.1",
-        "description": "Diagram showing parts of gas exchange system and their functions"
+        "description": "Diagram of experimental apparatus showing test tube with small animals and capillary tube"
       },
       {
         "label": "Fig. 1.2",
-        "description": "Pie charts showing gas percentages in lungs"
+        "description": "Scale showing position of colored drop at start and after 40 minutes"
       }
     ],
-    "marks": 10
+    "marks": 18
   },
   "answer_ref": "1.json"
 }

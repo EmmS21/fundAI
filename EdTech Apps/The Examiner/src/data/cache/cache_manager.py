@@ -17,6 +17,8 @@ from src.core.queue_manager import QueuePriority
 from src.data.database.models import Base as BaseModel
 from src.core.firebase.client import FirebaseClient
 import re
+from src.core.mongodb.client import MongoDBClient
+
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +54,7 @@ class CacheManager:
     # Cache settings
     MAX_CACHE_SIZE_MB = 500  
     CHECK_INTERVAL = 3600    
-    PAPERS_PER_SUBJECT = 5   
+    PAPERS_PER_SUBJECT = 2   # Changed from 5 to 2 years
     
     # Subscription settings
     SUBSCRIPTION_CACHE_TTL = 3600  # Cache subscription status for 1 hour
@@ -80,8 +82,6 @@ class CacheManager:
         os.makedirs(self.ASSETS_DIR, exist_ok=True)
         os.makedirs(self.QUESTIONS_DIR, exist_ok=True)
         
-        # Initialize MongoDB client - import here to avoid circular import
-        from src.core.mongodb.client import MongoDBClient
         self.mongodb_client = MongoDBClient()
         
         # Network monitor for connection status
@@ -249,48 +249,71 @@ class CacheManager:
                 time.sleep(300)  # Longer delay after error
     
     def _check_for_updates(self):
-        """Check for new content that needs to be cached"""
+        """Check if there are updates available for the cached content"""
+        logger.info("Checking for cache updates...")
+        
         try:
-            # Get current user from database
-            from src.data.database.operations import UserOperations
+            # Check current MongoDB connection
+            mongo_client = MongoDBClient()
+            connected = mongo_client.connected and mongo_client.initialized
+            logger.info(f"MongoDB connection result: {connected}")
             
-            # First, check if MongoDB is properly connected - we need this regardless of user
-            if not self.mongodb_client or not self.mongodb_client.connected:
-                logger.warning("MongoDB not connected, skipping content update")
+            if not connected:
+                logger.warning("MongoDB not connected, skipping cache update check")
                 return
                 
-            # Get the current user - this now includes fallback logic and returns a dictionary
+            logger.info("MongoDB connected, checking for new content...")
+            
+            # No need to import again, already imported at top of file
             user = UserOperations.get_current_user()
             
+            # If no user found, we can't determine what to cache
             if not user:
-                logger.warning("No user found in database, skipping cache update")
+                logger.warning("No user found, skipping cache update check")
                 return
-
-            # Use dictionary access instead of attribute access
-            logger.info(f"Checking for content updates for user {user['id']} ({user['full_name']})")
+                
+            # Get subjects enabled by the user
+            subjects = UserOperations.get_user_subjects()
             
-            # Get user's selected subjects with levels - use the user ID from the dictionary
-            subjects = UserOperations.get_user_subjects(user['id'])
             if not subjects:
-                logger.warning(f"No subjects configured for user {user['id']}, skipping content update")
+                logger.warning("No subjects found for user, skipping cache update check")
                 return
                 
-            logger.info(f"Found {len(subjects)} subjects to check for updates")
-            
-            # Check each subject+level combination
+            # Process each subject
             for subject in subjects:
+                # Get the subject name directly from the dictionary
                 subject_name = subject['name']
-                subject_levels = subject['levels']
                 
-                logger.info(f"Checking updates for subject: {subject_name}, levels: {subject_levels}")
+                logger.debug(f"Checking updates for subject: {subject_name} (ID: {subject['subject_id']})")
                 
-                # Process each level that is selected
-                for level_key, is_selected in subject_levels.items():
-                    if is_selected:
-                        # Convert level key to MongoDB format
-                        mongo_level = self._convert_level_to_mongo_format(level_key)
-                        logger.info(f"Queuing content update for {subject_name}/{level_key} (MongoDB level: {mongo_level})")
-                        self._queue_questions_for_caching(subject_name, level_key, mongo_level)
+                # Access levels from the dictionary
+                levels = subject['levels']
+                enabled_levels = {
+                    'grade_7': levels.get('grade_7', False),
+                    'o_level': levels.get('o_level', False),
+                    'a_level': levels.get('a_level', False)
+                }
+                
+                # Get only enabled levels
+                for level_key, enabled in enabled_levels.items():
+                    if not enabled:
+                        continue
+                        
+                    # Convert level key to MongoDB format
+                    mongo_level = self._convert_level_to_mongo_format(level_key)
+                    
+                    # Get last update time for this subject/level
+                    last_update = self._get_subject_last_updated(subject_name, level_key)
+                    
+                    # Skip if updated recently (only check max once per hour)
+                    if last_update and (time.time() - last_update < 3600):  # 1 hour
+                        logger.debug(f"Subject {subject_name}/{level_key} recently updated, skipping")
+                        continue
+                        
+                    # Queue this subject for update
+                    logger.info(f"Queuing update check for {subject_name}/{level_key}")
+                    self._queue_questions_for_caching(subject_name, level_key, mongo_level)
+            
         except Exception as e:
             logger.error(f"Error checking for updates: {e}", exc_info=True)
     
@@ -1469,7 +1492,7 @@ class CacheManager:
             result = {
                 'status': CacheStatus.INVALID,
                 'last_updated': None,
-                'completion_percentage': 0,
+                    'completion_percentage': 0,
                 'progress_status': CacheProgressStatus.IDLE
             }
             
