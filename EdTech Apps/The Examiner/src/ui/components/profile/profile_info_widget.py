@@ -4,6 +4,9 @@ from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer
 from src.data.database.operations import UserOperations
 from .achievements.medal_widget import MedalWidget
 from .subjects.subject_selector import SubjectSelector
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ProfileInfoWidget(QWidget):
     def __init__(self, user_data):
@@ -713,3 +716,52 @@ class ProfileInfoWidget(QWidget):
         """Handle when a subject is removed"""
         # You can add any additional UI updates here
         pass
+
+    def _load_user_data(self):
+        """Load user data from the database"""
+        try:
+            # Get current user data
+            user_data = UserOperations.get_current_user()
+            
+            if not user_data:
+                logger.warning("No user data found")
+                return
+            
+            # Set user info
+            self.user_id = user_data['id']
+            self.user_name = user_data['full_name']
+            self.user_country = user_data['country']
+            self.user_school_level = user_data['school_level']
+            
+            # Update UI elements
+            self.name_label.setText(self.user_name)
+            
+            # Set country flag if available
+            if self.user_country:
+                self._set_country_flag(self.user_country)
+            
+            # Set school level
+            if self.user_school_level:
+                self.school_level_label.setText(self.user_school_level)
+            
+            # Load user subjects
+            self._load_subjects()
+            
+        except Exception as e:
+            logger.error(f"Error loading user data: {e}")
+    
+    def _load_subjects(self):
+        """Load user subjects from the database"""
+        try:
+            # Get user subjects - no need to pass user ID
+            subjects = UserOperations.get_user_subjects()
+            
+            # Clear current subjects
+            self._clear_subjects()
+            
+            # Add each subject to the UI
+            for subject in subjects:
+                self._add_subject_card(subject)
+            
+        except Exception as e:
+            logger.error(f"Error loading subjects: {e}")

@@ -1,48 +1,76 @@
 {
-  "id": "67d50ebecec12312c07d55f9",
+  "id": "67d50e9207d0b18ade1637a0",
   "subject": "Biology",
   "level": "o_level",
   "year": "2022",
   "question_number": "1",
-  "text": "The diagram shows human skin.",
+  "text": "Enzymes are used in the fruit juice industry to help with the extraction of juice from fruit. You are going to investigate the extraction of juice from some crushed apple.",
   "images": [],
   "original_question": {
     "question_number": 1,
-    "question_text": "The diagram shows human skin.",
-    "topic": "Human Biology",
-    "subtopic": "Skin Structure and Temperature Regulation",
+    "question_text": "Enzymes are used in the fruit juice industry to help with the extraction of juice from fruit. You are going to investigate the extraction of juice from some crushed apple.",
+    "topic": "Biology",
+    "subtopic": "Enzymes",
     "difficulty": {
       "level": "Medium",
-      "justification": "Requires knowledge of skin structure and temperature regulation mechanisms"
+      "justification": "Requires practical skills, data collection, analysis and experimental design"
     },
+    "context_materials": [
+      {
+        "label": "Experimental Procedure",
+        "content": "Detailed procedure for setting up and conducting enzyme experiment with crushed apple",
+        "type": "text"
+      }
+    ],
     "sub_questions": [
       {
-        "sub_number": "a(i)",
-        "text": "Identify the parts labelled B and C.",
-        "marks": 2
-      },
-      {
-        "sub_number": "a(ii)",
-        "text": "Describe how part B is involved in maintaining a constant body temperature when the external temperature drops.",
-        "marks": 3
+        "sub_number": "a",
+        "text": "Complete the table headings by inserting the units and record the volume of juice in measuring cylinders A and B every 2 minutes for 10 minutes",
+        "marks": 5
       },
       {
         "sub_number": "b",
-        "text": "Part A is unevenly distributed in human skin. Name part A and suggest reasons for this uneven distribution.",
+        "text": "Use your results to suggest why the use of this enzyme is an advantage in the fruit juice industry",
         "marks": 3
       },
       {
         "sub_number": "c",
-        "text": "The thickness of layer D can change over several months. Suggest and explain one reason for a decrease in the thickness.",
+        "text": "Suggest reasons for stirring the contents of beakers A and B and using a clean stirring rod for beaker B",
         "marks": 2
+      },
+      {
+        "sub_number": "d",
+        "text": "Explain how the contents of beaker B act as a control",
+        "marks": 2
+      },
+      {
+        "sub_number": "e",
+        "text": "Construct a line graph using given data and estimate volume at 5 minutes",
+        "marks": 7
+      },
+      {
+        "sub_number": "f",
+        "text": "Design an experiment to investigate the effect of the enzyme on different varieties of apple",
+        "marks": 6
+      },
+      {
+        "sub_number": "g",
+        "text": "Name testing solution, state temperature and conclusion for reducing sugar test",
+        "marks": 3
+      }
+    ],
+    "tables": [
+      {
+        "description": "Table for recording juice volumes over time"
       }
     ],
     "images": [
       {
-        "description": "Diagram of human skin with labeled parts A, B, C, and D"
+        "description": "Diagram showing experimental setup with measuring cylinders and filters",
+        "url": ""
       }
     ],
-    "marks": 10
+    "marks": 28
   },
   "answer_ref": "1.json"
 }

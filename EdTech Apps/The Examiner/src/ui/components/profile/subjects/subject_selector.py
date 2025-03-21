@@ -77,10 +77,23 @@ class SubjectSelector(QWidget):
     def _on_subject_selected(self, subject):
         """Handle a subject selection from the popup"""
         if not self._is_subject_selected(subject):
-            # Add to database first
-            if UserOperations.add_subject(subject):  # No need to pass user_id
-                # Get the saved levels for this subject
-                levels = UserOperations.get_subject_levels(subject)  # No need to pass user_id
+            # Add subject to the database using add_subject_for_user
+            # Default all levels to False initially - they can be toggled later
+            result = UserOperations.add_subject_for_user(
+                subject_name=subject,
+                grade_7=False,
+                o_level=False,
+                a_level=False
+            )
+            
+            if result:
+                # Get the levels for this subject (should all be False initially)
+                levels = {
+                    'grade_7': False,
+                    'o_level': False,
+                    'a_level': False
+                }
+                
                 # Add to UI with the correct levels
                 self.subject_list.add_subject(subject, levels)
                 self.subject_added.emit(subject)
@@ -89,42 +102,51 @@ class SubjectSelector(QWidget):
                 available_subjects = self._get_available_subjects()
                 self.subject_popup.update_subjects(available_subjects)
                 self.subject_popup.hide()
+            else:
+                print(f"Failed to add subject: {subject}")
     
     def _is_subject_selected(self, subject_name):
         """Checks if the subject is already selected"""
-        if not hasattr(self.user_data, 'subjects'):
-            return False
+        # Get all user subjects using the modified UserOperations method
+        subjects = UserOperations.get_user_subjects()
         
-        # Get all subject names through the relationship
-        selected_subjects = []
-        for user_subject in self.user_data.subjects:
-            if hasattr(user_subject, 'subject_id'):
-                subject = UserOperations.get_subject_name(user_subject.subject_id)
-                if subject:
-                    selected_subjects.append(subject)
-        
-        return subject_name in selected_subjects
+        # Check if the subject name is in the list
+        for subject in subjects:
+            if subject.name == subject_name:
+                return True
+                
+        return False
     
     def _on_subject_removed(self, subject_name):
         """Handle subject removal"""
         print(f"1. Subject removal triggered for: {subject_name}")
-        print(f"2. Current user ID: {self.user_data.id}")
         
-        # Remove from database
-        removal_success = UserOperations.remove_subject(self.user_data.id, subject_name)
+        # Get all subjects
+        subjects = UserOperations.get_user_subjects()
+        
+        # Find the subject ID for the given name
+        subject_id = None
+        for subject in subjects:
+            if subject.name == subject_name:
+                subject_id = subject.id
+                break
+                
+        if subject_id is None:
+            print(f"Cannot find subject ID for name: {subject_name}")
+            return
+            
+        # Remove from database using delete_subject_for_user
+        removal_success = UserOperations.delete_subject_for_user(subject_id)
         print(f"3. Database removal success: {removal_success}")
         
         if removal_success:
-            # Refresh user data
-            self.user_data = UserOperations.get_current_user()
-            print(f"4. User data refreshed. Current subjects: {[UserOperations.get_subject_name(us.subject_id) for us in self.user_data.subjects]}")
-            
             # Get current selected subjects
-            current_subjects = [UserOperations.get_subject_name(us.subject_id) for us in self.user_data.subjects]
-            print(f"5. Current selected subjects: {current_subjects}")
+            updated_subjects = UserOperations.get_user_subjects()
+            current_subject_names = [s.name for s in updated_subjects]
+            print(f"5. Current selected subjects: {current_subject_names}")
             
             # Calculate available subjects
-            available_subjects = [s for s in self.subjects if s not in current_subjects]
+            available_subjects = [s for s in self.subjects if s not in current_subject_names]
             print(f"6. Available subjects for dropdown: {available_subjects}")
             
             # Update popup

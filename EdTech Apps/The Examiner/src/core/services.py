@@ -10,22 +10,12 @@ to their respective singleton instances.
 """
 import logging
 import importlib
-"""
-Central registry for application services.
-
-This module serves as a central point for accessing application services,
-helping to prevent circular imports between modules while maintaining
-top-level imports.
-
-During application initialization, these service variables will be set
-to their respective singleton instances.
-"""
-import logging
-import importlib
 from src.core.network.monitor import NetworkMonitor, NetworkStatus
 from src.core.firebase.client import FirebaseClient
 from src.core.mongodb.client import MongoDBClient
 from src.core.network.sync_service import SyncService
+from src.data.cache.cache_manager import CacheManager
+from PySide6.QtCore import QThreadPool
 
 # DON'T IMPORT THIS DIRECTLY - it creates a circular import
 # from src.data.cache.cache_manager import CacheManager
@@ -38,54 +28,101 @@ cache_manager = None
 network_monitor = None
 mongodb_client = None
 firebase_client = None
+threadpool = None  # Thread pool for background tasks
 
 def initialize_services():
-    """Initialize all application services in the correct order"""
-    global network_monitor, firebase_client, mongodb_client, sync_service, cache_manager
+    """Initialize all application services"""
+    global cache_manager, network_monitor, sync_service, firebase_client, mongodb_client, threadpool
     
-    logger.info("Initializing application services...")
-    
-    # Initialize network monitor first
-    network_monitor = NetworkMonitor()
-    logger.info(f"Network monitor initialized with status: {network_monitor.get_status()}")
-    
-    # Force a network check to ensure accurate status
-    status = network_monitor.force_check()
-    logger.info(f"Network status after forced check: {status}")
-    
-    # Initialize Firebase client (needed for subscription verification)
-    firebase_client = FirebaseClient()
-    
-    # Initialize MongoDB client
-    mongodb_client = MongoDBClient()
-    if status == NetworkStatus.ONLINE:
-        if not mongodb_client.connected:
-            connection_result = mongodb_client.connect()
-            logger.info(f"MongoDB connection result: {connection_result}")
-    
-    # Initialize sync service
-    sync_service = SyncService()
-    sync_service.start()
-    
-    # Initialize cache manager last (depends on other services)
-    # Use dynamic import to avoid circular import
-    cache_module = importlib.import_module('src.data.cache.cache_manager')
-    cache_manager = cache_module.CacheManager()
-    cache_manager.start()
-    
-    logger.info("All services initialized successfully")
-
+    try:
+        logger.info("Initializing application services...")
+        
+        # Initialize thread pool
+        threadpool = QThreadPool.globalInstance()
+        # Configure max thread count - adjust based on system capabilities
+        threadpool.setMaxThreadCount(4)  # Reasonable default for most systems
+        logger.info(f"Thread pool initialized with max thread count: {threadpool.maxThreadCount()}")
+        
+        # Initialize Firebase client (used by other services)
+        firebase_client = FirebaseClient()
+        logger.info("Firebase client initialized")
+        
+        # Initialize MongoDB client
+        mongodb_client = MongoDBClient()
+        logger.info("MongoDB client initialized")
+        
+        # Initialize network monitor
+        network_monitor = NetworkMonitor()
+        network_monitor.start()
+        logger.info("Network monitor initialized and started")
+        
+        # Initialize cache manager
+        cache_manager = CacheManager()
+        cache_manager.start()
+        logger.info("Cache manager initialized and started")
+        
+        # Initialize sync service (depends on network monitor and cache manager)
+        sync_service = SyncService()
+        sync_service.initialize()
+        logger.info("Sync service initialized")
+        
+        logger.info("All application services initialized successfully")
+        
+    except Exception as e:
+        logger.error(f"Error initializing services: {e}", exc_info=True)
+        
+        # Attempt to initialize remaining services if one fails
+        if not firebase_client:
+            firebase_client = FirebaseClient()
+            
+        if not mongodb_client:
+            mongodb_client = MongoDBClient()
+            
+        if not network_monitor:
+            network_monitor = NetworkMonitor()
+            network_monitor.start()
+            
+        if not cache_manager:
+            cache_manager = CacheManager()
+            cache_manager.start()
+            
+        if not sync_service:
+            sync_service = SyncService()
+            sync_service.initialize()
+            
+        if not threadpool:
+            threadpool = QThreadPool.globalInstance()
+            
+        logger.info("Services initialized with potential errors")
+        
 def shutdown_services():
-    """Stop all services in the correct order"""
-    global cache_manager, sync_service
+    """Shutdown all services in the appropriate order"""
+    global cache_manager, network_monitor, sync_service
     
     logger.info("Shutting down application services...")
     
-    # Stop in reverse order of initialization
-    if cache_manager:
-        cache_manager.stop()
-    
+    # Stop sync service first
     if sync_service:
-        sync_service.stop()
+        try:
+            sync_service.stop()
+            logger.info("Sync service stopped")
+        except Exception as e:
+            logger.error(f"Error stopping sync service: {e}")
     
-    logger.info("All services stopped successfully") 
+    # Then stop cache manager
+    if cache_manager:
+        try:
+            cache_manager.stop()
+            logger.info("Cache manager stopped")
+        except Exception as e:
+            logger.error(f"Error stopping cache manager: {e}")
+    
+    # Finally stop network monitor
+    if network_monitor:
+        try:
+            network_monitor.stop()
+            logger.info("Network monitor stopped")
+        except Exception as e:
+            logger.error(f"Error stopping network monitor: {e}")
+            
+    logger.info("All services shutdown complete") 
