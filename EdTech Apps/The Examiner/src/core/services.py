@@ -16,6 +16,8 @@ from src.core.mongodb.client import MongoDBClient
 from src.core.network.sync_service import SyncService
 from src.data.cache.cache_manager import CacheManager
 from PySide6.QtCore import QThreadPool
+from typing import Optional
+from .queue_manager import QueueManager
 
 # DON'T IMPORT THIS DIRECTLY - it creates a circular import
 # from src.data.cache.cache_manager import CacheManager
@@ -25,23 +27,16 @@ logger = logging.getLogger(__name__)
 # These will be set during application initialization
 sync_service = None
 cache_manager = None
-network_monitor = None
+network_monitor: Optional[NetworkMonitor] = None
 mongodb_client = None
 firebase_client = None
-threadpool = None  # Thread pool for background tasks
 
 def initialize_services():
     """Initialize all application services"""
-    global cache_manager, network_monitor, sync_service, firebase_client, mongodb_client, threadpool
+    global cache_manager, network_monitor, sync_service, firebase_client, mongodb_client
     
     try:
         logger.info("Initializing application services...")
-        
-        # Initialize thread pool
-        threadpool = QThreadPool.globalInstance()
-        # Configure max thread count - adjust based on system capabilities
-        threadpool.setMaxThreadCount(4)  # Reasonable default for most systems
-        logger.info(f"Thread pool initialized with max thread count: {threadpool.maxThreadCount()}")
         
         # Initialize Firebase client (used by other services)
         firebase_client = FirebaseClient()
@@ -53,8 +48,7 @@ def initialize_services():
         
         # Initialize network monitor
         network_monitor = NetworkMonitor()
-        network_monitor.start()
-        logger.info("Network monitor initialized and started")
+        logger.info(f"Network monitor initialized with status: {network_monitor.get_status()}")
         
         # Initialize cache manager
         cache_manager = CacheManager()
@@ -65,6 +59,9 @@ def initialize_services():
         sync_service = SyncService()
         sync_service.initialize()
         logger.info("Sync service initialized")
+        
+        # Start Sync Service
+        sync_service.start()
         
         logger.info("All application services initialized successfully")
         
@@ -80,7 +77,6 @@ def initialize_services():
             
         if not network_monitor:
             network_monitor = NetworkMonitor()
-            network_monitor.start()
             
         if not cache_manager:
             cache_manager = CacheManager()
@@ -90,39 +86,38 @@ def initialize_services():
             sync_service = SyncService()
             sync_service.initialize()
             
-        if not threadpool:
-            threadpool = QThreadPool.globalInstance()
-            
         logger.info("Services initialized with potential errors")
         
 def shutdown_services():
-    """Shutdown all services in the appropriate order"""
-    global cache_manager, network_monitor, sync_service
-    
+    """Gracefully shut down application services."""
     logger.info("Shutting down application services...")
-    
-    # Stop sync service first
-    if sync_service:
-        try:
+    try:
+        # Stop services that have a stop method, in reverse order of start
+        if sync_service:
             sync_service.stop()
             logger.info("Sync service stopped")
-        except Exception as e:
-            logger.error(f"Error stopping sync service: {e}")
-    
-    # Then stop cache manager
-    if cache_manager:
-        try:
+        if cache_manager:
             cache_manager.stop()
             logger.info("Cache manager stopped")
-        except Exception as e:
-            logger.error(f"Error stopping cache manager: {e}")
-    
-    # Finally stop network monitor
-    if network_monitor:
-        try:
-            network_monitor.stop()
-            logger.info("Network monitor stopped")
-        except Exception as e:
-            logger.error(f"Error stopping network monitor: {e}")
+
+        if mongodb_client:
+            mongodb_client.close()
+            logger.info("MongoDB client connection closed")
+
+        logger.info("Services shut down successfully")
+    except Exception as e:
+        logger.error(f"Error during service shutdown: {e}", exc_info=True)
+        
+        # Attempt to restart services if one fails
+        if not sync_service:
+            sync_service = SyncService()
+            sync_service.initialize()
             
-    logger.info("All services shutdown complete") 
+        if not cache_manager:
+            cache_manager = CacheManager()
+            cache_manager.start()
+            
+        if not mongodb_client:
+            mongodb_client = MongoDBClient()
+            
+        logger.info("Services restarted with potential errors") 

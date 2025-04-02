@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
                               QPushButton, QLabel, QCheckBox, QFrame,
                               QMenu, QWidgetAction, QToolButton,
                               QSpacerItem, QSizePolicy, QProgressBar)
-from PySide6.QtCore import Qt, Signal, QObject, QEvent, QTimer
+from PySide6.QtCore import Qt, Signal, QObject, QEvent, QTimer, Slot
 from PySide6.QtGui import QCursor, QIcon, QColor, QAction
 from src.data.database.operations import UserOperations
 from src.utils.constants import PRIMARY_COLOR
@@ -74,6 +74,7 @@ class SubjectStatusIndicator(QWidget):
                             return
                             
                         # Check if we have content
+                        print(f"Checking subject: {self.subject}, level: {self.level}")
                         question_count = cache_manager._count_cached_questions(self.subject, self.level)
                         
                         if question_count > 0:
@@ -140,6 +141,7 @@ class SubjectStatusIndicator(QWidget):
 class SubjectCard(QWidget):
     deleted = Signal(str)
     levels_changed = Signal(str, dict)  # Emits subject name and level changes
+    start_test_requested = Signal(str, str)  # NEW SIGNAL: (subject_name, level_key)
     
     def __init__(self, subject_name, levels=None, parent=None):
         super().__init__(parent)
@@ -424,7 +426,6 @@ class SubjectCard(QWidget):
         take_test_btn = QPushButton("Take Test Question")
         take_test_btn.setObjectName("takeTestButton")
         take_test_btn.setCursor(Qt.PointingHandCursor)
-        take_test_btn.setStyleSheet("border: none;")  # Explicitly set no border
         take_test_btn.clicked.connect(self._show_test_level_dropdown)
         
         # Add buttons to bottom section
@@ -466,8 +467,8 @@ class SubjectCard(QWidget):
     
     def _update_header_status(self):
         """Update the header status indicator with the combined status of all enabled levels"""
+        print(f"DEBUG: _update_header_status called for Subject: {self.subject_name}")
         try:
-            # Initialize variables to track the overall status
             has_loading = False
             has_ready = False
             has_content = False
@@ -478,11 +479,14 @@ class SubjectCard(QWidget):
             for level_key, enabled in self.levels.items():
                 if not enabled:
                     continue
-                    
+
                 enabled_levels += 1
-                
+                print(f"DEBUG: Checking status for enabled level: {level_key}")
+
                 # Get cache status from CacheManager
                 cache_data = self.cache_manager.get_subject_cache_status(self.subject_name, level_key)
+                print(f"DEBUG: Cache data received for {level_key}: {cache_data}")
+
                 progress_status = cache_data.get('progress_status', CacheProgressStatus.IDLE)
                 level_question_count = cache_data.get('question_count', 0)
                 
@@ -498,7 +502,7 @@ class SubjectCard(QWidget):
             
             # Update header status based on the combined state
             if has_loading:
-                # Loading state has priority
+                print("DEBUG: Setting header status to Loading")
                 self.header_status_text.setText("Loading")
                 self.header_status_text.setStyleSheet("""
                     background-color: #DBEAFE;
@@ -517,7 +521,7 @@ class SubjectCard(QWidget):
                     max-height: 10px;
                 """)
             elif has_ready:
-                # Ready state 
+                print("DEBUG: Setting header status to Ready")
                 self.header_status_text.setText("Ready")
                 self.header_status_text.setStyleSheet("""
                     background-color: #DCFCE7;
@@ -536,7 +540,7 @@ class SubjectCard(QWidget):
                     max-height: 10px;
                 """)
             elif enabled_levels > 0:
-                # No content state
+                print("DEBUG: Setting header status to No Exams Available (has_loading=False, has_ready=False, enabled_levels > 0)")
                 self.header_status_text.setText("No Exams Available")
                 self.header_status_text.setStyleSheet("""
                     background-color: #F3F4F6;
@@ -555,7 +559,7 @@ class SubjectCard(QWidget):
                     max-height: 10px;
                 """)
             else:
-                # No levels enabled
+                print("DEBUG: Setting header status to No Levels Selected")
                 self.header_status_text.setText("No Levels Selected")
                 self.header_status_text.setStyleSheet("""
                     background-color: #F3F4F6;
@@ -574,182 +578,85 @@ class SubjectCard(QWidget):
                     max-height: 10px;
                 """)
                 
-            # Show the status widget if we have any enabled levels
             self.header_status_widget.setVisible(enabled_levels > 0)
                 
         except Exception as e:
-            logger.error(f"Error updating header status: {e}", exc_info=True)
+            logger.error(f"Error updating header status for {self.subject_name}: {e}", exc_info=True)
+            print(f"DEBUG: Error occurred in _update_header_status for {self.subject_name}, setting status to Error")
+            self.header_status_text.setText("Error")
+            self.header_status_text.setStyleSheet("color: red;") # Example error style
             
     def _show_test_level_dropdown(self):
-        # Create popup menu
+        """Creates and shows a dropdown menu listing enabled levels with play icons."""
+        # Find the button that triggered this
+        button = self.findChild(QPushButton, "takeTestButton")
+        if not button:
+            logger.error("Could not find 'takeTestButton' to show dropdown.")
+            return
+
         menu = QMenu(self)
+        # Style the menu - using a light purple background and the button hover color for selection
         menu.setStyleSheet("""
             QMenu {
-                background-color: white;
-                border: 1px solid #E5E7EB;
-                border-radius: 8px;
-                padding: 5px;
+                background-color: #F5F3FF; /* Light purple background */
+                border: 1px solid #E5E7EB; /* Soft border */
+                border-radius: 6px;
+                padding: 4px; /* Padding around items */
+            }
+            QMenu::item {
+                padding: 8px 20px; /* Padding within each item */
+                background-color: transparent;
+                color: #1F2937; /* Dark text */
+                border-radius: 4px; /* Slightly rounded corners for items */
+                 margin: 2px; /* Add slight margin between items */
+            }
+            QMenu::item:selected { /* Hover/selected state */
+                background-color: #D8B4FE; /* Button hover color */
+                color: white; /* White text when selected */
+            }
+            QMenu::icon {
+                 padding-left: 5px; /* Space for the icon */
             }
         """)
-        
-        # Get available levels
-        available_levels = [key for key, enabled in self.levels.items() if enabled]
-        
-        # Update cache status before showing menu (one-time check, not continuous)
-        self._update_cache_status()
-        
-        for level_key in available_levels:
-            level_name = self._get_level_display_name(level_key)
-            
-            # Create level container widget
-            level_item = QWidget()
-            level_item.setObjectName(f"level_{level_key}")
-            level_item.setFixedWidth(200)
-            level_item.setStyleSheet("""
-                QWidget {
-                    background-color: transparent;
-                    border-radius: 6px;
-                    padding: 8px;
-                }
-                QWidget:hover {
-                    background-color: #F5F3FF;
-                }
-            """)
-            
-            # Create horizontal layout for level name and play button
-            item_layout = QHBoxLayout(level_item)
-            item_layout.setContentsMargins(8, 4, 8, 4)
-            
-            # Level name with status text
-            name_label = QLabel(level_name)
-            name_label.setStyleSheet("""
-                QLabel {
-                    font-size: 14px;
-                    color: #4B5563;
-                }
-            """)
-            
-            # Status indicator dot (small colored circle)
-            status_dot = QLabel()
-            status_dot.setFixedSize(16, 16)
-            status_dot.setStyleSheet("""
-                QLabel {
-                    border-radius: 8px;
-                    background-color: #D1D5DB;  /* Default gray */
-                }
-            """)
-            
-            # Store reference to status label
-            self.level_status_labels[level_key] = status_dot
-            
-            # Play button - initially hidden
-            play_button = QPushButton("▶")
-            play_button.setObjectName("playButton")
-            play_button.setCursor(Qt.PointingHandCursor)
-            play_button.setFixedSize(28, 28)
-            play_button.setStyleSheet("""
-                QPushButton {
-                    background-color: #A855F7;
-                    color: white;
-                    border: none;
-                    border-radius: 14px;
-                    font-size: 12px;
-                    font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #D8B4FE;
-                }
-            """)
-            play_button.setVisible(False)  # Initially hidden
-            
-            # Status text label (shows "Ready", "Loading", etc.)
-            status_text_label = QLabel()
-            status_text_label.setStyleSheet("""
-                QLabel {
-                    font-size: 12px;
-                    color: #6B7280;
-                }
-            """)
-            
-            # Get status from cache data
-            cache_data = self.cache_manager.get_subject_cache_status(self.subject_name, level_key)
-            progress_status = cache_data.get('progress_status', CacheProgressStatus.IDLE)
-            question_count = cache_data.get('question_count', 0)
-            
-            # Set status text based on content availability
-            if progress_status in [CacheProgressStatus.SYNCING, CacheProgressStatus.DOWNLOADING]:
-                status_text_label.setText("Loading")
-                status_text_label.setStyleSheet("QLabel { font-size: 12px; color: #3B82F6; }")  # Blue
-                status_dot.setStyleSheet("QLabel { background-color: #3B82F6; border-radius: 8px; }")  # Blue
-            elif question_count > 0:
-                status_text_label.setText("Ready")
-                status_text_label.setStyleSheet("QLabel { font-size: 12px; color: #10B981; }")  # Green
-                status_dot.setStyleSheet("QLabel { background-color: #10B981; border-radius: 8px; }")  # Green
-            else:
-                status_text_label.setText("No Exams Available")
-                status_text_label.setStyleSheet("QLabel { font-size: 12px; color: #6B7280; }")  # Gray
-                status_dot.setStyleSheet("QLabel { background-color: #6B7280; border-radius: 8px; }")  # Gray
-            
-            # Progress bar for download/sync status - initially hidden
-            progress_bar = QProgressBar()
-            progress_bar.setRange(0, 100)
-            progress_bar.setValue(0)
-            progress_bar.setFixedHeight(6)
-            progress_bar.setTextVisible(False)
-            progress_bar.setStyleSheet("""
-                QProgressBar {
-                    background-color: #E5E7EB;
-                    border-radius: 3px;
-                    border: none;
-                }
-                QProgressBar::chunk {
-                    background-color: #A855F7;
-                    border-radius: 3px;
-                }
-            """)
-            progress_bar.setVisible(False)
-            
-            # Store reference to progress bar
-            self.level_progress_bars[level_key] = progress_bar
-            
-            # Add widgets to layout
-            item_layout.addWidget(status_dot)
-            item_layout.addWidget(name_label)
-            item_layout.addWidget(status_text_label)
-            item_layout.addStretch()
-            item_layout.addWidget(play_button)
-            
-            # Create vertical layout to add progress bar below
-            v_layout = QVBoxLayout()
-            v_layout.setContentsMargins(0, 0, 0, 0)
-            v_layout.setSpacing(2)
-            v_layout.addLayout(item_layout)
-            v_layout.addWidget(progress_bar)
-            
-            level_item.setLayout(v_layout)
-            
-            # Create action and add widget
-            action = QAction(self)
-            menu.addAction(action)
-            
-            # Create hover event filter to show/hide play button
-            hover_filter = HoverEventFilter(level_item, play_button)
-            level_item.installEventFilter(hover_filter)
-            
-            # Connect play button to start test
-            play_button.clicked.connect(lambda checked=False, lkey=level_key: self._start_test_for_level(lkey))
-            
-            # Set widget for action
-            menu.setActionWidget(action, level_item)
-            
-        # Show menu
-        menu.popup(QCursor.pos())
-    
-    def _start_test_for_level(self, level_key):
-        """Start the test for the specified level"""
-        print(f"Starting test for subject: {self.subject_name}, level: {level_key}")
-        # Here you would implement the actual test starting logic
-        # For now, we just print the selection
+
+        # Get enabled levels
+        enabled_levels = [key for key, enabled in self.levels.items() if enabled]
+
+        if not enabled_levels:
+            # Option 1: Show a disabled item
+            no_levels_action = QAction("No levels selected", self)
+            no_levels_action.setEnabled(False)
+            menu.addAction(no_levels_action)
+            # Option 2: Don't show the menu at all (uncomment below and comment above action)
+            # logger.info("No levels selected, not showing dropdown.")
+            # return
+        else:
+            # Get a standard "play" icon
+            # Note: "media-playback-start" might depend on your desktop environment/theme.
+            # Fallback to a unicode character if the theme icon isn't found.
+            play_icon = QIcon.fromTheme("media-playback-start")
+            if play_icon.isNull():
+                 logger.warning("Standard 'media-playback-start' icon not found. Using fallback.")
+                 # You might need to adjust the UI if using unicode directly
+                 # play_icon = QIcon() # Or create an icon from a character/image path
+
+            for level_key in enabled_levels:
+                level_name = self._get_level_display_name(level_key)
+                action = QAction(play_icon, level_name, self) # Add icon here
+                # Connect to the new function, passing the level key
+                action.triggered.connect(lambda checked=False, lk=level_key: self._start_test_for_level(lk))
+                menu.addAction(action)
+
+        # Calculate position below the button
+        button_pos = button.mapToGlobal(button.rect().bottomLeft())
+        menu.popup(button_pos)
+
+    def _start_test_for_level(self, level_key: str):
+        """Emits a signal indicating a test should start for the selected level."""
+        level_name = self._get_level_display_name(level_key)
+        logger.info(f"Requesting test start for Subject: '{self.subject_name}', Level: '{level_name}' (key: {level_key})")
+        # --- Emit the new signal instead of just printing ---
+        self.start_test_requested.emit(self.subject_name, level_key)
 
     def _update_cache_status(self):
         """Update the cache status for each level"""
@@ -974,19 +881,3 @@ class SubjectCard(QWidget):
             
         except Exception as e:
             logger.error(f"Error updating subject levels: {e}")
-
-class HoverEventFilter(QObject):
-    """Event filter for handling hover events on level items"""
-    
-    def __init__(self, parent, button):
-        super().__init__(parent)
-        self.button = button
-        self.parent = parent
-    
-    def eventFilter(self, obj, event):
-        if obj == self.parent:
-            if event.type() == QEvent.Enter:
-                self.button.setVisible(True)
-            elif event.type() == QEvent.Leave:
-                self.button.setVisible(False)
-        return super().eventFilter(obj, event)

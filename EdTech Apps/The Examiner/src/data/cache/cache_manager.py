@@ -18,6 +18,8 @@ from src.data.database.models import Base as BaseModel
 from src.core.firebase.client import FirebaseClient
 import re
 from src.core.mongodb.client import MongoDBClient
+import random
+from src.data.database.models import QuestionResponse, User, ExamResult
 
 
 logger = logging.getLogger(__name__)
@@ -998,8 +1000,7 @@ class CacheManager:
                 return None
                 
             # Select file (random or first)
-            import random as rand
-            selected_file = rand.choice(matching_files) if random else matching_files[0]
+            selected_file = random.choice(matching_files) if random else matching_files[0]
             
             # Load question data
             with open(selected_file, 'r', encoding='utf-8') as f:
@@ -1488,11 +1489,12 @@ class CacheManager:
                 - progress_status: CacheProgressStatus value (IDLE, SYNCING, DOWNLOADING, ERROR)
         """
         try:
-            # Initialize default response
+            # Initialize default response (includes question_count: 0 initially)
             result = {
                 'status': CacheStatus.INVALID,
                 'last_updated': None,
-                    'completion_percentage': 0,
+                'question_count': 0, # Initial default
+                'completion_percentage': 0,
                 'progress_status': CacheProgressStatus.IDLE
             }
             
@@ -1509,8 +1511,9 @@ class CacheManager:
                 
             # Check if level directory has any content (years with question files)
             has_content = False
+            question_count = 0 # Variable to store the count
             years_found = []
-            question_count = 0
+            last_updated = None
             
             # Count questions in each year directory
             for item in os.listdir(level_dir):
@@ -1520,8 +1523,8 @@ class CacheManager:
                     if question_files:
                         has_content = True
                         years_found.append(item)
-                        question_count += len(question_files)
-            
+                        question_count += len(question_files) # Count is calculated here
+
             if not has_content:
                 logger.debug(f"No question files found in level directory: {level_dir}")
                 return result
@@ -1558,8 +1561,6 @@ class CacheManager:
             
             # Set completion percentage based on question count
             if question_count > 0:
-                # Simple formula: more questions = higher percentage
-                # Assume 10 questions is about 50% complete, 20+ is 100%
                 result['completion_percentage'] = min(100, 50 + question_count * 2.5)
                 
                 # Set status based on timestamp
@@ -1570,16 +1571,21 @@ class CacheManager:
                     else:
                         result['status'] = CacheStatus.STALE
             
+            # Add the calculated count to the result
+            result['question_count'] = question_count
+            
             logger.debug(f"Final cache status for {subject}/{level}: {result}")
             return result
             
         except Exception as e:
             logger.error(f"Error getting subject cache status: {e}", exc_info=True)
+            # Return default structure on error, which already includes question_count: 0
             return {
                 'status': CacheStatus.INVALID,
                 'last_updated': None,
+                'question_count': 0,
                 'completion_percentage': 0,
-                'progress_status': CacheProgressStatus.IDLE
+                'progress_status': CacheProgressStatus.ERROR # Update status on error
             }
             
     def _count_cached_questions(self, subject: str, level: str) -> int:
@@ -1702,3 +1708,100 @@ class CacheManager:
         except Exception as e:
             logger.error(f"Error getting all subjects cache status: {e}")
             return {}
+
+    def get_random_question(self, subject_name: str, level_key: str) -> dict | None:
+        """
+        Retrieves a random, unanswered cached question for the application's user
+        for the given subject and level from the JSON file cache.
+
+        Args:
+            subject_name: The name of the subject.
+            level_key: The level identifier (e.g., 'o_level').
+
+        Returns:
+            A dictionary containing the question data (loaded from JSON)
+            or None if no unanswered questions are found or an error occurs.
+        """
+        logger.info(f"Attempting to get random unanswered question for {subject_name}/{level_key}")
+        potential_question_files = []
+        answered_question_ids = set()
+
+        # 1. Find all potential question JSON files
+        try:
+            subject_safe_name = self._safe_filename(subject_name)
+            level_path = os.path.join(self.QUESTIONS_DIR, subject_safe_name, level_key)
+
+            if not os.path.isdir(level_path):
+                logger.warning(f"Cache directory does not exist: {level_path}")
+                return None
+
+            for year_dir in os.listdir(level_path):
+                year_path = os.path.join(level_path, year_dir)
+                if os.path.isdir(year_path):
+                    for filename in os.listdir(year_path):
+                        if filename.endswith(".json"):
+                            potential_question_files.append(os.path.join(year_path, filename))
+
+            if not potential_question_files:
+                logger.warning(f"No question files found in {level_path}")
+                return None
+            logger.debug(f"Found {len(potential_question_files)} potential question files.")
+
+        except OSError as e:
+            logger.error(f"Error accessing cache directory {level_path}: {e}")
+            return None
+
+        # 2. Get IDs of all answered questions (since it's a single-user app)
+        try:
+            with get_db_session() as session:
+                # Query QuestionResponse directly for all distinct cached_question_ids that have been answered.
+                answered_responses = session.query(QuestionResponse.cached_question_id)\
+                    .join(ExamResult) \
+                    .filter(QuestionResponse.cached_question_id.isnot(None))\
+                    .distinct()\
+                    .all()
+                answered_question_ids = {resp[0] for resp in answered_responses}
+                logger.debug(f"Found {len(answered_question_ids)} distinct answered cached questions in the database.")
+
+        except Exception as e:
+            logger.error(f"Error querying answered questions from database: {e}", exc_info=True)
+            logger.warning("Proceeding without filtering answered questions due to DB error.")
+            answered_question_ids = set()
+
+        # 3. Filter out answered questions
+        unanswered_question_files = []
+        for file_path in potential_question_files:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    question_data = json.load(f)
+                    question_id = question_data.get('id')
+                    if question_id and question_id in answered_question_ids:
+                         logger.debug(f"Skipping answered question: {file_path} (ID: {question_id})")
+                         continue
+                    unanswered_question_files.append(file_path)
+            except json.JSONDecodeError:
+                logger.warning(f"Could not decode JSON from file: {file_path}")
+            except KeyError:
+                 logger.warning(f"Could not find 'id' field in question JSON: {file_path}")
+            except Exception as e:
+                logger.error(f"Error processing question file {file_path}: {e}")
+
+        logger.debug(f"Found {len(unanswered_question_files)} unanswered question files.")
+
+        # 4. Select a random unanswered question
+        if not unanswered_question_files:
+            logger.warning(f"No unanswered questions available for {subject_name}/{level_key}")
+            return None
+
+        selected_file_path = random.choice(unanswered_question_files)
+        logger.info(f"Selected random question file: {selected_file_path}")
+
+        # 5. Load and return its data
+        try:
+            with open(selected_file_path, 'r', encoding='utf-8') as f:
+                final_question_data = json.load(f)
+            # TODO: Add any necessary post-processing like resolving image paths if stored relatively.
+            return final_question_data
+        except Exception as e:
+            logger.error(f"Failed to load selected question file {selected_file_path}: {e}", exc_info=True)
+            return None
