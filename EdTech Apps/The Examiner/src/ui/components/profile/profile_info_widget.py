@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (QWidget, QGridLayout, QLabel, QVBoxLayout, 
                               QTabBar, QHBoxLayout, QPushButton, QLineEdit, QMessageBox)
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer
+from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer, Signal, Slot
 from src.data.database.operations import UserOperations
 from .achievements.medal_widget import MedalWidget
 from .subjects.subject_selector import SubjectSelector
@@ -9,6 +9,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 class ProfileInfoWidget(QWidget):
+    test_requested = Signal(str, str)
+
     def __init__(self, user_data):
         super().__init__()
         self.user_data = user_data
@@ -660,7 +662,7 @@ class ProfileInfoWidget(QWidget):
         """)
         subjects_layout.addWidget(add_subject_btn, alignment=Qt.AlignCenter)
         
-        # Create subject selector (always visible now)
+        # Create subject selector
         self.subject_selector = SubjectSelector(self.user_data)
         subjects_layout.addWidget(self.subject_selector, alignment=Qt.AlignCenter)
         
@@ -672,6 +674,7 @@ class ProfileInfoWidget(QWidget):
         # Connect subject signals
         self.subject_selector.subject_added.connect(self._on_subject_added)
         self.subject_selector.subject_removed.connect(self._on_subject_removed)
+        self.subject_selector.test_requested.connect(self.on_selector_test_requested)
         
         # Add to main layout
         self.layout().addWidget(self.subjects_container)
@@ -716,6 +719,12 @@ class ProfileInfoWidget(QWidget):
         """Handle when a subject is removed"""
         # You can add any additional UI updates here
         pass
+
+    @Slot(str, str)
+    def on_selector_test_requested(self, subject_name, level_key):
+        """Relays the signal from SubjectSelector upwards."""
+        logger.debug(f"ProfileInfoWidget received test request for {subject_name}/{level_key}, emitting signal.")
+        self.test_requested.emit(subject_name, level_key)
 
     def _load_user_data(self):
         """Load user data from the database"""

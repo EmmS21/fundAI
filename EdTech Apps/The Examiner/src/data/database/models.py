@@ -1,9 +1,10 @@
-from sqlalchemy import Column, Integer, String, Date, DateTime, Enum, Float, ForeignKey, Table, JSON, Boolean, LargeBinary
+from sqlalchemy import Column, Integer, String, Date, DateTime, Enum, Float, ForeignKey, Table, JSON, Boolean, LargeBinary, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 import enum
 from sqlalchemy.sql import func
+from typing import Optional, List, Dict, Any
 
 Base = declarative_base()
 
@@ -96,8 +97,13 @@ class QuestionResponse(Base):
     sync_attempts = Column(Integer, default=0)
     last_sync_attempt = Column(DateTime, nullable=True)
     
+    # Link to the specific question in the cache, if this response originated from one.
+    # Made nullable=True initially for flexibility, but ideally should be set for cached questions.
+    cached_question_id = Column(Text, ForeignKey('cached_questions.question_id'), nullable=True)
+    
     # Relationships
     exam_result = relationship("ExamResult", back_populates="question_responses")
+    cached_question = relationship("CachedQuestion")
 
 # Many-to-many association table for user subjects with level selections
 class UserSubject(Base):
@@ -151,3 +157,21 @@ class PaperCache(Base):
     
     # Relationship
     user_subject = relationship("UserSubject", back_populates="cached_papers")
+
+class CachedQuestion(Base):
+    __tablename__ = 'cached_questions'
+
+    question_id = Column(Text, primary_key=True)
+    paper_id = Column(Text, nullable=False)
+    paper_year = Column(Integer, nullable=False)
+    paper_number = Column(Text, nullable=False)
+    subject = Column(Text, nullable=False)
+    level = Column(Text, nullable=False)
+    topic = Column(Text)
+    content = Column(Text, nullable=False)
+    marks = Column(Integer, nullable=False)
+    cached_at = Column(DateTime, nullable=False, default=func.now())
+    last_accessed = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
+
+    # Relationship back to responses (optional but can be useful)
+    # responses = relationship("QuestionResponse", back_populates="cached_question")

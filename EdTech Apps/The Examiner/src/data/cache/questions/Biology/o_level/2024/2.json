@@ -1,62 +1,54 @@
 {
-  "id": "67d50efd3fcaaa35de32af3b",
+  "id": "67d50f7779dac53b183510c3",
   "subject": "Biology",
   "level": "o_level",
   "year": "2024",
   "question_number": "2",
-  "text": "Study of arthropods and their classification",
+  "text": "Brown bread, made from the flour of whole wheat grains, contains both starch and fibre.",
   "images": [],
   "original_question": {
     "question_number": 2,
-    "question_text": "Study of arthropods and their classification",
+    "question_text": "Brown bread, made from the flour of whole wheat grains, contains both starch and fibre.",
     "topic": "Biology",
-    "subtopic": "Classification and Taxonomy",
+    "subtopic": "Digestion and Nutrition",
     "difficulty": {
       "level": "Medium",
-      "justification": "Combines identification, drawing skills and mathematical calculations"
+      "justification": "Requires understanding of digestive processes and interpretation of data"
     },
     "sub_questions": [
       {
         "sub_number": "a(i)",
-        "text": "Use the key to identify each arthropod. Complete the key by writing one genus name in each of the four boxes.",
-        "marks": 3
+        "text": "Describe where and how starch digestion takes place in the digestive system",
+        "marks": 4
       },
       {
         "sub_number": "a(ii)",
-        "text": "Describe a difference in one other feature, not used in the key, to distinguish between Araneus and Lithobius.",
-        "marks": 1
+        "text": "Describe what happens to fibre as it passes through the digestive system",
+        "marks": 2
       },
       {
-        "sub_number": "b(i)",
-        "text": "Make a large drawing of the immature arthropod as it appears in the photograph.",
+        "sub_number": "b",
+        "text": "Give two ways in which active transport is different from diffusion",
+        "marks": 2
+      },
+      {
+        "sub_number": "c",
+        "text": "Questions about blood glucose concentration graph",
         "marks": 5
       },
       {
-        "sub_number": "b(ii)",
-        "text": "Draw a straight line to join A and B on the photograph in Fig. 2.3. This is the length of the body of the arthropod as it appears in the photograph. Measure and record this length.",
-        "marks": 1
-      },
-      {
-        "sub_number": "b(iii)",
-        "text": "The length of the body of the actual arthropod is 16 mm. Use this value to calculate the magnification of the photograph to 1 decimal place.",
-        "marks": 1
+        "sub_number": "d",
+        "text": "Describe two methods scientists could use to produce wheat with increased fiber content",
+        "marks": 4
       }
     ],
     "images": [
       {
         "label": "Fig. 2.1",
-        "description": "Images of four different arthropods"
-      },
-      {
-        "label": "Fig. 2.2",
-        "description": "Classification key diagram"
-      },
-      {
-        "label": "Fig. 2.3",
-        "description": "Photograph of an immature arthropod in water"
+        "description": "Graph showing blood glucose concentration over time for different types of starch"
       }
     ],
-    "marks": 11
+    "marks": 17
   },
   "answer_ref": "2.json"
 }

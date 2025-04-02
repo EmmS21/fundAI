@@ -1,12 +1,17 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, 
                               QHBoxLayout, QFrame, QScrollArea)
-from PySide6.QtCore import Qt, Signal, QPoint
+from PySide6.QtCore import Qt, Signal, QPoint, Slot, QObject
 from src.data.database.operations import UserOperations
 from .subject_list import SubjectList
+from .subject_card import SubjectCard
+import logging
+
+logger = logging.getLogger(__name__)
 
 class SubjectSelector(QWidget):
     subject_added = Signal(str)  
     subject_removed = Signal(str)
+    test_requested = Signal(str, str)
     
     def __init__(self, user_data):
         super().__init__()
@@ -158,6 +163,56 @@ class SubjectSelector(QWidget):
             print("8. Subject removed signal emitted")
         else:
             print("3a. Failed to remove subject from database")
+
+    def _add_subject_card(self, subject_name, levels):
+        """Adds a subject card to the layout and connects its signals."""
+        card = SubjectCard(subject_name, levels)
+        self.subject_cards[subject_name] = card
+
+        # Connect delete signal
+        card.deleted.connect(lambda name=subject_name: self._remove_subject(name))
+        # Connect level changes signal
+        card.levels_changed.connect(self._on_levels_changed)
+
+        # --- Detailed Debugging for Signal Connection ---
+        try:
+            logger.info(f"Attempting to connect start_test_requested for {subject_name}...")
+            # Check types before connecting
+            signal_instance = card.start_test_requested
+            slot_instance = self.on_card_test_requested
+            logger.info(f"  - Signal type: {type(signal_instance)}")
+            logger.info(f"  - Slot type: {type(slot_instance)}")
+
+            # Make the connection
+            connection_successful = signal_instance.connect(slot_instance)
+
+            # Check the return value of connect (though it's often True even if the slot doesn't run later)
+            logger.info(f"  - Connection result for {subject_name}: {connection_successful}")
+
+            # Verify connection exists using receivers() - More reliable check
+            # Note: This might show the number of connections, not just True/False
+            receiver_count = card.receivers(card.start_test_requested)
+            logger.info(f"  - Receivers count for {subject_name}'s start_test_requested: {receiver_count}")
+            if receiver_count == 0:
+                 logger.error(f"  - *** FAILED TO CONNECT start_test_requested for {subject_name} ***")
+
+        except Exception as e:
+            logger.error(f"  - *** EXCEPTION during connect for {subject_name}: {e} ***", exc_info=True)
+        # --- End Detailed Debugging ---
+
+        # Insert card into layout
+        insert_index = self.subjects_layout.count()
+        if insert_index > 0:
+             insert_index -= 1
+        self.subjects_layout.insertWidget(insert_index, card)
+        logger.info(f"Added SubjectCard for {subject_name} to layout")
+
+    @Slot(str, str)
+    def on_card_test_requested(self, subject_name, level_key):
+        """Relays the signal from SubjectCard upwards."""
+        # Keep the INFO log here for when it *does* work
+        logger.info(f"SubjectSelector received test request for {subject_name}/{level_key}, emitting signal.")
+        self.test_requested.emit(subject_name, level_key)
 
 class SubjectPopup(QFrame):
     subject_selected = Signal(str)
