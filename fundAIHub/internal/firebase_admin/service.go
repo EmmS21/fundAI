@@ -7,25 +7,21 @@ import (
 	"os"
 	"strings"
 
-	// Import the main v4 package, aliased usually as 'firebase'
+	"cloud.google.com/go/firestore"
 	firebase "firebase.google.com/go/v4"
-
-	// Explicitly import the sub-packages needed for types
 	"firebase.google.com/go/v4/auth"
 	"firebase.google.com/go/v4/db"
-	"firebase.google.com/go/v4/firestore"
-	"firebase.google.com/go/v4/storage" // Keep if GetStorageClient is used
-
-	// Other necessary imports
+	"firebase.google.com/go/v4/storage" // Import storage if needed later
 	"google.golang.org/api/option"
 )
 
-// FirebaseAdminService interface uses the types directly
+// FirebaseAdminService defines the interface for interacting with Firebase Admin SDK.
 type FirebaseAdminService interface {
-	GetFirestoreClient(ctx context.Context) (*firestore.Client, error)
+	GetFirestoreClient(ctx context.Context) (*firestore.Clisent, error)
 	GetAuthClient(ctx context.Context) (*auth.Client, error)
-	GetDatabaseClient(ctx context.Context) (*db.Client, error)
-	GetStorageClient(ctx context.Context) (*storage.Client, error)
+	GetDatabaseClient(ctx context.Context) (*db.Client, error)     // For Realtime Database
+	GetStorageClient(ctx context.Context) (*storage.Client, error) // For Admin Storage access
+	// Add other methods as needed for specific Firebase interactions
 }
 
 type firebaseAdminService struct {
