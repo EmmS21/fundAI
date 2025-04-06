@@ -17,7 +17,7 @@ import (
 
 // FirebaseAdminService defines the interface for interacting with Firebase Admin SDK.
 type FirebaseAdminService interface {
-	GetFirestoreClient(ctx context.Context) (*firestore.Clisent, error)
+	GetFirestoreClient(ctx context.Context) (*firestore.Client, error)
 	GetAuthClient(ctx context.Context) (*auth.Client, error)
 	GetDatabaseClient(ctx context.Context) (*db.Client, error)     // For Realtime Database
 	GetStorageClient(ctx context.Context) (*storage.Client, error) // For Admin Storage access
