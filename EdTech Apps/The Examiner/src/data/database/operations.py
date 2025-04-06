@@ -10,6 +10,9 @@ import os
 import tempfile
 import logging
 
+# Define logger at the module level (preferred)
+logger = logging.getLogger(__name__)
+
 class UserOperations:
     """Operations for user management"""
     
@@ -122,45 +125,73 @@ class UserOperations:
     @staticmethod
     def add_subject_for_user(subject_name, grade_7=False, o_level=False, a_level=False, user_id=None):
         """
-        Add a subject for the user
+        Add a subject for the user. Creates the Subject entry if it doesn't exist.
         The user_id parameter is kept for backward compatibility but is no longer used.
         """
         try:
             with get_db_session() as session:
-                # Get the current user
                 user = session.query(User).first()
-                
                 if not user:
+                    logger.warning("Cannot add subject: No user found.")
                     return None
-                
-                # Check if subject already exists for this user
+
+                # 1. Find the Subject ID from the name, OR CREATE IT
+                subject_entry = session.query(Subject).filter_by(name=subject_name).first()
+
+                if not subject_entry:
+                    # Subject not found, create it!
+                    logger.info(f"Subject '{subject_name}' not found in Subject table. Creating it now.")
+                    new_subject = Subject(name=subject_name)
+                    session.add(new_subject)
+                    # We need to flush to get the ID without fully committing yet
+                    session.flush()
+                    # Check if flush worked and we got an ID
+                    if new_subject.id is None:
+                         logger.error(f"Failed to get ID for newly created subject '{subject_name}'. Rolling back.")
+                         session.rollback() # Explicit rollback here before raising/returning
+                         return None
+                    target_subject_id = new_subject.id
+                    logger.info(f"Created new subject '{subject_name}' with ID: {target_subject_id}")
+                else:
+                    # Subject already exists
+                    target_subject_id = subject_entry.id
+                    logger.debug(f"Subject '{subject_name}' found with ID: {target_subject_id}")
+
+
+                # 2. Check if the UserSubject link already exists using IDs
                 existing = session.query(UserSubject).filter_by(
                     user_id=user.id,
-                    name=subject_name
+                    subject_id=target_subject_id
                 ).first()
-                
+
                 if existing:
-                    # Update existing subject levels
+                    # Update existing subject levels (optional, maybe just return existing?)
+                    logger.info(f"UserSubject link already exists for user {user.id} and subject ID {target_subject_id}. Updating levels.")
                     existing.grade_7 = grade_7
                     existing.o_level = o_level
                     existing.a_level = a_level
-                    session.commit()
-                    return existing
-                
-                # Create new subject entry
-                subject = UserSubject(
+                    # No need to commit here, context manager handles it if successful
+                    return existing # Return the existing UserSubject object
+
+                # 3. Create new UserSubject entry using subject_id
+                logger.info(f"Creating new UserSubject link for user {user.id} and subject ID {target_subject_id}.")
+                user_subject = UserSubject(
                     user_id=user.id,
-                    name=subject_name,
+                    subject_id=target_subject_id,
                     grade_7=grade_7,
                     o_level=o_level,
                     a_level=a_level
                 )
-                
-                session.add(subject)
-                session.commit()
-                return subject
+                session.add(user_subject)
+                # Flush again to potentially get the UserSubject ID if needed later
+                session.flush()
+                logger.info(f"Successfully staged add for UserSubject link (ID: {user_subject.id})")
+                # Return the newly created UserSubject object
+                return user_subject
+
         except Exception as e:
-            logger.error(f"Error adding subject for user: {e}")
+            logger.error(f"Error adding subject link for user: {e}", exc_info=True)
+            # Rollback is handled by the context manager on exception
             return None
     
     @staticmethod

@@ -1713,14 +1713,6 @@ class CacheManager:
         """
         Retrieves a random, unanswered cached question for the application's user
         for the given subject and level from the JSON file cache.
-
-        Args:
-            subject_name: The name of the subject.
-            level_key: The level identifier (e.g., 'o_level').
-
-        Returns:
-            A dictionary containing the question data (loaded from JSON)
-            or None if no unanswered questions are found or an error occurs.
         """
         logger.info(f"Attempting to get random unanswered question for {subject_name}/{level_key}")
         potential_question_files = []
@@ -1730,6 +1722,7 @@ class CacheManager:
         try:
             subject_safe_name = self._safe_filename(subject_name)
             level_path = os.path.join(self.QUESTIONS_DIR, subject_safe_name, level_key)
+            logger.debug(f"Looking for questions in: {level_path}")
 
             if not os.path.isdir(level_path):
                 logger.warning(f"Cache directory does not exist: {level_path}")
@@ -1754,7 +1747,7 @@ class CacheManager:
         # 2. Get IDs of all answered questions (since it's a single-user app)
         try:
             with get_db_session() as session:
-                # Query QuestionResponse directly for all distinct cached_question_ids that have been answered.
+                logger.debug("Querying database for answered questions...")
                 answered_responses = session.query(QuestionResponse.cached_question_id)\
                     .join(ExamResult) \
                     .filter(QuestionResponse.cached_question_id.isnot(None))\
@@ -1776,13 +1769,13 @@ class CacheManager:
                     question_data = json.load(f)
                     question_id = question_data.get('id')
                     if question_id and question_id in answered_question_ids:
-                         logger.debug(f"Skipping answered question: {file_path} (ID: {question_id})")
-                         continue
+                        logger.debug(f"Skipping answered question: {file_path} (ID: {question_id})")
+                        continue
                     unanswered_question_files.append(file_path)
             except json.JSONDecodeError:
                 logger.warning(f"Could not decode JSON from file: {file_path}")
             except KeyError:
-                 logger.warning(f"Could not find 'id' field in question JSON: {file_path}")
+                logger.warning(f"Could not find 'id' field in question JSON: {file_path}")
             except Exception as e:
                 logger.error(f"Error processing question file {file_path}: {e}")
 
@@ -1798,10 +1791,22 @@ class CacheManager:
 
         # 5. Load and return its data
         try:
+            # Check if file exists
+            if not os.path.exists(selected_file_path):
+                logger.error(f"File does not exist at path: {selected_file_path}")
+                return None
+            
+            # Log file size and last modified time
+            file_stats = os.stat(selected_file_path)
+            logger.info(f"File exists - Size: {file_stats.st_size} bytes, Modified: {datetime.fromtimestamp(file_stats.st_mtime)}")
+            
+            # Try to read raw contents first
             with open(selected_file_path, 'r', encoding='utf-8') as f:
-                final_question_data = json.load(f)
-            # TODO: Add any necessary post-processing like resolving image paths if stored relatively.
-            return final_question_data
+                raw_content = f.read()
+                logger.info(f"Raw file contents: {raw_content}")
+                
+                final_question_data = json.loads(raw_content)
+                return final_question_data
         except Exception as e:
             logger.error(f"Failed to load selected question file {selected_file_path}: {e}", exc_info=True)
             return None

@@ -1,38 +1,59 @@
-import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { initializeApp, FirebaseApp } from "firebase/app";
+// Import only the specific client-side modules you use (e.g., Auth)
+import { getAuth, Auth } from "firebase/auth";
+// Import Firestore ONLY if you intend to use it *directly* from the client
+// subject to Security Rules (NOT for admin operations).
+// import { getFirestore, Firestore } from "firebase/firestore";
 
-console.log('Firebase Config Debug:', {
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  clientEmail: import.meta.env.VITE_FIREBASE_CLIENT_EMAIL,
-  privateKeyExists: !!import.meta.env.VITE_FIREBASE_PRIVATE_KEY,
-  authDomain: `${import.meta.env.VITE_FIREBASE_PROJECT_ID}.firebaseapp.com`,
-});
+// Ensure VITE_FIREBASE_API_KEY (currently VITE_GOOGLE_CLIENT_SECRET) and VITE_FIREBASE_PROJECT_ID are correctly loaded from your .env
+// TODO: Update variable name here if VITE_GOOGLE_CLIENT_SECRET is renamed in .env
+const firebaseApiKey = import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
+const firebaseProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+
+if (!firebaseApiKey || !firebaseProjectId) {
+  console.error(
+    "Firebase API Key or Project ID is missing in environment variables!"
+  );
+  // Handle this error appropriately - maybe show an error message to the user
+  // or prevent the app from initializing further.
+  // For now, we'll throw to make it obvious during development
+  throw new Error(
+    "Missing Firebase configuration. Check .env file and variable names (VITE_GOOGLE_CLIENT_SECRET/VITE_FIREBASE_API_KEY, VITE_FIREBASE_PROJECT_ID)."
+  );
+}
 
 const firebaseConfig = {
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  clientEmail: import.meta.env.VITE_FIREBASE_CLIENT_EMAIL,
-  privateKey: import.meta.env.VITE_FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-  authDomain: `${import.meta.env.VITE_FIREBASE_PROJECT_ID}.firebaseapp.com`,
-  storageBucket: `${import.meta.env.VITE_FIREBASE_PROJECT_ID}.appspot.com`,
-  apiKey: import.meta.env.VITE_GOOGLE_CLIENT_SECRET,
-  authProviderX509CertUrl: import.meta.env.VITE_FIREBASE_AUTH_PROVIDER_CERT_URL,
-  clientX509CertUrl: import.meta.env.VITE_FIREBASE_CLIENT_CERT_URL,
-  databaseURL: `https://${import.meta.env.VITE_FIREBASE_PROJECT_ID}.firebaseio.com`,
+  apiKey: firebaseApiKey,
+  authDomain: `${firebaseProjectId}.firebaseapp.com`,
+  projectId: firebaseProjectId,
+  storageBucket: `${firebaseProjectId}.appspot.com`,
+  // Add messagingSenderId or appId if needed for FCM/Analytics
+  // messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+  // appId: "YOUR_APP_ID",
+  // measurementId: "YOUR_MEASUREMENT_ID" // If using Analytics
 };
 
-// Initialize Firebase
-export const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+// Initialize Firebase client-side SDK
+let app: FirebaseApp | null = null;
+let auth: Auth | null = null;
+// let db: Firestore | null = null; // Only if using client-side Firestore
 
-// Optional: Add error handling
-if (!import.meta.env.VITE_FIREBASE_PROJECT_ID) {
-  throw new Error('Missing Firebase Project ID');
+try {
+  app = initializeApp(firebaseConfig);
+  // Initialize only the services needed on the client
+  auth = getAuth(app); // Example: Initialize Auth
+
+  // Initialize Firestore client-side SDK ONLY if using client-side access governed by Security Rules.
+  // For actions requiring admin privileges, you will call the backend API instead.
+  // db = getFirestore(app);
+
+  console.log("Firebase client SDK initialized successfully.");
+} catch (error) {
+  console.error("Failed to initialize Firebase client SDK:", error);
+  // Handle initialization error
+  // Depending on the app, might show error UI or quit
 }
 
-if (!import.meta.env.VITE_FIREBASE_PRIVATE_KEY) {
-  throw new Error('Missing Firebase Private Key');
-}
-
-if (!import.meta.env.VITE_FIREBASE_CLIENT_EMAIL) {
-  throw new Error('Missing Firebase Client Email');
-}
+// Export the necessary client-side instances
+// Check for null before exporting if initialization might fail
+export { app, auth /*, db */ }; // Export 'db' only if using client-side Firestore access

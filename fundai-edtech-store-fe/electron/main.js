@@ -3,6 +3,15 @@ const path = require('path');
 const isDev = process.env.NODE_ENV === 'development';
 const Store = require('electron-store');
 
+// --- Update Checking ---
+const { autoUpdater } = require('electron-updater');
+const log = require('electron-log'); 
+
+log.transports.file.level = 'info';
+autoUpdater.logger = log;
+autoUpdater.autoDownload = true;
+
+
 /** @typedef {import('./types').WindowState} WindowState */
 
 class WindowStateManager {
@@ -279,9 +288,15 @@ const setupAuthHandlers = () => {
 
 // Call this after store initialization
 app.whenReady().then(() => {
+  log.info('App ready.');
+
+  setupIpcHandlers(/* pass dependencies like store if needed */);
+
+  log.info('Calling createWindow.');
   createWindow();
 }).catch(error => {
   console.error('Failed to initialize app:', error);
+  log.error('Failed to initialize app:', error);
   app.quit();
 });
 
@@ -344,3 +359,119 @@ const store = new Store({
   name: 'auth-store', // This creates a separate auth-store.json file
   encryptionKey: 'your-encryption-key' // For securing sensitive data
 });
+
+// --- AutoUpdater Event Handlers ---
+autoUpdater.on('checking-for-update', () => {
+  log.info('Checking for update...');
+  // Optionally send status to renderer: mainWindow.webContents.send('update_checking');
+});
+
+autoUpdater.on('update-available', (info) => {
+  log.info('Update available.', info);
+  if (mainWindow) {
+    mainWindow.webContents.send('update_available', info); // Notify renderer
+  }
+});
+
+autoUpdater.on('update-not-available', (info) => {
+  log.info('Update not available.', info);
+  // Optionally send status to renderer: mainWindow.webContents.send('update_not_available');
+});
+
+autoUpdater.on('error', (err) => {
+  log.error('Error in auto-updater. ' + err);
+  if (mainWindow) {
+    mainWindow.webContents.send('update_error', err.message); // Notify renderer
+  }
+});
+
+autoUpdater.on('download-progress', (progressObj) => {
+  let log_message = "Download speed: " + progressObj.bytesPerSecond;
+  log_message = log_message + ' - Downloaded ' + progressObj.percent + '%';
+  log_message = log_message + ' (' + progressObj.transferred + "/" + progressObj.total + ')';
+  log.info(log_message);
+  if (mainWindow) {
+    mainWindow.webContents.send('update_progress', progressObj); // Send progress to renderer
+  }
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+  log.info('Update downloaded.', info);
+  // Prompt user in the renderer process to restart
+  if (mainWindow) {
+    mainWindow.webContents.send('update_downloaded', info);
+  }
+});
+// --- End AutoUpdater Event Handlers ---
+// --- IPC Handler for Restarting ---
+// Listen for message from renderer process to install update
+ipcMain.on('restart_app', () => {
+  log.info('Received restart_app signal, quitting and installing update...');
+  autoUpdater.quitAndInstall();
+});
+// --- End IPC Handler ---
+
+// Placeholder for centralized IPC handlers setup
+function setupIpcHandlers(/* dependencies */) {
+    log.info('Setting up IPC handlers from setupIpcHandlers function...');
+
+    // --- DELETE OR COMMENT OUT THIS DUPLICATE HANDLER ---
+    /*
+    ipcMain.handle('store:getApps', async () => {
+      const url = `${HUBSTORE_URL}/api/content/list`;
+      try {
+        log.info(`IPC (from func): Handling store:getApps - Fetching from ${url}`);
+        // TODO: Cache logic
+        const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+        if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+        const data = await response.json();
+        log.info(`IPC (from func): store:getApps - Fetched ${data.length} apps.`);
+        // TODO: Save to cache
+        return data;
+      } catch (error) {
+        log.error('IPC (from func): store:getApps - Failed:', error);
+        // TODO: Try cache
+        throw new Error('Failed to fetch apps.');
+      }
+    });
+    */
+    // --- END OF DELETED/COMMENTED BLOCK ---
+
+
+    // Handler for fetching books - Modified to return placeholder
+    ipcMain.handle('books:getBooks', async () => {
+        log.info(`IPC: Handling books:getBooks - Returning 'Coming Soon' placeholder.`);
+
+        // --- Temporarily bypass backend fetch ---
+        // const url = `${HUBSTORE_URL}/api/books`; // TODO: Verify URL
+        // try {
+        //   log.info(`IPC: Handling books:getBooks - Fetching from ${url}`);
+        //   // TODO: Cache logic
+        //   const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+        //   if (!response.ok) throw new Error(`HTTP error ${response.status} fetching books`);
+        //   const data = await response.json();
+        //   log.info(`IPC books:getBooks - Fetched books.`);
+        //   // TODO: Save to cache
+        //   return data;
+        // } catch (error) {
+        //   log.error('IPC books:getBooks - Failed:', error);
+        //   // TODO: Try cache
+        //   throw new Error('Failed to fetch books.');
+        // }
+        // --- End of bypassed code ---
+
+        // Return empty array to satisfy the expected Promise<Book[]> type
+        // The frontend Library component can check for an empty array
+        // and display a "Coming Soon" message if desired.
+        return [];
+    });
+
+    // Keep the handler for get-app-version
+    ipcMain.handle('get-app-version', () => {
+      log.info('IPC: Handling get-app-version');
+      return app.getVersion();
+    });
+
+    log.info('IPC handlers setup from setupIpcHandlers function complete.');
+}
+
