@@ -20,6 +20,13 @@ export interface ElectronAPI {
   deleteUser: (userId: string) => Promise<boolean>;
   getUsers: () => Promise<User[]>;
   syncApps: () => Promise<{ updated: boolean; count?: number; error?: string }>;
+  getBooks: () => Promise<Book[]>;
+  onUpdateAvailable: (callback: (info: UpdateInfo) => void) => void;
+  onUpdateProgress: (callback: (progress: ProgressInfo) => void) => void;
+  onUpdateDownloaded: (callback: (info: UpdateInfo) => void) => void;
+  onUpdateError: (callback: (errorMessage: string) => void) => void;
+  restartApp: () => void;
+  removeAllUpdateListeners: () => void;
 }
 
 declare global {

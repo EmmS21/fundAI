@@ -1,5 +1,5 @@
 import logging
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, QTextEdit, QScrollArea)
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QScrollArea)
 from PySide6.QtCore import Qt, Signal
 from src.data.cache.cache_manager import CacheManager
 
@@ -52,8 +52,9 @@ class QuestionView(QWidget):
         self.question_text_label = QLabel("Loading question...")
         self.question_text_label.setWordWrap(True) # Allow text wrapping
         self.question_text_label.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.question_text_label.setStyleSheet("font-size: 16px; padding: 10px; background-color: white;")
+        self.question_text_label.setStyleSheet("font-size: 16px; padding: 10px; background-color: white; color: black;")
         question_layout.addWidget(self.question_text_label)
+        question_layout.addStretch(1)
         # TODO: Add widgets for images if needed later
 
         scroll_area.setWidget(question_container)
@@ -70,11 +71,35 @@ class QuestionView(QWidget):
         button_layout = QHBoxLayout()
         # TODO: Add "Previous" button if needed
         next_button = QPushButton("Next Question")
-        next_button.setStyleSheet("...") # Add styling similar to other buttons
+        next_button.setStyleSheet("""
+            QPushButton {
+                background-color: #F3F4F6;
+                color: #374151;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #E5E7EB;
+            }
+        """)
         next_button.clicked.connect(self.load_random_question) # Load another question
 
         submit_button = QPushButton("Submit Answer")
-        submit_button.setStyleSheet("...") # Add styling
+        submit_button.setStyleSheet("""
+            QPushButton {
+                background-color: #A855F7;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #9333EA;
+            }
+        """)
         # submit_button.clicked.connect(self._submit_answer) # TODO: Implement submit logic
 
         button_layout.addStretch()
@@ -90,26 +115,80 @@ class QuestionView(QWidget):
         """Fetches and displays a random question from the cache."""
         logger.info(f"Loading random question for {self.subject_name} - {self.level_key}")
         try:
-            # --- This method needs to be implemented in CacheManager ---
             question_data = self.cache_manager.get_random_question(self.subject_name, self.level_key)
-            # ---
+            logger.debug(f"Raw question data received: {question_data}")
 
             if question_data:
                 self.current_question_data = question_data
-                # Assuming question_data is a dictionary with 'question_text', 'question_id', etc.
-                question_text = question_data.get('question_text', 'Error: Question text not found.')
-                self.question_text_label.setText(question_text)
-                self.answer_input.clear() # Clear previous answer
-                # TODO: Load images if present in question_data
-                logger.debug(f"Loaded question ID: {question_data.get('question_id')}")
+                
+                # Build formatted question text
+                formatted_text = []
+                
+                # Main question text
+                main_text = question_data.get('text', '')
+                formatted_text.append(main_text)
+                
+                # Get original question data which contains sub-questions
+                original = question_data.get('original_question', {})
+                
+                # Add sub-questions with marks
+                sub_questions = original.get('sub_questions', [])
+                if sub_questions:
+                    formatted_text.append("\nSub Questions:")
+                    for sq in sub_questions:
+                        sub_text = f"\n{sq['sub_number']}. {sq['text']} [{sq['marks']} marks]"
+                        formatted_text.append(sub_text)
+                
+                # Add image descriptions if any
+                images = original.get('images', [])
+                if images:
+                    formatted_text.append("\nDiagrams:")
+                    for img in images:
+                        formatted_text.append(f"- {img.get('description', '')}")
+                
+                # Join all parts and set the text
+                final_text = "\n".join(formatted_text)
+                logger.debug(f"Formatted question text: {final_text}")  # Debug log to verify formatting
+                self.question_text_label.setText(final_text)
+                self.answer_input.clear()
+
+                # --- Add UI update debugging ---
+                # Attempt to force layout recalculation and repaint
+                self.question_text_label.adjustSize() 
+                container_widget = self.question_text_label.parentWidget()
+                if container_widget:
+                     container_widget.adjustSize()
+                     container_widget.update()
+                self.question_text_label.update()
+                
+                # Log sizes and visibility after setting text
+                label_size = self.question_text_label.size()
+                container_size = container_widget.size() if container_widget else "N/A"
+                # Find the QScrollArea parent more reliably
+                scroll_area = self.findChild(QScrollArea) 
+                scroll_area_size = scroll_area.size() if scroll_area else "N/A"
+                scroll_area_widget_size = scroll_area.widget().size() if scroll_area and scroll_area.widget() else "N/A"
+
+                logger.debug(f"--- UI State After setText ---")
+                logger.debug(f"QLabel size: {label_size}")
+                logger.debug(f"Container QWidget size: {container_size}")
+                logger.debug(f"ScrollArea size: {scroll_area_size}")
+                logger.debug(f"ScrollArea's Widget (question_container) size: {scroll_area_widget_size}")
+                logger.debug(f"QLabel visible: {self.question_text_label.isVisible()}")
+                logger.debug(f"Container visible: {container_widget.isVisible() if container_widget else 'N/A'}")
+                logger.debug(f"ScrollArea visible: {scroll_area.isVisible() if scroll_area else 'N/A'}")
+                logger.debug(f"--- End UI State ---")
+                # --- End UI update debugging ---
+                
             else:
-                self.question_text_label.setText(f"No cached questions found for {self.subject_name} - {self._get_level_display_name(self.level_key)}.")
-                self.answer_input.setEnabled(False) # Disable input if no question
-                logger.warning(f"Failed to load random question for {self.subject_name} - {self.level_key}")
+                error_msg = f"No cached questions found for {self.subject_name} - {self._get_level_display_name(self.level_key)}."
+                logger.warning(error_msg)
+                self.question_text_label.setText(error_msg)
+                self.answer_input.setEnabled(False)
 
         except Exception as e:
             logger.error(f"Error loading question: {e}", exc_info=True)
-            self.question_text_label.setText("Error loading question. Please try again.")
+            self.question_text_label.setText(f"Error loading question: {str(e)}")
 
     # Placeholder - adapt key->name mapping as needed
     def _get_level_display_name(self, level_key):

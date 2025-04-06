@@ -18,24 +18,37 @@ export default function Library() {
     return () => setIsLibraryView(false);
   }, [setIsLibraryView]);
 
-  return (
-    <div className="container mx-auto px-6 py-8">
-      <h2 className="text-2xl font-semibold mb-6 dark:text-white">My Library</h2>
-      
-      {loading ? (
+  // Helper function to render content based on state
+  const renderContent = () => {
+    if (loading) {
+      return (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(6)].map((_, i) => (
             <BookSkeleton key={i} />
           ))}
         </div>
-      ) : error ? (
-        <div className="text-red-500 dark:text-red-400">{error}</div>
-      ) : (
-        <BookList 
-          books={books} 
-          onBookSelect={setSelectedBook}
-        />
-      )}
+      );
+    }
+    if (error) {
+      return <div className="text-red-500 dark:text-red-400 text-center mt-10">{error}</div>;
+    }
+    if (!books || books.length === 0) {
+      return <div className="text-gray-500 dark:text-gray-400 text-center mt-10">Library Coming Soon...</div>;
+    }
+
+    return (
+      <BookList
+        books={books}
+        onBookSelect={setSelectedBook}
+      />
+    );
+  };
+
+  return (
+    <div className="container mx-auto px-6 py-8">
+      <h2 className="text-2xl font-semibold mb-6 dark:text-white">My Library</h2>
+
+      {renderContent()}
 
       {selectedBook && (
         <BookPreview

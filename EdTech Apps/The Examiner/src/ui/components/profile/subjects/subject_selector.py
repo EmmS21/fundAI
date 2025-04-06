@@ -31,6 +31,7 @@ class SubjectSelector(QWidget):
         # Create subject list first
         self.subject_list = SubjectList()
         self.subject_list.subject_removed.connect(self._on_subject_removed)  # Connect the signal
+        self.subject_list.test_requested.connect(self.on_card_test_requested)
         layout.addWidget(self.subject_list)
         
         # Create the popup after subject list
@@ -81,34 +82,35 @@ class SubjectSelector(QWidget):
     
     def _on_subject_selected(self, subject):
         """Handle a subject selection from the popup"""
-        if not self._is_subject_selected(subject):
-            # Add subject to the database using add_subject_for_user
-            # Default all levels to False initially - they can be toggled later
-            result = UserOperations.add_subject_for_user(
-                subject_name=subject,
-                grade_7=False,
-                o_level=False,
-                a_level=False
-            )
-            
-            if result:
-                # Get the levels for this subject (should all be False initially)
-                levels = {
-                    'grade_7': False,
-                    'o_level': False,
-                    'a_level': False
-                }
-                
-                # Add to UI with the correct levels
-                self.subject_list.add_subject(subject, levels)
-                self.subject_added.emit(subject)
-                
-                # Update available subjects
-                available_subjects = self._get_available_subjects()
-                self.subject_popup.update_subjects(available_subjects)
-                self.subject_popup.hide()
-            else:
-                print(f"Failed to add subject: {subject}")
+        # Add subject to the database using add_subject_for_user
+        # Default all levels to False initially - they can be toggled later
+        result = UserOperations.add_subject_for_user(
+            subject_name=subject,
+            grade_7=False,
+            o_level=False,
+            a_level=False
+        )
+
+        if result:
+            # Get the levels for the new subject (initially all False)
+            levels = {
+                'grade_7': False,
+                'o_level': False,
+                'a_level': False
+            }
+            # Explicitly tell the SubjectList to add the new card
+            self.subject_list.add_subject(subject, levels)
+            logger.info(f"Successfully added subject card '{subject}' to UI list.")
+
+            self.subject_added.emit(subject) # Keep this signal
+
+            # Update available subjects for the popup
+            available_subjects = self._get_available_subjects()
+            self.subject_popup.update_subjects(available_subjects)
+            self.subject_popup.hide()
+        else:
+            logger.error(f"Failed to add subject '{subject}' via database operation.")
+            # Optionally show an error message to the user here
     
     def _is_subject_selected(self, subject_name):
         """Checks if the subject is already selected"""
@@ -117,7 +119,7 @@ class SubjectSelector(QWidget):
         
         # Check if the subject name is in the list
         for subject in subjects:
-            if subject.name == subject_name:
+            if subject['name'] == subject_name:
                 return True
                 
         return False

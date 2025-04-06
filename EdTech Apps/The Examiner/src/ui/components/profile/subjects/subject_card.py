@@ -651,11 +651,10 @@ class SubjectCard(QWidget):
         button_pos = button.mapToGlobal(button.rect().bottomLeft())
         menu.popup(button_pos)
 
-    def _start_test_for_level(self, level_key: str):
-        """Emits a signal indicating a test should start for the selected level."""
-        level_name = self._get_level_display_name(level_key)
-        logger.info(f"Requesting test start for Subject: '{self.subject_name}', Level: '{level_name}' (key: {level_key})")
-        # --- Emit the new signal instead of just printing ---
+    def _start_test_for_level(self, level_key):
+        print(f"[DEBUG] Button clicked for {self.subject_name} - {level_key}")
+        print(f"[DEBUG] Signal object: {self.start_test_requested}")
+        print(f"[DEBUG] Parent widget: {self.parent()}")
         self.start_test_requested.emit(self.subject_name, level_key)
 
     def _update_cache_status(self):
