@@ -16,6 +16,7 @@ import (
 	"FundAIHub/internal/auth"
 	"FundAIHub/internal/config"
 	"FundAIHub/internal/db"
+	"FundAIHub/internal/firebase_admin"
 	"FundAIHub/internal/middleware"
 
 	"github.com/joho/godotenv"
@@ -180,11 +181,21 @@ func main() {
 
 	log.Printf("[Debug] Initialized storage with URL: %s", os.Getenv("SUPABASE_URL"))
 
+	// Initialize Firebase Admin SDK
+	ctx := context.Background()
+	firebaseService, err := firebase_admin.NewFirebaseAdminService(ctx)
+	if err != nil {
+		log.Fatalf("Failed to initialize Firebase Admin SDK: %v", err)
+	}
+
 	// Initialize FundaVault client with config
 	fundaVault := auth.NewFundaVaultClient(cfg)
 
 	// Initialize auth middleware
 	authMiddleware := middleware.NewAuthMiddleware(fundaVault)
+
+	// Initialize Firebase Handler
+	firebaseHandler := api.NewFirebaseHandler(firebaseService)
 
 	// Add download endpoints
 	downloadHandler := api.NewDownloadHandler(store)
@@ -290,6 +301,10 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(contents)
 	})
+
+	// Register Secure Firebase Endpoint
+	http.HandleFunc("/api/secure/firestore-write",
+		authMiddleware.ValidateToken(firebaseHandler.HandleSecureFirestoreWrite))
 
 	log.Printf("Server starting on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
