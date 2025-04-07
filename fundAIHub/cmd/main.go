@@ -200,13 +200,13 @@ func main() {
 	// Add download endpoints
 	downloadHandler := api.NewDownloadHandler(store)
 	http.HandleFunc("/api/downloads/start",
-		authMiddleware.ValidateToken(downloadHandler.StartDownload))
+		authMiddleware.AuthenticateDevice(downloadHandler.StartDownload))
 	http.HandleFunc("/api/downloads/status",
-		authMiddleware.ValidateToken(downloadHandler.UpdateStatus))
+		authMiddleware.AuthenticateDevice(downloadHandler.UpdateStatus))
 	http.HandleFunc("/api/downloads/history",
-		authMiddleware.ValidateToken(downloadHandler.GetHistory))
+		authMiddleware.AuthenticateDevice(downloadHandler.GetHistory))
 	http.HandleFunc("/api/downloads/url",
-		authMiddleware.ValidateToken(downloadHandler.GetDownloadURL))
+		authMiddleware.AuthenticateDevice(downloadHandler.GetDownloadURL))
 
 	http.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[Debug] Received upload request")
@@ -304,7 +304,7 @@ func main() {
 
 	// Register Secure Firebase Endpoint
 	http.HandleFunc("/api/secure/firestore-write",
-		authMiddleware.ValidateToken(firebaseHandler.HandleSecureFirestoreWrite))
+		authMiddleware.AuthenticateDevice(firebaseHandler.HandleSecureFirestoreWrite))
 
 	log.Printf("Server starting on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
