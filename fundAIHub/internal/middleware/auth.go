@@ -2,18 +2,16 @@ package middleware
 
 import (
 	"FundAIHub/internal/auth"
-	"FundAIHub/internal/device"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 )
 
 type AuthMiddleware struct {
 	fundaVault *auth.FundaVaultClient
-	identifier device.DeviceIdentifier
 }
 
 type ErrorResponse struct {
@@ -24,7 +22,6 @@ type ErrorResponse struct {
 func NewAuthMiddleware(fundaVault *auth.FundaVaultClient) *AuthMiddleware {
 	return &AuthMiddleware{
 		fundaVault: fundaVault,
-		identifier: device.NewSystemIdentifier(),
 	}
 }
 
@@ -38,83 +35,76 @@ func (m *AuthMiddleware) respondWithError(w http.ResponseWriter, code int, messa
 	})
 }
 
-func (m *AuthMiddleware) ValidateToken(next http.HandlerFunc) http.HandlerFunc {
+func (m *AuthMiddleware) AuthenticateDevice(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("[AuthMiddleware] Validating token for request: %s %s", r.Method, r.URL.Path)
+		log.Printf("[AuthMiddleware] Authenticating device for request: %s %s", r.Method, r.URL.Path)
 
-		// 1. Extract and validate auth header
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			log.Println("[AuthMiddleware] Error: No authorization header found.")
-			m.respondWithError(w, http.StatusUnauthorized, "No authorization header")
+		// 1. Extract Device-ID header
+		hardwareID := r.Header.Get("Device-ID")
+		if hardwareID == "" {
+			log.Println("[AuthMiddleware] Error: Missing Device-ID header.")
+			m.respondWithError(w, http.StatusUnauthorized, "Missing Device-ID header")
 			return
 		}
 
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			log.Println("[AuthMiddleware] Error: Invalid authorization header format.")
-			m.respondWithError(w, http.StatusUnauthorized, "Invalid authorization header format")
-			return
-		}
-		token := parts[1]
-
-		// 2. Get hardware ID using our new detector
-		hardwareID, err := m.identifier.GetHardwareID()
-		if err != nil {
-			log.Printf("[AuthMiddleware] Error getting hardware ID: %v", err)
-			m.respondWithError(w, http.StatusInternalServerError, "Failed to get hardware ID")
-			return
-		}
-		log.Printf("[AuthMiddleware] Hardware ID for validation: %s", hardwareID)
-
-		// 3. Verify token with FundaVault
-		log.Printf("[AuthMiddleware] Attempting to verify token with FundaVault...")
-		result, err := m.fundaVault.VerifyToken(token, hardwareID)
+		// 2. Verify device with FundaVault
+		log.Printf("[AuthMiddleware] Attempting to verify Device-ID '%s' with FundaVault...", hardwareID)
+		result, statusCode, err := m.fundaVault.VerifyDevice(hardwareID)
 
 		if err != nil {
-			log.Printf("[AuthMiddleware] Error calling FundaVault VerifyToken: %v", err)
-			m.respondWithError(w, http.StatusUnauthorized, "Token verification failed: FundaVault communication error")
+			log.Printf("[AuthMiddleware] FundaVault verification returned error: %v (StatusCode: %d)", err, statusCode)
+
+			switch statusCode {
+			case http.StatusNotFound:
+				m.respondWithError(w, http.StatusUnauthorized, "Device not registered")
+			case http.StatusForbidden:
+				m.respondWithError(w, http.StatusForbidden, "Device or user inactive, or subscription expired")
+			case http.StatusConflict:
+				m.respondWithError(w, http.StatusForbidden, "Verification conflict")
+			case http.StatusInternalServerError:
+				m.respondWithError(w, http.StatusServiceUnavailable, "Authentication service error")
+			case 0:
+				fallthrough
+			default:
+				m.respondWithError(w, http.StatusServiceUnavailable, "Authentication service unavailable")
+			}
 			return
 		}
 
-		log.Printf("[AuthMiddleware] FundaVault VerifyToken result: Valid=%t, Payload=%+v", result.Valid, result.Payload)
-
-		if !result.Valid {
-			log.Printf("[AuthMiddleware] Token deemed invalid by FundaVault.")
-			m.respondWithError(w, http.StatusUnauthorized, "Invalid token")
+		if statusCode != http.StatusOK || result == nil || !result.Authenticated {
+			log.Printf("[AuthMiddleware] Verification inconsistency: StatusCode=%d, ResultNil=%t, Authenticated=%t", statusCode, result == nil, result != nil && result.Authenticated)
+			m.respondWithError(w, http.StatusInternalServerError, "Internal authentication error")
 			return
 		}
 
-		log.Printf("[AuthMiddleware] Token validated successfully for UserID: %s", result.Payload.UserID)
+		userIDStr := fmt.Sprintf("%d", result.UserID)
+		log.Printf("[AuthMiddleware] Device '%s' validated successfully for UserID: %s (Email: %s)", hardwareID, userIDStr, result.Email)
 
-		// 4. Check subscription status
-		if result.Payload.SubscriptionEnd != "" {
-			endTime, parseErr := time.Parse(time.RFC3339, result.Payload.SubscriptionEnd)
+		if result.SubscriptionEnd != "" {
+			endTime, parseErr := time.Parse(time.RFC3339, result.SubscriptionEnd)
 			if parseErr != nil {
-				log.Printf("[AuthMiddleware] Warning: Could not parse subscription end date '%s': %v", result.Payload.SubscriptionEnd, parseErr)
+				log.Printf("[AuthMiddleware] Warning: Could not parse subscription end date '%s' from FundaVault payload: %v", result.SubscriptionEnd, parseErr)
 			} else if time.Now().After(endTime) {
-				log.Printf("[AuthMiddleware] Access denied for UserID %s: Subscription ended at %s", result.Payload.UserID, endTime.String())
+				log.Printf("[AuthMiddleware] Access denied for UserID %s: Subscription ended at %s", userIDStr, endTime.String())
 				m.respondWithError(w, http.StatusForbidden, "Subscription expired")
 				return
 			}
 		}
 
-		// 5. Create enriched context
 		ctx := context.WithValue(r.Context(), "hardware_id", hardwareID)
-		ctx = context.WithValue(ctx, "user_id", result.Payload.UserID)
-		ctx = context.WithValue(ctx, "is_admin", result.Payload.IsAdmin)
-		ctx = context.WithValue(ctx, "subscription_end", result.Payload.SubscriptionEnd)
+		ctx = context.WithValue(ctx, "user_id", userIDStr)
+		ctx = context.WithValue(ctx, "is_admin", result.IsAdmin)
+		ctx = context.WithValue(ctx, "subscription_end", result.SubscriptionEnd)
+		ctx = context.WithValue(ctx, "email", result.Email)
 
-		log.Printf("[AuthMiddleware] Proceeding to next handler for UserID: %s", result.Payload.UserID)
+		log.Printf("[AuthMiddleware] Proceeding to next handler for UserID: %s", userIDStr)
 
-		// 6. Call next handler with enriched context
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }
 
-// AdminOnly middleware for admin-only routes
 func (m *AuthMiddleware) AdminOnly(next http.HandlerFunc) http.HandlerFunc {
-	return m.ValidateToken(func(w http.ResponseWriter, r *http.Request) {
+	return m.AuthenticateDevice(func(w http.ResponseWriter, r *http.Request) {
 		isAdminVal := r.Context().Value("is_admin")
 		isAdmin, ok := isAdminVal.(bool)
 		if !ok {
