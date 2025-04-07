@@ -36,7 +36,7 @@ func NewFundaVaultClient(cfg *config.Config) *FundaVaultClient {
 }
 
 func (f *FundaVaultClient) VerifyDevice(hardwareID string) (*DeviceVerifyResponse, int, error) {
-	endpoint := fmt.Sprintf("%s/api/v1/THE_CORRECT_VERIFICATION_PATH", f.config.FundaVaultURL)
+	endpoint := fmt.Sprintf("%s/api/v1/auth/device", f.config.FundaVaultURL)
 
 	requestPayload := DeviceVerifyRequest{HardwareID: hardwareID}
 	requestBody, err := json.Marshal(requestPayload)
