@@ -2,9 +2,8 @@ import modal
 from modal import Image, App
 import logging
 
-# Configure logging
+# Configure logging for the Modal app
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("modal_api_entrypoint")
 
 # Create Modal app
 app = App("user-management-api")
@@ -35,11 +34,15 @@ image = (
 @app.function(image=image, secrets=[funda_vault_secrets])
 @modal.asgi_app()
 def api():
+    # First, create the logger inside the function
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger("modal_api_entrypoint")
+    
     logger.info("--- Starting api() function ---")
     
-    # Log current environment for debugging
-    import os
-    import sys
+    # Continue with the rest of the imports and setup
+    import os, sys
     logger.info(f"Current directory: {os.getcwd()}")
     logger.info(f"Sys Path: {sys.path}")
     
@@ -47,18 +50,16 @@ def api():
     logger.info("Attempting to import config...")
     from app.core.config import Settings
     settings = Settings()
-    logger.info(f"Config loaded. Effective DB URL type: {'SQLite' if settings.DATABASE_URL and 'sqlite' in settings.DATABASE_URL else 'PostgreSQL'}")
     
-    logger.info("Attempting to import app.main...")
-    # Import and create the app
+    # Import FastAPI components
     from fastapi import FastAPI
+    from fastapi.routing import APIRoute
+    from starlette.responses import JSONResponse, PlainTextResponse
     
-    # Create a new FastAPI app
-    fastapi_app = FastAPI(
-        title="FundaVault User Management API"
-    )
+    # Create FastAPI application
+    fastapi_app = FastAPI(title="FundaVault User Management API")
     
-    # Add middleware first
+    # Add middleware
     from app.main import configure_middleware
     configure_middleware(fastapi_app)
     
@@ -71,26 +72,32 @@ def api():
     fastapi_app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
     fastapi_app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
     
-    # Add startup event
+    # Add startup event for database initialization
     from app.db.database import init_db
     
     @fastapi_app.on_event("startup")
     async def startup():
         await init_db()
     
-    # Add root endpoint
+    # Define root endpoint
     @fastapi_app.get("/")
     async def root():
-        """Root endpoint for basic health check"""
-        from starlette.responses import JSONResponse
-        # Try a JSON response with explicit content type
-        return JSONResponse(
-            content={"status": "online"},
-            status_code=200
-        )
+        return PlainTextResponse("API Online")
     
-    logger.info("FastAPI app initialized successfully.")
-    logger.info("About to return FastAPI app instance from api().")
+    # Define routes listing endpoint
+    @fastapi_app.get("/routes")
+    async def list_routes():
+        """List all registered routes"""
+        routes = []
+        for route in fastapi_app.routes:
+            if isinstance(route, APIRoute):
+                routes.append({
+                    "path": route.path,
+                    "name": route.name,
+                    "methods": list(route.methods)
+                })
+        return JSONResponse({"routes": routes})
     
-    # Return the FastAPI app
+    logger.info("FastAPI app initialized with all endpoints including /routes")
+    
     return fastapi_app
