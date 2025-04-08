@@ -2,64 +2,88 @@
 config.py
 
 Purpose: Central configuration management for the application.
-Handles environment variables and app-wide settings.
+Handles environment variables and app-wide settings using Pydantic BaseSettings.
 """
 from pydantic_settings import BaseSettings
+# from pydantic import PostgresDsn # Not strictly needed unless you want validation
 from urllib.parse import quote_plus
-import secrets
+import secrets # Keep for defaults if secrets aren't set? Reconsider.
 import os
-from dotenv import load_dotenv
+# from dotenv import load_dotenv # BaseSettings handles .env loading
+from typing import Optional
 
-# Load environment variables from .env file
-def load_env_vars():
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    env_path = os.path.join(os.path.dirname(os.path.dirname(current_dir)), '.env')
-    if os.path.exists(env_path):
-        load_dotenv(env_path)
-        return {
-            "POSTGRES_SERVER": os.getenv("POSTGRES_SERVER"),
-            "POSTGRES_USER": os.getenv("POSTGRES_USER"),
-            "POSTGRES_PASSWORD": os.getenv("POSTGRES_PASSWORD"),
-            "POSTGRES_DB": os.getenv("POSTGRES_DB")
-        }
-    return {}
+# BaseSettings automatically loads from .env and environment variables
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "User Management API"
     API_V1_STR: str = "/api/v1"
-    
-    # Database settings (Supabase)
-    POSTGRES_USER: str = ""
-    POSTGRES_PASSWORD: str = ""
-    POSTGRES_SERVER: str = ""
-    POSTGRES_DB: str = ""
-    DATABASE_URL: str | None = None
 
-    # Token settings
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    SECRET_KEY: str = secrets.token_urlsafe(32)
+    # --- Database Settings ---
+    # These will be loaded from environment (via Modal Secrets) first,
+    # then potentially from .env file if specified in Config and not in env.
+    DATABASE_URL: Optional[str] = None # Explicit connection string (e.g., for SQLite)
+    # Make PG vars optional, only used if DATABASE_URL is not set
+    POSTGRES_USER: Optional[str] = None
+    POSTGRES_PASSWORD: Optional[str] = None
+    POSTGRES_SERVER: Optional[str] = None
+    POSTGRES_DB: Optional[str] = None
 
-    # Local settings for device tokens
-    DEVICE_SECRET_KEY: str = secrets.token_urlsafe(32)
-    TOKEN_EXPIRE_DAYS: int = 30
+    # --- Token Settings ---
+    # Load from environment/secrets, provide default only if absolutely necessary
+    # Best practice: Require these to be set in the environment/secret
+    SECRET_KEY: str # No default - MUST be set in Modal Secret "fundai"
+    ALGORITHM: str # No default - MUST be set in Modal Secret "fundai" (e.g., HS256)
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30 # Default is okay here
 
-    # Admin credentials
-    ADMIN_EMAIL: str = ""
-    ADMIN_PASSWORD: str = ""
+    # --- Device Token Settings ---
+    # If this logic is still used elsewhere, make it a secret too
+    # DEVICE_SECRET_KEY: str # No default - MUST be set in Modal Secret "fundai"
+    # TOKEN_EXPIRE_DAYS: int = 30 # Default is okay
 
-    def compute_db_url(self) -> str:
-        """Compute PostgreSQL database URL"""
-        if not self.DATABASE_URL:
+    # --- Admin Credentials ---
+    # MUST be set in Modal Secret "fundai"
+    ADMIN_EMAIL: str
+    ADMIN_PASSWORD: str
+
+    # --- Method to get the final DB URL ---
+    def get_db_url(self) -> str:
+        """Return DATABASE_URL if set, otherwise try to compute from PG vars."""
+        if self.DATABASE_URL:
+            # If DATABASE_URL is set (e.g., from Modal env/secret or .env), use it
+            return self.DATABASE_URL
+        elif self.POSTGRES_USER and self.POSTGRES_PASSWORD and self.POSTGRES_SERVER and self.POSTGRES_DB:
+            # If DATABASE_URL isn't set, but all PG vars are, compute PG URL
             encoded_password = quote_plus(self.POSTGRES_PASSWORD)
-            self.DATABASE_URL = (
-                f"postgresql://{self.POSTGRES_USER}:{encoded_password}"
-                f"@{self.POSTGRES_SERVER}/{self.POSTGRES_DB}"
-            )
-        return self.DATABASE_URL
+            # Use asyncpg driver for compatibility with potential future switch
+            computed_url = f"postgresql+asyncpg://{self.POSTGRES_USER}:{encoded_password}@{self.POSTGRES_SERVER}/{self.POSTGRES_DB}"
+            return computed_url
+        else:
+            # If configuration is insufficient, raise error
+            raise ValueError("Database configuration error: Set DATABASE_URL or all POSTGRES_* variables in environment/secrets.")
 
     class Config:
+        # Tell BaseSettings to look for a .env file if needed
+        # Environment variables (from Modal Secrets) take precedence
         env_file = ".env"
+        env_file_encoding = 'utf-8'
+        extra = 'ignore' # Ignore extra fields found in env/dotenv, don't error
 
-# Load environment variables
-env_vars = load_env_vars()
-settings = Settings(**env_vars)
+# Instantiate settings - Pydantic loads from Modal Secrets (environment) first, then .env
+# Validation errors will occur here if required fields (like SECRET_KEY, ADMIN_EMAIL etc.)
+# are NOT set in the Modal Secret "fundai"
+settings = Settings()
+
+# Get the final DB URL to be used by the application
+# This depends on what's set in the Modal environment ("fundai" secret)
+effective_database_url = settings.get_db_url()
+
+# Log the type of DB being used
+db_type = "Unknown"
+if effective_database_url.startswith("sqlite"):
+    db_type = "SQLite"
+elif effective_database_url.startswith("postgresql"):
+    db_type = "PostgreSQL"
+
+# Use a logger if available, otherwise print
+# print(f"Effective Database URL Type: {db_type}")
+# Consider logging this in main.py after logger setup instead.

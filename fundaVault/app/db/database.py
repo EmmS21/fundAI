@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS users (
     address TEXT,
     city TEXT,
     country TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT true -- Added is_active based on admin endpoint usage
 );
 """
 
@@ -60,12 +61,10 @@ CREATE TABLE IF NOT EXISTS devices (
 
 # Initialize database
 async def init_db():
-    db = await get_db()
-    try:
+    # Use a single connection context for initialization
+    async with aiosqlite.connect(DATABASE_URL) as db:
         await db.execute(CREATE_USERS_TABLE)
         await db.execute(CREATE_SUBSCRIPTIONS_TABLE)
         await db.execute(CREATE_SUBSCRIPTION_HISTORY_TABLE)
         await db.execute(CREATE_DEVICES_TABLE)
         await db.commit()
-    finally:
-        await db.close()
