@@ -46,7 +46,7 @@ func getFundaVaultURL(env Environment) string {
 	// Otherwise use default based on environment
 	switch env {
 	case Production:
-		return "https://fundai.onrender.com"
+		return "https://emms21--user-management-api-api.modal.run"
 	default:
 		return "http://localhost:8000" // Default local FundaVault port
 	}

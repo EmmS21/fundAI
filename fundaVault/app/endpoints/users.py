@@ -9,12 +9,15 @@ from app.core.security import get_password_hash, verify_password, create_access_
 from app.db.database import get_db
 from app.schemas.user import UserCreate, UserResponse
 from datetime import datetime
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 @router.post("/users/", response_model=UserResponse)
 async def create_user(user: UserCreate):
     """Register a new user"""
+    logger.info(f"Direct user registration attempt: Email=[{user.email}]")
     try:
         db = await get_db()
         try:
@@ -145,44 +148,6 @@ async def get_user_status(user_id: int):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to get user status: {str(e)}"
-        )
-
-@router.post("/users/login")
-async def login_user(form_data: OAuth2PasswordRequestForm = Depends()):
-    """User login endpoint"""
-    try:
-        db = await get_db()
-        try:
-            # Verify user exists and password is correct
-            cursor = await db.execute(
-                "SELECT id, email, hashed_password FROM users WHERE email = ?",
-                (form_data.username,)
-            )
-            user = await cursor.fetchone()
-            
-            if not user or not verify_password(form_data.password, user[2]):
-                raise HTTPException(
-                    status_code=401,
-                    detail="Incorrect email or password"
-                )
-            
-            # Create access token
-            access_token = create_access_token(
-                data={"sub": user[1], "id": user[0], "is_admin": False}
-            )
-            
-            return {
-                "access_token": access_token,
-                "token_type": "bearer"
-            }
-            
-        finally:
-            await db.close()
-            
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Login failed: {str(e)}"
         )
 
 @router.get("/users/list")
