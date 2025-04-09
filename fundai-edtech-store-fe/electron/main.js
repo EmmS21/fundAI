@@ -2,10 +2,13 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const isDev = process.env.NODE_ENV === 'development';
 const Store = require('electron-store');
+const downloadManager = require('./services/downloadManager');
+const crypto = require('crypto');
+const log = require('electron-log');
+const { URLSearchParams } = require('url');
 
 // --- Update Checking ---
 const { autoUpdater } = require('electron-updater');
-const log = require('electron-log'); 
 
 log.transports.file.level = 'info';
 autoUpdater.logger = log;
@@ -144,6 +147,8 @@ const setupAuthHandlers = () => {
         isAdmin: true
       });
       
+      log.info(`[Auth] Admin login successful for ${email}. Stored auth data:`, store.get('auth'));
+
       return { 
         success: true, 
         isAdmin: true
@@ -173,12 +178,13 @@ const setupAuthHandlers = () => {
   });
 
   ipcMain.handle('auth:clearAuth', () => {
-    console.log('Clearing auth...');
+    console.log('Clearing admin auth...');
     store.delete('auth');
     return true;
   });
 
   ipcMain.handle('user:get-all', async () => {
+    log.info('[UserGetAll] Handler invoked.');
     try {
       const auth = store.get('auth');
       if (!auth || !auth.token) {
@@ -191,11 +197,10 @@ const setupAuthHandlers = () => {
           'Accept': 'application/json'
         }
       });
+      log.info(`[UserGetAll] Initial fetch status: ${response.status}`);
 
-      // If token is invalid (403), try to get new token
       if (response.status === 403) {
-        console.log('Token invalid, getting new token...');
-        
+        log.warn('[UserGetAll] Received 403, attempting token refresh...');
         const loginResponse = await fetch(`${VAULT_URL}/api/v1/admin/login`, {
           method: 'POST',
           headers: {
@@ -218,57 +223,67 @@ const setupAuthHandlers = () => {
 
         const newAuth = await loginResponse.json();
         
-        // Update stored token
         store.set('auth', {
           ...auth,
           token: newAuth.access_token
         });
 
-        // Retry request with new token
         response = await fetch(`${VAULT_URL}/api/v1/admin/users`, {
           headers: {
             'Authorization': `Bearer ${newAuth.access_token}`,
             'Accept': 'application/json'
           }
         });
+        log.info(`[UserGetAll] Fetch status after refresh: ${response.status}`);
       }
 
+      const responseBodyText = await response.text();
+
       if (!response.ok) {
-        const errorData = await response.text();
-        console.error('API Error Response:', {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorData
-        });
+        log.error(`[UserGetAll] API Error Response: Status=${response.status}, Body=${responseBodyText}`);
         throw new Error(`API Error: ${response.status} ${response.statusText}`);
       }
 
-      const data = await response.json();
-      
-      if (data && data.users && Array.isArray(data.users)) {
-        const transformedUsers = data.users.map(user => ({
-          id: user[0],
-          email: user[1],
-          // Skip index 2 as it's the password
-          full_name: user[3],
-          address: user[4],
-          city: user[5],
-          country: user[6],
-          created_at: user[7],
-          // Default values for status fields
-          status: 'inactive',
-          subscription_status: 'inactive'
-        }));
-        return transformedUsers;
+      log.info(`[UserGetAll] Received OK response. Body Text: ${responseBodyText.substring(0, 200)}...`);
+
+      let data;
+      try {
+         data = JSON.parse(responseBodyText);
+         log.info('[UserGetAll] Successfully parsed JSON data.');
+      } catch (parseError) {
+         log.error('[UserGetAll] Failed to parse JSON response:', parseError, `Raw Body: ${responseBodyText}`);
+         throw new Error('Failed to parse user data from backend.');
       }
 
-      return [];
+      if (data && data.users && Array.isArray(data.users)) {
+        log.info(`[UserGetAll] Found 'users' array with ${data.users.length} items. Starting transformation.`);
+
+        const transformedUsers = data.users.map((user, index) => {
+            if (!user || typeof user.id === 'undefined' || typeof user.email === 'undefined') {
+                log.warn(`[UserGetAll] Malformed user object at index ${index}:`, user);
+                return null;
+            }
+            return {
+                id: user.id,
+                email: user.email,
+                full_name: user.full_name ?? null,
+                address: user.address ?? null,
+                city: user.city ?? null,
+                country: user.country ?? null,
+                created_at: user.created_at ?? null,
+                status: user.is_active ? 'active' : 'inactive',
+                subscription_status: 'inactive'
+            };
+        }).filter(user => user !== null);
+
+        log.info(`[UserGetAll] Transformed ${transformedUsers.length} users. Returning data.`);
+        return transformedUsers;
+      } else {
+          log.warn("[UserGetAll] Parsed data did not contain a 'users' array. Returning empty array. Data received:", data);
+          return [];
+      }
     } catch (error) {
-      console.error('Failed to get users:', {
-        message: error.message,
-        stack: error.stack,
-        type: error.constructor.name
-      });
+      log.error('[UserGetAll] Caught error:', error);
       throw error;
     }
   });
@@ -284,6 +299,109 @@ const setupAuthHandlers = () => {
       method: 'DELETE'
     });
   });
+
+  // --- MODIFIED: Admin Register Device Handler ---
+  ipcMain.handle('admin:register-device', async (_, deviceData) => {
+    // Destructure data received from frontend
+    const { hardwareId, email, fullName, address, city, country } = deviceData;
+
+    log.info(`[Admin] Attempting to register device ID ${hardwareId} for email ${email}`);
+
+    // 1. Verify Admin Authentication (keep existing check)
+    const adminAuth = store.get('auth');
+    if (!adminAuth || !adminAuth.token || !adminAuth.isAdmin) {
+      log.error('[Admin] Register Device failed: No valid admin session found.');
+      throw new Error('Admin privileges required.');
+    }
+    const adminToken = adminAuth.token;
+
+    // 2. Validate Input (Basic) - Ensure required fields are present
+    if (!hardwareId || !email) {
+        log.error('[Admin] Register Device failed: Missing hardwareId or email.');
+        throw new Error('Hardware ID and Email are required.');
+    }
+    // Note: We send all fields; FundaVault handles requiring name/address etc. only if creating a new user.
+
+    // 3. Prepare API Request
+    const registerDeviceUrl = `${VAULT_URL}/api/v1/admin/register-device`; // Confirmed Endpoint
+    const requestBody = {
+        hardware_id: hardwareId,
+        email: email,
+        full_name: fullName, // Send even if potentially null/empty
+        address: address,
+        city: city,
+        country: country
+    };
+
+    log.info(`[Admin] Sending request to ${registerDeviceUrl}`);
+
+    try {
+      const response = await fetch(registerDeviceUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${adminToken}`
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      // 4. Handle Response
+      const responseBodyText = await response.text(); // Read body once
+
+      if (!response.ok) {
+        log.error(`[Admin] Register Device API call failed: ${response.status} - ${responseBodyText}`);
+        let errorMessage = `Registration failed: ${response.status}`;
+        let errorDetail = '';
+         try {
+             const errorJson = JSON.parse(responseBodyText);
+             errorDetail = errorJson.detail || errorJson.error || '';
+             errorMessage = errorDetail || errorMessage; // Use detail if available
+         } catch (e) { /* ignore parsing error, use raw text */ errorDetail = responseBodyText; }
+
+        // Handle specific conflict errors
+        if (response.status === 409) {
+            if (errorDetail.includes("Hardware ID already registered")) {
+                 throw new Error('Conflict: This Hardware ID is already registered.');
+            } else if (errorDetail.includes("User already has an active device")) {
+                 throw new Error('Conflict: This User (identified by email) already has an active device.');
+            } else {
+                 throw new Error(`Conflict: ${errorMessage}`); // Generic 409
+            }
+        }
+         // Handle auth errors
+         else if (response.status === 401 || response.status === 403) {
+              throw new Error(`Authorization failed: ${errorMessage} (${response.status})`);
+         }
+         // Handle other errors
+         else {
+             throw new Error(errorMessage);
+         }
+      }
+
+      // Success case (assuming 201 Created)
+      let responseData = {};
+      try {
+          responseData = JSON.parse(responseBodyText);
+      } catch (e) {
+          log.warn('[Admin] Failed to parse successful JSON response body:', responseBodyText);
+      }
+      log.info(`[Admin] Successfully registered device ID ${hardwareId} for email ${email}. Response:`, responseData);
+      // Return specific fields if needed, or just success indication
+      return {
+          success: true,
+          message: responseData.message || "Device registered successfully",
+          data: responseData // Send back the parsed response data
+        };
+
+    } catch (error) {
+      // Catch errors thrown from response handling or fetch itself
+      log.error('[Admin] Exception during device registration:', error);
+      // Ensure the error message passed to the frontend is useful
+      throw new Error(error.message || 'An unexpected error occurred during device registration.');
+    }
+  });
+
 };
 
 // Call this after store initialization
@@ -319,7 +437,9 @@ process.on('uncaughtException', (error) => {
 });
 
 const HUBSTORE_URL = 'https://fundaihubstore.onrender.com';
-const VAULT_URL = 'https://fundai.onrender.com';
+// const VAULT_URL = 'https://fundai.onrender.com';
+const VAULT_URL = 'https://emms21--user-management-api-api.modal.run';
+
 
 // Add IPC handlers
 ipcMain.handle('store:getApps', async () => {
@@ -346,19 +466,41 @@ const schema = {
   auth: {
     type: 'object',
     properties: {
+      email: { type: 'string' },
+      password: { type: 'string' },
       token: { type: 'string' },
       tokenType: { type: 'string' },
-      expiresAt: { type: 'number' }
+      expiresAt: { type: 'number' },
+      isAdmin: { type: 'boolean' }
     }
+  },
+  deviceInfo: {
+      type: 'object',
+      properties: {
+          deviceId: { type: 'string' }
+      }
   }
 };
 
 // Initialize store once
-const store = new Store({ 
+const store = new Store({
   schema,
-  name: 'auth-store', // This creates a separate auth-store.json file
-  encryptionKey: 'your-encryption-key' // For securing sensitive data
+  name: 'app-auth-store',
+  // encryptionKey: 'your-encryption-key'
 });
+
+// Function to get or generate a persistent client Device ID
+function getPersistentDeviceID() {
+    let deviceInfo = store.get('deviceInfo');
+    if (deviceInfo && deviceInfo.deviceId) {
+        return deviceInfo.deviceId;
+    } else {
+        const newDeviceId = crypto.randomUUID();
+        store.set('deviceInfo', { deviceId: newDeviceId });
+        log.info(`[DeviceID] Generated and stored new Device ID: ${newDeviceId}`);
+        return newDeviceId;
+    }
+}
 
 // --- AutoUpdater Event Handlers ---
 autoUpdater.on('checking-for-update', () => {
@@ -472,6 +614,163 @@ function setupIpcHandlers(/* dependencies */) {
       return app.getVersion();
     });
 
+    // Store handlers
+    ipcMain.handle('store:getAppDetails', async (_, appId) => {
+      try {
+        // Get app details from the store
+        const url = `${HUBSTORE_URL}/api/content/${appId}`;
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data;
+      } catch (error) {
+        console.error('Failed to fetch app details:', error);
+        throw error;
+      }
+    });
+
+    ipcMain.handle('store:downloadApp', async (event, appId) => {
+      try {
+        // Get the persistent Device ID for this client installation
+        const clientDeviceID = getPersistentDeviceID();
+        log.info(`[Download] Using Client Device ID: ${clientDeviceID}`);
+
+        if (!clientDeviceID) {
+             log.error('[Download] Failed to get or generate a Client Device ID.');
+             throw new Error('Client identifier is missing.');
+        }
+
+        // Start the download process via the backend API
+        const startDownloadUrl = `${HUBSTORE_URL}/api/downloads/start`;
+        log.info(`[Download] Starting download process for AppID ${appId} at ${startDownloadUrl}`);
+        const startDownloadResponse = await fetch(startDownloadUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Device-ID': clientDeviceID
+          },
+          body: JSON.stringify({
+            contentId: appId
+          })
+        });
+
+        if (!startDownloadResponse.ok) {
+           const errorBody = await startDownloadResponse.text();
+           log.error(`[Download] Failed to start download: ${startDownloadResponse.status} - ${errorBody}`);
+           if (startDownloadResponse.status === 401 || startDownloadResponse.status === 403) {
+               throw new Error(`Device ID not registered or subscription inactive (${startDownloadResponse.status}). Please contact Admin.`);
+           }
+           throw new Error(`Failed to start download: ${startDownloadResponse.status} (${startDownloadResponse.statusText})`);
+        }
+
+        const startDownloadData = await startDownloadResponse.json();
+        const downloadId = startDownloadData.downloadId;
+        log.info(`[Download] Started successfully, Download ID: ${downloadId}`);
+
+
+        // Get the actual download URL
+        const getDownloadUrlEndpoint = `${HUBSTORE_URL}/api/downloads/url?downloadId=${downloadId}`;
+        log.info(`[Download] Getting download URL from ${getDownloadUrlEndpoint}`);
+        const getDownloadUrlResponse = await fetch(getDownloadUrlEndpoint, {
+          headers: {
+            'Device-ID': clientDeviceID
+          }
+        });
+
+        if (!getDownloadUrlResponse.ok) {
+          const errorBody = await getDownloadUrlResponse.text();
+          log.error(`[Download] Failed to get download URL: ${getDownloadUrlResponse.status} - ${errorBody}`);
+          if (getDownloadUrlResponse.status === 401 || getDownloadUrlResponse.status === 403) {
+               throw new Error(`Device ID not registered or subscription inactive (${getDownloadUrlResponse.status}). Please contact Admin.`);
+           }
+          throw new Error(`Failed to get download URL: ${getDownloadUrlResponse.status} (${getDownloadUrlResponse.statusText})`);
+        }
+
+        const downloadUrlData = await getDownloadUrlResponse.json();
+        const downloadUrl = downloadUrlData.downloadUrl;
+        if (!downloadUrl) {
+            log.error('[Download] Backend did not return a downloadUrl.');
+            throw new Error('Failed to retrieve download URL from backend.');
+        }
+        log.info(`[Download] Received download URL: ${downloadUrl.substring(0, 70)}...`);
+
+
+        // Start download using the download manager
+        const filename = `${appId}-${Date.now()}.zip`;
+        log.info(`[Download] Starting file download for ${filename} from URL`);
+        const downloadPath = await downloadManager.downloadFile(downloadUrl, filename);
+        log.info(`[Download] File downloaded to: ${downloadPath}`);
+
+
+        // Update download status to completed
+        const updateStatusUrl = `${HUBSTORE_URL}/api/downloads/status`;
+        log.info(`[Download] Updating download status to 'completed' at ${updateStatusUrl} for DownloadID ${downloadId}`);
+        const updateStatusResponse = await fetch(updateStatusUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Device-ID': clientDeviceID
+          },
+          body: JSON.stringify({
+            downloadId: downloadId,
+            status: 'completed'
+          })
+        });
+
+        if (!updateStatusResponse.ok) {
+            const errorBody = await updateStatusResponse.text();
+            log.warn(`[Download] Failed to update download status post-completion: ${updateStatusResponse.status} - ${errorBody}.`);
+        } else {
+             log.info(`[Download] Post-download status updated successfully for ${downloadId}`);
+        }
+
+
+        // Notify renderer of completion
+        log.info(`[Download] Notifying renderer of completion for ${appId}`);
+        event.sender.send('download:complete', {
+          appId,
+          path: downloadPath
+        });
+
+        return {
+          success: true,
+          message: 'App downloaded successfully',
+          path: downloadPath
+        };
+      } catch (error) {
+        log.error('[Download] Error during download process:', error);
+        throw error;
+      }
+    });
+
     log.info('IPC handlers setup from setupIpcHandlers function complete.');
 }
+
+// Add near other app.on listeners, after store is initialized
+
+// --- Ensure this handler is present ---
+app.on('will-quit', () => {
+  log.info('[App Quit] Event "will-quit" triggered.');
+  if (store) {
+    const authBefore = store.get('auth');
+    log.info(`[App Quit] Admin auth data BEFORE clear attempt: ${authBefore ? JSON.stringify(authBefore) : 'null'}`);
+    try {
+      // --- MODIFIED: Explicitly set 'auth' to null instead of delete ---
+      store.set('auth', null);
+      // --- END MODIFY ---
+      const authAfter = store.get('auth'); // Should now log null if set worked immediately
+      log.info(`[App Quit] Admin auth data AFTER setting to null: ${authAfter ? JSON.stringify(authAfter) : 'null'}`);
+    } catch (error) {
+       log.error('[App Quit] Error during store.set(\'auth\', null):', error);
+    }
+  } else {
+    log.warn('[App Quit] Store object not available, cannot clear admin auth.');
+  }
+  log.info('[App Quit] "will-quit" handler finished.');
+});
+// --- End ensure ---
 

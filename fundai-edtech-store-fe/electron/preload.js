@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   adminLogin: (credentials) => ipcRenderer.invoke('auth:adminLogin', credentials),
   checkAdmin: () => ipcRenderer.invoke('auth:checkAdmin'),
   clearAuth: () => ipcRenderer.invoke('auth:clearAuth'),
+  adminRegisterDevice: (deviceData) => ipcRenderer.invoke('admin:register-device', deviceData),
   
   // Download Progress
   onDownloadProgress: (callback) => 

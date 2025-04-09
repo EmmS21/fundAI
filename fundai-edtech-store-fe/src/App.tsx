@@ -155,6 +155,18 @@ export default function App() {
 
   const handleLoginSuccess = () => {
     setShowLoginModal(false);
+    console.log('[App.tsx] Login successful callback triggered.'); // Log success callback
+    // Force a re-check of admin status immediately after login success
+    // This might be redundant if CategoryFilter already re-checks on mount/update, but can help ensure state sync
+    const forceCheck = async () => {
+       if (window.electronAPI?.checkAdmin) {
+         const status = await window.electronAPI.checkAdmin();
+         console.log('[App.tsx] Forced admin check after login success returned:', status);
+         // Optionally update Zustand store here if needed, though checkAdmin itself doesn't update it
+         // useAuth.getState().setAuth(null, status); // Be careful with this if login already sets it
+       }
+    };
+    forceCheck();
   };
 
   const handleSignOut = async () => {

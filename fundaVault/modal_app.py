@@ -14,14 +14,14 @@ funda_vault_secrets = modal.Secret.from_name("fundai")
 # Include all necessary packages and add local files/dirs to the image
 image = (
     Image.debian_slim()
+    .apt_install("sqlite3")
     .pip_install([
         "fastapi>=0.100.0,<0.110.0",    
         "pydantic-settings>=2.0.0,<3.0.0",  
         "python-dotenv>=0.21.0,<0.22.0",
         "python-multipart>=0.0.6,<0.1.0",
         "email-validator>=2.0.0",
-        "aiosqlite>=0.17.0,<0.18.0",
-        "asyncpg>=0.25.0,<0.29.0",
+        "supabase>=1.0.0,<2.0.0",
         "PyJWT>=2.6.0,<2.7.0",
         "passlib[bcrypt]>=1.7.4,<1.8.0",
         "python-jose[cryptography]>=3.3.0,<4.0.0"
@@ -73,11 +73,13 @@ def api():
     fastapi_app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
     
     # Add startup event for database initialization
-    from app.db.database import init_db
+    # We assume tables are created manually in Supabase now
+    from app.db.database import init_db 
     
     @fastapi_app.on_event("startup")
     async def startup():
-        await init_db()
+        # await init_db() # Commented out: Tables are created manually
+        logger.info("FastAPI app started. Database initialization skipped (manual setup assumed).")
     
     # Define root endpoint
     @fastapi_app.get("/")
