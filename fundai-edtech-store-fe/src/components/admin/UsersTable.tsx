@@ -24,16 +24,21 @@ const UsersTable: React.FC = () => {
     const fetchUsers = async () => {
       try {
         setLoading(true);
+        console.log('[UsersTable] Calling window.electronAPI.getUsers()...');
         const response = await window.electronAPI.getUsers();
-        
+        console.log('[UsersTable] Received response from IPC:', response);
+
         // Validate response is array
         if (!Array.isArray(response)) {
+          console.error('[UsersTable] Invalid response format - not an array:', response);
           throw new Error('Invalid response format');
         }
-        
+
+        console.log(`[UsersTable] Response is valid array with ${response.length} users. Setting state.`);
         setUsers(response);
         setError(null);
       } catch (err) {
+        console.error('[UsersTable] Error fetching or processing users:', err);
         setError(err instanceof Error ? err.message : 'Failed to fetch users');
         setUsers([]);
       } finally {

@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { useAuth } from '../../hooks/useAuth';
 
 interface CategoryFilterProps {
   onCategoryChange?: (category: string) => void;
@@ -7,16 +8,8 @@ interface CategoryFilterProps {
 }
 
 export const CategoryFilter: React.FC<CategoryFilterProps> = ({ onCategoryChange, onUploadClick, onUsersClick }) => {
-  const [isAdminState, setIsAdminState] = useState(false);
-
-  useEffect(() => {
-    const checkAdmin = async () => {
-      const adminStatus = await window.electronAPI.checkAdmin();
-      console.log('CategoryFilter - Admin status:', adminStatus);
-      setIsAdminState(adminStatus);
-    };
-    checkAdmin();
-  }, []);
+  const { isAdmin } = useAuth();
+  console.log('[CategoryFilter] Rendering. isAdmin from useAuth:', isAdmin);
 
   return (
     <div className="flex space-x-4 overflow-x-auto pb-2">
@@ -41,7 +34,7 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ onCategoryChange
         Programming
       </button>
       
-      {isAdminState && (
+      {isAdmin && (
         <>
           <button
             onClick={onUploadClick}
