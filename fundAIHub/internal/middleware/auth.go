@@ -91,7 +91,7 @@ func (m *AuthMiddleware) AuthenticateDevice(next http.HandlerFunc) http.HandlerF
 			}
 		}
 
-		ctx := context.WithValue(r.Context(), "hardware_id", hardwareID)
+		ctx := context.WithValue(r.Context(), "device_id", hardwareID)
 		ctx = context.WithValue(ctx, "user_id", userIDStr)
 		ctx = context.WithValue(ctx, "is_admin", result.IsAdmin)
 		ctx = context.WithValue(ctx, "subscription_end", result.SubscriptionEnd)
