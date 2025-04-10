@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -222,7 +223,7 @@ func main() {
 			AppType:     r.FormValue("app_type"),
 			FilePath:    fileInfo.Key,
 			Size:        int(header.Size),
-			StorageKey:  fileInfo.Key,
+			StorageKey:  sql.NullString{String: fileInfo.Key, Valid: true},
 			ContentType: header.Header.Get("Content-Type"),
 		}); err != nil {
 			log.Printf("[Error] Database insert failed: %v", err)
