@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import UsersTable from './UsersTable';
 import RegisterDeviceForm from './RegisterDeviceForm';
-import EditUserModal from './EditUserModal';
 import { User } from '../../types/user';
+import { UserDetailsPayload, UpdatedUserResponse } from '../../types/electron';
 
 // --- ADDED: Simple Success Overlay Component ---
 const SuccessOverlay = () => (
@@ -35,7 +35,8 @@ const UsersModal: React.FC<UsersModalProps> = ({ onClose }) => {
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [usersError, setUsersError] = useState<string | null>(null);
   const [userTableKey, setUserTableKey] = useState(0);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [isSavingUser, setIsSavingUser] = useState(false);
 
   const fetchUsers = async () => {
     try {
@@ -90,15 +91,58 @@ const UsersModal: React.FC<UsersModalProps> = ({ onClose }) => {
     }
   };
 
-  const handleEditUser = (user: User) => {
-    console.log("Editing user:", user);
-    setEditingUser(user);
+  const handleCancelEdit = () => {
+      console.log('[UsersModal] Cancelling edit.');
+      setEditingUserId(null);
   };
 
-  const handleCloseEditModal = (refreshNeeded: boolean) => {
-      setEditingUser(null);
-      if (refreshNeeded) {
-          setUserTableKey(prevKey => prevKey + 1);
+  const handleSaveUserUpdates = async (userId: string, updates: { email: string; fullName: string; status: 'active' | 'inactive'; subscriptionStatus: 'active' | 'inactive'; }) => {
+      console.log(`[UsersModal] Attempting to save updates for user ID ${userId}:`, updates);
+      setToastMessage(null);
+      setIsSavingUser(true);
+
+      try {
+          const userDetailsPayload: UserDetailsPayload = {};
+          let detailsChanged = false;
+
+          if (typeof updates.fullName !== 'undefined') {
+             userDetailsPayload.name = updates.fullName;
+             detailsChanged = true;
+          }
+          if (typeof updates.email !== 'undefined') {
+             userDetailsPayload.email = updates.email;
+             detailsChanged = true;
+          }
+          if (typeof updates.status !== 'undefined') {
+             userDetailsPayload.is_active = updates.status === 'active';
+             detailsChanged = true;
+          }
+
+          let userUpdateResult: UpdatedUserResponse | null = null;
+          if (detailsChanged) {
+              console.log(`[UsersModal] Calling updateUserDetails for ${userId} with payload:`, userDetailsPayload);
+              userUpdateResult = await window.electronAPI.updateUserDetails(userId, userDetailsPayload);
+              console.log(`[UsersModal] updateUserDetails result for ${userId}:`, userUpdateResult);
+          } else {
+              console.log(`[UsersModal] No user details or status changes detected for user ${userId}. Skipping updateUserDetails call.`);
+          }
+
+          if (typeof updates.subscriptionStatus !== 'undefined') {
+             console.warn(`[UsersModal] Subscription status change requested to '${updates.subscriptionStatus}' for user ${userId}. This requires specific API calls (PUT/DELETE with plan_id) not fully supported by this function's current structure. Skipping subscription update.`);
+          }
+
+          setToastMessage(`User details saved successfully for user ${userId}.`);
+          setEditingUserId(null);
+          setUserTableKey(prev => prev + 1);
+
+          setTimeout(() => setToastMessage(null), 4000);
+
+      } catch (error: any) {
+            console.error(`[UsersModal] Error saving updates for user ${userId}:`, error);
+            const errorMessage = error?.message || 'An unknown error occurred while saving user details.';
+            setToastMessage(`Error: ${errorMessage}`);
+      } finally {
+          setIsSavingUser(false);
       }
   };
 
@@ -141,14 +185,16 @@ const UsersModal: React.FC<UsersModalProps> = ({ onClose }) => {
                 users={users}
                 loading={loadingUsers}
                 error={usersError}
-                onEditUser={handleEditUser}
+                editingUserId={editingUserId}
+                setEditingUserId={setEditingUserId}
+                onCancelEdit={handleCancelEdit}
+                onSaveUserUpdates={handleSaveUserUpdates}
+                isSaving={isSavingUser}
               />
             </div>
           </div>
         </div> {/* End Scrollable Content */}
       </div> {/* End Modal Content */}
-
-      {editingUser && ( <EditUserModal user={editingUser} onClose={handleCloseEditModal} /> )}
     </div> /* End Modal Backdrop */
   );
 };

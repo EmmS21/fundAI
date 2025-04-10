@@ -7,6 +7,8 @@ import LoginModal from './components/auth/LoginModal';
 import { useAuth } from './hooks/useAuth';
 import { UploadModal } from './components/admin/UploadModal';
 import UsersModal from './components/admin/UsersModal';
+import { useUIStore } from './stores/uiStore';
+import { SubscriptionNoticeOverlay } from './components/common/SubscriptionNoticeOverlay';
 
 // --- Define interfaces matching electron.d.ts (or import if separate) ---
 interface UpdateInfo {
@@ -38,6 +40,9 @@ export default function App() {
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [appVersion, setAppVersion] = useState<string>('');
   // --- End Online/Offline State ---
+
+  const { isSubNoticeOverlayVisible } = useUIStore();
+  console.log('[App.tsx] Rendering. isSubNoticeOverlayVisible:', isSubNoticeOverlayVisible);
 
   // Effect for checking admin status
   useEffect(() => {
@@ -193,6 +198,7 @@ export default function App() {
 
   return (
     <ThemeProvider>
+      {isSubNoticeOverlayVisible && <SubscriptionNoticeOverlay />}
       <div className="min-h-screen w-full bg-white dark:bg-gray-900 transition-colors overflow-auto">
         <div className="w-full min-h-screen bg-white dark:bg-gray-900 relative">
           {/* Placeholder div that maintains the header's space */}

@@ -16,14 +16,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Download Progress
   onDownloadProgress: (callback) => 
-    ipcRenderer.on('download:progress', callback),
+    ipcRenderer.on('download:progress', (_event, ...args) => callback(...args)),
   onDownloadComplete: (callback) => 
-    ipcRenderer.on('download:complete', callback),
+    ipcRenderer.on('download:complete', (_event, ...args) => callback(...args)),
 
   // User Operations
   getUsers: () => ipcRenderer.invoke('user:get-all'),
   updateUserStatus: (userId, status) => ipcRenderer.invoke('user:update-status', userId, status),
   deleteUser: (userId) => ipcRenderer.invoke('user:delete', userId),
+  updateUserSubscription: (userId, payload) => ipcRenderer.invoke('users:updateSubscription', userId, payload),
+  deleteUserSubscription: (userId) => ipcRenderer.invoke('users:deleteSubscription', userId),
+  subscribeUser: (userId) => ipcRenderer.invoke('user:subscribe', userId),
 
   // Book Operations
   getBooks: () => ipcRenderer.invoke('books:getBooks'),
