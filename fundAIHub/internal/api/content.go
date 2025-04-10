@@ -125,7 +125,7 @@ func (h *ContentHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		AppType:     r.FormValue("app_type"),
 		FilePath:    fileInfo.Key,
 		Size:        int(header.Size),
-		StorageKey:  fileInfo.Key,
+		StorageKey:  sql.NullString{String: fileInfo.Key, Valid: true},
 		ContentType: header.Header.Get("Content-Type"),
 	}
 
@@ -161,18 +161,34 @@ func (h *ContentHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get file from storage
-	reader, info, err := h.storage.Download(r.Context(), content.StorageKey)
+	// Check if StorageKey is valid before using it
+	if !content.StorageKey.Valid {
+		log.Printf("Error: Content ID %s has NULL storage key in DownloadFile handler", idStr)
+		http.Error(w, "Internal Server Error: Missing storage reference", http.StatusInternalServerError)
+		return
+	}
+	storageKey := content.StorageKey.String // Get the string value
+
+	// Get file from storage using the valid string key
+	reader, info, err := h.storage.Download(r.Context(), storageKey)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		// Log the key being used
+		log.Printf("Error downloading from storage with key '%s': %v", storageKey, err)
+		http.Error(w, "Failed to retrieve file from storage", http.StatusInternalServerError)
 		return
 	}
 	defer reader.Close()
 
 	// Set response headers
 	w.Header().Set("Content-Type", content.ContentType)
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", content.Name))
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size))
+	// Use fmt.Sprintf with escaped quotes for filename
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", content.Name))
+	// Use size from storage info if available, otherwise from DB
+	if info != nil && info.Size > 0 {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size))
+	} else if content.Size > 0 {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", content.Size))
+	}
 
 	// Stream file to response
 	if _, err := io.Copy(w, reader); err != nil {
