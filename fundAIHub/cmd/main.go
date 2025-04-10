@@ -18,16 +18,10 @@ import (
 	"FundAIHub/internal/db"
 	"FundAIHub/internal/firebase_admin"
 	"FundAIHub/internal/middleware"
+	"FundAIHub/internal/storage"
 
-	"github.com/joho/godotenv"
+	_ "github.com/joho/godotenv/autoload"
 )
-
-type FileInfo struct {
-	Key         string
-	Size        int64
-	ContentType string
-	UpdatedAt   time.Time
-}
 
 type SupabaseStorage struct {
 	projectURL string
@@ -41,164 +35,153 @@ func NewSupabaseStorage(projectURL, apiKey, bucketName string) *SupabaseStorage 
 		projectURL: projectURL,
 		apiKey:     apiKey,
 		bucketName: bucketName,
-		client:     &http.Client{Timeout: 60 * time.Second},
+		client:     &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
-func (s *SupabaseStorage) Upload(ctx context.Context, file io.Reader, filename string, contentType string) (*FileInfo, error) {
-	url := fmt.Sprintf("%s/storage/v1/object/%s/%s",
-		s.projectURL,
-		s.bucketName,
-		path.Clean(filename))
-
-	log.Printf("[Debug] Uploading to: %s", url)
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, file)
+func (s *SupabaseStorage) Upload(ctx context.Context, file io.Reader, filename string, contentType string) (*storage.FileInfo, error) {
+	uploadURL := fmt.Sprintf("%s/storage/v1/object/%s/%s", s.projectURL, s.bucketName, filename)
+	req, err := http.NewRequestWithContext(ctx, "POST", uploadURL, file)
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+		return nil, fmt.Errorf("failed to create upload request: %w", err)
 	}
-
 	req.Header.Set("Authorization", "Bearer "+s.apiKey)
 	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("x-upsert", "true") // Overwrite if exists
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("uploading file: %w", err)
+		return nil, fmt.Errorf("failed to execute upload request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
-	log.Printf("[Debug] Response: %s", string(body))
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("upload failed: %s", resp.Status)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("upload failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var response struct {
-		Key string `json:"Key"`
-		Id  string `json:"Id"`
-	}
-	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&response); err != nil {
-		return nil, fmt.Errorf("parsing response: %w", err)
-	}
+	log.Printf("[SupabaseStorage] Upload successful for %s. Status: %d", filename, resp.StatusCode)
 
-	return &FileInfo{
-		Key:         response.Key,
+	return &storage.FileInfo{
+		Key:         filename,
 		ContentType: contentType,
-		UpdatedAt:   time.Now(),
 	}, nil
 }
 
-func (s *SupabaseStorage) Download(ctx context.Context, key string) (io.ReadCloser, *FileInfo, error) {
-	url := fmt.Sprintf("%s/storage/v1/object/%s/%s",
-		s.projectURL,
-		s.bucketName,
-		path.Clean(key))
-
-	log.Printf("[Debug] Downloading from: %s", url)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+func (s *SupabaseStorage) Download(ctx context.Context, key string) (io.ReadCloser, *storage.FileInfo, error) {
+	downloadURL := fmt.Sprintf("%s/storage/v1/object/authenticated/%s/%s", s.projectURL, s.bucketName, key)
+	req, err := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
 	if err != nil {
-		return nil, nil, fmt.Errorf("creating request: %w", err)
+		return nil, nil, fmt.Errorf("failed to create download request: %w", err)
 	}
-
 	req.Header.Set("Authorization", "Bearer "+s.apiKey)
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("downloading file: %w", err)
+		return nil, nil, fmt.Errorf("failed to execute download request: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("download failed: %s", resp.Status)
+	if resp.StatusCode == http.StatusNotFound {
+		resp.Body.Close()
+		return nil, nil, fmt.Errorf("file not found in storage: %s", key)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, nil, fmt.Errorf("download failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	info := &FileInfo{
+	fileInfo := &storage.FileInfo{
 		Key:         key,
+		Size:        resp.ContentLength,
 		ContentType: resp.Header.Get("Content-Type"),
-		UpdatedAt:   time.Now(),
+	}
+	lastModified := resp.Header.Get("Last-Modified")
+	if lastModified != "" {
+		tm, err := time.Parse(http.TimeFormat, lastModified)
+		if err == nil {
+			fileInfo.UpdatedAt = tm
+		}
 	}
 
-	return resp.Body, info, nil
+	return resp.Body, fileInfo, nil
 }
 
 func (s *SupabaseStorage) Delete(ctx context.Context, key string) error {
-	url := fmt.Sprintf("%s/storage/v1/object/%s/%s",
-		s.projectURL,
-		s.bucketName,
-		path.Clean(key))
+	deleteURL := fmt.Sprintf("%s/storage/v1/object/%s/%s", s.projectURL, s.bucketName, key)
+	payload := map[string][]string{"prefixes": {key}}
+	payloadBytes, _ := json.Marshal(payload)
 
-	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "DELETE", deleteURL, bytes.NewReader(payloadBytes))
 	if err != nil {
-		return fmt.Errorf("creating request: %w", err)
+		return fmt.Errorf("failed to create delete request: %w", err)
 	}
-
 	req.Header.Set("Authorization", "Bearer "+s.apiKey)
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("deleting file: %w", err)
+		return fmt.Errorf("failed to execute delete request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("delete failed: %s", resp.Status)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("delete failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
-
+	log.Printf("[SupabaseStorage] Delete successful for key: %s", key)
 	return nil
 }
 
-func main() {
-	if err := godotenv.Load(); err != nil {
-		log.Printf("[Warning] Error loading .env file: %v", err)
-	}
+func (s *SupabaseStorage) GetInfo(ctx context.Context, key string) (*storage.FileInfo, error) {
+	log.Printf("[SupabaseStorage] GetInfo called for %s (using placeholder logic)", key)
+	return nil, fmt.Errorf("GetInfo not fully implemented for SupabaseStorage")
+}
 
-	// Load configuration
+func (s *SupabaseStorage) ListFiles(ctx context.Context) ([]storage.FileInfo, error) {
+	log.Printf("[SupabaseStorage] ListFiles called (using placeholder logic)")
+	return nil, fmt.Errorf("ListFiles not fully implemented for SupabaseStorage")
+}
+
+var _ storage.StorageService = (*SupabaseStorage)(nil)
+
+func main() {
+	ctx := context.Background()
 	cfg := config.GetConfig()
 
-	// Log the environment and URL being used
 	log.Printf("Running in %s mode", cfg.Environment)
 	log.Printf("Using FundaVault URL: %s", cfg.FundaVaultURL)
 
-	// Add database initialization
 	dbConfig := db.Config{
 		ConnectionURL: os.Getenv("DATABASE_URL"),
 	}
 	database, err := db.NewConnection(dbConfig)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer database.Close()
+	log.Println("Successfully connected to database")
 
 	store := db.NewContentStore(database)
 
-	// Initialize storage (existing code)
-	storage := NewSupabaseStorage(
+	storageInstance := NewSupabaseStorage(
 		os.Getenv("SUPABASE_URL"),
 		os.Getenv("SUPABASE_KEY"),
 		"content",
 	)
-
 	log.Printf("[Debug] Initialized storage with URL: %s", os.Getenv("SUPABASE_URL"))
 
-	// Initialize Firebase Admin SDK
-	ctx := context.Background()
 	firebaseService, err := firebase_admin.NewFirebaseAdminService(ctx)
 	if err != nil {
 		log.Fatalf("Failed to initialize Firebase Admin SDK: %v", err)
 	}
 
-	// Initialize FundaVault client with config
 	fundaVault := auth.NewFundaVaultClient(cfg)
-
-	// Initialize auth middleware
 	authMiddleware := middleware.NewAuthMiddleware(fundaVault)
-
-	// Initialize Firebase Handler
 	firebaseHandler := api.NewFirebaseHandler(firebaseService)
 
-	// Add download endpoints
-	downloadHandler := api.NewDownloadHandler(store, storage)
+	downloadHandler := api.NewDownloadHandler(store, storageInstance)
+
 	http.HandleFunc("/api/downloads/start",
 		authMiddleware.AuthenticateDevice(downloadHandler.StartDownload))
 	http.HandleFunc("/api/downloads/status",
@@ -221,8 +204,7 @@ func main() {
 
 		log.Printf("[Debug] File: %s, Size: %d", header.Filename, header.Size)
 
-		// Upload to Supabase
-		fileInfo, err := storage.Upload(r.Context(), file, header.Filename, header.Header.Get("Content-Type"))
+		fileInfo, err := storageInstance.Upload(r.Context(), file, header.Filename, header.Header.Get("Content-Type"))
 		if err != nil {
 			log.Printf("[Error] Upload failed: %v", err)
 			http.Error(w, "Upload failed", http.StatusInternalServerError)
@@ -231,7 +213,6 @@ func main() {
 
 		log.Printf("[Success] File uploaded: %s", fileInfo.Key)
 
-		// After successful storage upload
 		if err := store.Create(r.Context(), &db.Content{
 			Name:        header.Filename,
 			Type:        "linux-app",
@@ -245,12 +226,11 @@ func main() {
 			ContentType: header.Header.Get("Content-Type"),
 		}); err != nil {
 			log.Printf("[Error] Database insert failed: %v", err)
-			storage.Delete(r.Context(), fileInfo.Key)
+			storageInstance.Delete(r.Context(), fileInfo.Key)
 			http.Error(w, "Failed to create content record", http.StatusInternalServerError)
 			return
 		}
 
-		// Return success response
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"message": "File uploaded successfully",
@@ -259,57 +239,43 @@ func main() {
 	})
 
 	http.HandleFunc("/download", func(w http.ResponseWriter, r *http.Request) {
-		// Get the file key from query parameter
 		key := r.URL.Query().Get("key")
 		if key == "" {
 			http.Error(w, "Missing file key", http.StatusBadRequest)
 			return
 		}
-
-		log.Printf("[Debug] Attempting to download file: %s", key)
-
-		// Get the file from Supabase
-		reader, info, err := storage.Download(r.Context(), key)
+		log.Printf("[Debug] Attempting to download file (deprecated): %s", key)
+		reader, info, err := storageInstance.Download(r.Context(), key)
 		if err != nil {
-			log.Printf("[Error] Download failed: %v", err)
+			log.Printf("[Error] Deprecated Download failed: %v", err)
 			http.Error(w, "Download failed", http.StatusInternalServerError)
 			return
 		}
 		defer reader.Close()
-
-		// Set response headers
 		w.Header().Set("Content-Type", info.ContentType)
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", path.Base(key)))
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", path.Base(key)))
 		if info.Size > 0 {
 			w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size))
 		}
-
-		// Stream the file to response
 		if _, err := io.Copy(w, reader); err != nil {
-			log.Printf("[Error] Streaming file failed: %v", err)
+			log.Printf("[Error] Streaming file failed (deprecated route): %v", err)
 		}
 	})
 
 	http.HandleFunc("/api/content/list", func(w http.ResponseWriter, r *http.Request) {
 		contents, err := store.List(r.Context())
 		if err != nil {
-			log.Printf("[Error] Failed to list content: %v", err)
+			log.Printf("[Error] Failed to list content (deprecated route): %v", err)
 			http.Error(w, "Failed to list content", http.StatusInternalServerError)
 			return
 		}
-
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(contents)
 	})
 
-	// Register Secure Firebase Endpoint
 	http.HandleFunc("/api/secure/firestore-write",
 		authMiddleware.AuthenticateDevice(firebaseHandler.HandleSecureFirestoreWrite))
 
-	// --- Add the new route for handling signed downloads ---
-	// This route does NOT need AuthenticateDevice middleware because the signature
-	// itself proves the user went through the authenticated /api/v1/downloads/url endpoint.
-	// The HandleSignedDownload method performs the necessary validation.
 	http.HandleFunc("/download/", downloadHandler.HandleSignedDownload)
 
 	log.Printf("Server starting on :8080")
