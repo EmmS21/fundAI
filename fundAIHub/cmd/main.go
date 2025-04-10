@@ -198,7 +198,7 @@ func main() {
 	firebaseHandler := api.NewFirebaseHandler(firebaseService)
 
 	// Add download endpoints
-	downloadHandler := api.NewDownloadHandler(store)
+	downloadHandler := api.NewDownloadHandler(store, storage)
 	http.HandleFunc("/api/downloads/start",
 		authMiddleware.AuthenticateDevice(downloadHandler.StartDownload))
 	http.HandleFunc("/api/downloads/status",
@@ -305,6 +305,12 @@ func main() {
 	// Register Secure Firebase Endpoint
 	http.HandleFunc("/api/secure/firestore-write",
 		authMiddleware.AuthenticateDevice(firebaseHandler.HandleSecureFirestoreWrite))
+
+	// --- Add the new route for handling signed downloads ---
+	// This route does NOT need AuthenticateDevice middleware because the signature
+	// itself proves the user went through the authenticated /api/v1/downloads/url endpoint.
+	// The HandleSignedDownload method performs the necessary validation.
+	http.HandleFunc("/download/", downloadHandler.HandleSignedDownload)
 
 	log.Printf("Server starting on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
