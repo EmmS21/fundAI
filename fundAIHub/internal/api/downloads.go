@@ -30,7 +30,7 @@ func (h *DownloadHandler) StartDownload(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var req struct {
-		ContentID string `json:"content_id"`
+		ContentID string `json:"contentId"`
 		Resume    bool   `json:"resume,omitempty"`
 	}
 
