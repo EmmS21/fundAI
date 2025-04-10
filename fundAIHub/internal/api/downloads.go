@@ -290,7 +290,11 @@ func (h *DownloadHandler) HandleSignedDownload(w http.ResponseWriter, r *http.Re
 	log.Printf("[HandleSignedDownload] Successfully opened stream from storage. Info: %+v", info)
 
 	// 5. Set response headers
-	w.Header().Set("Content-Type", content.ContentType)
+	responseContentType := "application/octet-stream" // Default if NULL
+	if content.ContentType.Valid {
+		responseContentType = content.ContentType.String
+	}
+	w.Header().Set("Content-Type", responseContentType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", content.Name))
 	if info != nil && info.Size > 0 {
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size))

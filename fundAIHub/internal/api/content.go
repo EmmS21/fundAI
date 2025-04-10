@@ -116,6 +116,7 @@ func (h *ContentHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create content record with metadata
+	contentTypeFromHeader := header.Header.Get("Content-Type") // Get content type
 	content := &db.Content{
 		Name:        header.Filename,
 		Type:        "linux-app",
@@ -126,7 +127,7 @@ func (h *ContentHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		FilePath:    fileInfo.Key,
 		Size:        int(header.Size),
 		StorageKey:  sql.NullString{String: fileInfo.Key, Valid: true},
-		ContentType: header.Header.Get("Content-Type"),
+		ContentType: sql.NullString{String: contentTypeFromHeader, Valid: contentTypeFromHeader != ""},
 	}
 
 	// Automatically create/update database record
@@ -180,7 +181,11 @@ func (h *ContentHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	defer reader.Close()
 
 	// Set response headers
-	w.Header().Set("Content-Type", content.ContentType)
+	responseContentType := "application/octet-stream" // Default if NULL
+	if content.ContentType.Valid {
+		responseContentType = content.ContentType.String
+	}
+	w.Header().Set("Content-Type", responseContentType)
 	// Use fmt.Sprintf with escaped quotes for filename
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", content.Name))
 	// Use size from storage info if available, otherwise from DB
