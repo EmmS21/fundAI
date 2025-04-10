@@ -214,6 +214,7 @@ func main() {
 
 		log.Printf("[Success] File uploaded: %s", fileInfo.Key)
 
+		contentTypeFromHeader := header.Header.Get("Content-Type")
 		if err := store.Create(r.Context(), &db.Content{
 			Name:        header.Filename,
 			Type:        "linux-app",
@@ -224,7 +225,7 @@ func main() {
 			FilePath:    fileInfo.Key,
 			Size:        int(header.Size),
 			StorageKey:  sql.NullString{String: fileInfo.Key, Valid: true},
-			ContentType: header.Header.Get("Content-Type"),
+			ContentType: sql.NullString{String: contentTypeFromHeader, Valid: contentTypeFromHeader != ""},
 		}); err != nil {
 			log.Printf("[Error] Database insert failed: %v", err)
 			storageInstance.Delete(r.Context(), fileInfo.Key)
