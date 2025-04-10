@@ -232,8 +232,7 @@ func (h *DownloadHandler) GetDownloadURL(w http.ResponseWriter, r *http.Request)
 func (h *DownloadHandler) HandleSignedDownload(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[HandleSignedDownload] Received request for: %s", r.URL.RequestURI())
 
-	// 1. Validate the signed URL (checks signature and expiry)
-	// We pass the full RequestURI (path + query) to ValidateURL
+	// 1. Validate the signed URL
 	isValid := h.urlGenerator.ValidateURL(r.URL.RequestURI())
 	if !isValid {
 		log.Printf("[HandleSignedDownload] Invalid or expired signature for: %s", r.URL.RequestURI())
@@ -242,9 +241,7 @@ func (h *DownloadHandler) HandleSignedDownload(w http.ResponseWriter, r *http.Re
 	}
 	log.Printf("[HandleSignedDownload] URL signature validated successfully.")
 
-	// 2. Extract the UUID from the path /download/{uuid}
-	// Example path: /download/16e97e0b-20ae-44ea-98bf-f36bb91873db
-	// We need the part after "/download/"
+	// 2. Extract the UUID from the path
 	pathPrefix := "/download/"
 	if !strings.HasPrefix(r.URL.Path, pathPrefix) {
 		log.Printf("[HandleSignedDownload] Invalid path format: %s", r.URL.Path)
@@ -252,7 +249,6 @@ func (h *DownloadHandler) HandleSignedDownload(w http.ResponseWriter, r *http.Re
 		return
 	}
 	uuidStr := strings.TrimPrefix(r.URL.Path, pathPrefix)
-
 	contentID, err := uuid.Parse(uuidStr)
 	if err != nil {
 		log.Printf("[HandleSignedDownload] Could not parse UUID from path '%s': %v", uuidStr, err)
@@ -261,57 +257,53 @@ func (h *DownloadHandler) HandleSignedDownload(w http.ResponseWriter, r *http.Re
 	}
 	log.Printf("[HandleSignedDownload] Extracted ContentID: %s", contentID.String())
 
-	// 3. Get content metadata from the database using the UUID
-	content, err := h.store.Get(r.Context(), contentID) // Use Get, assuming it fetches by primary UUID
+	// 3. Get content metadata from the database
+	content, err := h.store.Get(r.Context(), contentID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("[HandleSignedDownload] Content not found in DB for ID: %s", contentID.String())
 			http.Error(w, "Content not found", http.StatusNotFound)
 			return
 		}
-		log.Printf("[HandleSignedDownload] Error fetching content metadata from DB: %v", err)
+		// Log the specific SQL scan error we encountered previously
+		log.Printf("[HandleSignedDownload] Error fetching/scanning content metadata from DB: %v", err)
 		http.Error(w, "Failed to retrieve content information", http.StatusInternalServerError)
 		return
 	}
 	log.Printf("[HandleSignedDownload] Found content metadata: %+v", content)
 
-	// 4. Get the actual file stream from storage using the StorageKey from metadata
-	// Ensure content.StorageKey holds the correct key/path for Supabase
-	if content.StorageKey == "" {
-		log.Printf("[HandleSignedDownload] Error: Content record for ID %s has empty StorageKey", contentID.String())
-		http.Error(w, "Internal Server Error: Missing storage reference", http.StatusInternalServerError)
+	// 4. Check if StorageKey is valid and not NULL, then get the actual file stream
+	if !content.StorageKey.Valid {
+		log.Printf("[HandleSignedDownload] Error: Content record for ID %s has NULL or invalid StorageKey", contentID.String())
+		http.Error(w, "Internal Server Error: Missing storage reference for content", http.StatusInternalServerError)
 		return
 	}
-	log.Printf("[HandleSignedDownload] Attempting to download from storage with key: %s", content.StorageKey)
-	reader, info, err := h.storage.Download(r.Context(), content.StorageKey)
+	storageKey := content.StorageKey.String // Get the actual string value
+	log.Printf("[HandleSignedDownload] Attempting to download from storage with key: %s", storageKey)
+	reader, info, err := h.storage.Download(r.Context(), storageKey)
 	if err != nil {
-		log.Printf("[HandleSignedDownload] Error downloading file from storage key '%s': %v", content.StorageKey, err)
-		// Consider mapping storage errors (like not found) to 404 if possible
+		log.Printf("[HandleSignedDownload] Error downloading file from storage key '%s': %v", storageKey, err)
 		http.Error(w, "Failed to access storage", http.StatusInternalServerError)
 		return
 	}
 	defer reader.Close()
 	log.Printf("[HandleSignedDownload] Successfully opened stream from storage. Info: %+v", info)
 
-	// 5. Set response headers for the file download
-	// Use metadata from the DB record and storage info
-	w.Header().Set("Content-Type", content.ContentType)                                             // Use content type from DB record
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", content.Name)) // Use name from DB record
+	// 5. Set response headers
+	w.Header().Set("Content-Type", content.ContentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", content.Name))
 	if info != nil && info.Size > 0 {
-		w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size)) // Use size from storage info
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size))
 	} else if content.Size > 0 {
-		// Fallback to size from DB record if storage doesn't provide it
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", content.Size))
 	}
 	log.Printf("[HandleSignedDownload] Set download headers.")
 
-	// 6. Stream the file content to the response
+	// 6. Stream the file content
 	log.Printf("[HandleSignedDownload] Starting file stream to client...")
 	bytesCopied, err := io.Copy(w, reader)
 	if err != nil {
-		// This error might happen if the client disconnects mid-stream
 		log.Printf("[HandleSignedDownload] Error streaming file to client: %v", err)
-		// Don't send another http.Error here as headers/body might be partially written
 		return
 	}
 	log.Printf("[HandleSignedDownload] Finished streaming %d bytes.", bytesCopied)
