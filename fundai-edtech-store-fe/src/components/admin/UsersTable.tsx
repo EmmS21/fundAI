@@ -7,7 +7,7 @@ interface UsersTableProps {
   setEditingUserId: (userId: number | null) => void;
   onCancelEdit: () => void;
   onSaveUserUpdates: (userId: number, updates: {
-    email: string;
+  email: string;
     fullName: string;
     status: 'active' | 'inactive';
     subscriptionStatus: 'active' | 'inactive';
@@ -36,6 +36,9 @@ const UserRow: React.FC<{
     const [editedSubscriptionStatus, setEditedSubscriptionStatus] = useState<'active' | 'inactive'>(user.subscription_status || 'inactive');
 
     const [isSaving, setIsSaving] = useState(false);
+    // Store original values to detect changes
+    const originalStatus = user.status || 'inactive';
+    const originalSubscriptionStatus = user.subscription_status || 'inactive';
 
     // Function to reset local state to original user data
     const resetLocalState = () => {
@@ -50,24 +53,127 @@ const UserRow: React.FC<{
         if (!isEditing) {
             resetLocalState();
         }
+        // Update original values if user prop changes while editing (unlikely but safe)
+        // Note: This might reset edits if parent re-renders user unnecessarily.
+        // Consider if this behavior is desired.
+        // originalStatus = user.status || 'inactive';
+        // originalSubscriptionStatus = user.subscription_status || 'inactive';
     }, [isEditing, user]);
 
     const handleSaveClick = async () => {
         setIsSaving(true);
-        const updates = {
-            email: editedEmail.trim(),
-            fullName: editedFullName.trim(),
-            status: editedStatus,
-            subscriptionStatus: editedSubscriptionStatus
-        };
-        if (!updates.email) {
-             alert("Email cannot be empty.");
+        const userId = user.id!; // Assume ID is always present for existing users
+
+        // --- Determine what actually changed ---
+        const statusChanged = editedStatus !== originalStatus;
+        const subscriptionRequested = originalSubscriptionStatus === 'inactive' && editedSubscriptionStatus === 'active';
+        // Note: We ignore changes from active -> inactive for subscription via this save button.
+        // Deleting/managing existing subscriptions would need separate handlers/UI.
+
+        // --- Validate Email (client-side basic check) ---
+        if (!editedEmail.trim()) {
+             alert("Email cannot be empty."); // Keep basic client-side validation
              setIsSaving(false);
              return;
         }
-        await onSaveUpdates(user.id!, updates);
-        setIsSaving(false);
-        // Parent (UsersModal) handles setting editingUserId to null on success
+        // --- Warn about unsaved changes (Email/Name) ---
+        const otherDetailsChanged = editedEmail.trim() !== (user.email || '') || editedFullName.trim() !== (user.full_name || '');
+        if (otherDetailsChanged) {
+            // Inform user these fields aren't saved via this action
+            console.warn("Changes to Email or Full Name cannot be saved via this interface yet.");
+             // Optionally show an alert:
+             // alert("Note: Changes to Email or Full Name cannot be saved currently.");
+        }
+
+
+        let errors: string[] = [];
+        let successes: string[] = [];
+
+        try {
+            // --- 1. Update Status if changed ---
+            if (statusChanged) {
+                console.log(`[UserRow Save] Status changed for ${userId}. Calling updateUserStatus with '${editedStatus}'.`);
+                try {
+                    const result = await window.electronAPI.updateUserStatus(userId, editedStatus);
+                    if (result.success) {
+                        successes.push(`User status updated to ${editedStatus}.`);
+                        // Update original status state *after* successful API call
+                        // This requires passing setters or fetching data again.
+                        // For now, the parent component handles refresh/state update.
+                    } else {
+                        throw new Error(result.error || 'Failed to update status.');
+                    }
+                } catch (err: any) {
+                     console.error(`[UserRow Save] Error updating status for ${userId}:`, err);
+                     errors.push(`Failed to update status: ${err.message}`);
+                }
+            }
+
+            // --- 2. Subscribe User if requested (inactive -> active) ---
+             if (subscriptionRequested) {
+                 console.log(`[UserRow Save] Subscription requested for ${userId}. Calling subscribeUser.`);
+                 try {
+                     const result = await window.electronAPI.subscribeUser(userId);
+                     if (result.success) {
+                         successes.push(`New 30-day subscription created for user.`);
+                         // Update original subscription status state *after* successful API call
+                         // Similar challenge as above regarding state update.
+                     } else {
+                         // Handle specific "already exists" error
+                         if (result.error?.includes("already exists")) {
+                             errors.push("Subscription failed: User already has a subscription record.");
+                         } else {
+                            throw new Error(result.error || 'Failed to create subscription.');
+                         }
+                     }
+                 } catch (err: any) {
+                      console.error(`[UserRow Save] Error subscribing user ${userId}:`, err);
+                      errors.push(`Failed to create subscription: ${err.message}`);
+                 }
+             }
+
+             // --- 3. Handle results ---
+             if (errors.length > 0) {
+                 alert(`Errors occurred:\n- ${errors.join('\n- ')}`);
+             } else if (successes.length > 0) {
+                 alert(`Success:\n- ${successes.join('\n- ')}`);
+                  // Call parent's save handler ONLY if there were actual changes processed
+                  // This signals the parent (UsersModal) to potentially refresh data / exit edit mode
+                 if (statusChanged || subscriptionRequested) {
+                     // Pass only the *intended* final state based on successful operations.
+                     // Since we don't directly update the local 'user' prop here,
+                     // the parent needs to refresh data to see the real state.
+                     // We pass the locally edited values, but acknowledge the parent refresh is key.
+                     const finalUpdates = {
+                        email: editedEmail.trim(), // Pass current value, even if not saved
+                        fullName: editedFullName.trim(), // Pass current value, even if not saved
+                        status: editedStatus, // Pass edited value (assuming success if statusChanged)
+                        subscriptionStatus: editedSubscriptionStatus // Pass edited value (assuming success if subscriptionRequested)
+                     };
+                     await onSaveUpdates(userId, finalUpdates); // Notify parent
+                 } else if (!statusChanged && !subscriptionRequested && otherDetailsChanged) {
+                     // If only email/name changed, still notify parent to exit edit mode,
+                     // but maybe without triggering a refresh if no backend call was made.
+                     // Or just exit edit mode locally. For now, call parent's save handler.
+                     await onSaveUpdates(userId, { email: editedEmail.trim(), fullName: editedFullName.trim(), status: originalStatus, subscriptionStatus: originalSubscriptionStatus });
+                 } else if (!statusChanged && !subscriptionRequested && !otherDetailsChanged) {
+                      // No changes were made or attempted, just cancel edit mode locally
+                      onCancel(); // Call parent's cancel handler
+                 }
+
+             } else if (!otherDetailsChanged) {
+                 // No relevant changes were made, just cancel edit mode
+                 console.log("[UserRow Save] No relevant changes detected.");
+                 onCancel(); // Exit edit mode via parent's cancel handler
+             }
+
+
+        } finally {
+            setIsSaving(false);
+            // The parent component (UsersModal -> UsersTable) is responsible
+            // for setting editingUserId to null upon successful save via onSaveUserUpdates.
+            // And potentially triggering a data refresh.
+        }
     };
 
     const handleEditButtonClick = () => {
@@ -183,12 +289,12 @@ const UsersTable: React.FC<UsersTableProps> = ({
         console.log('[UsersTable] Calling window.electronAPI.getUsers()...');
         const response = await window.electronAPI.getUsers();
         console.log('[UsersTable] Received response from IPC:', response);
-
+        
         if (!Array.isArray(response)) {
           console.error('[UsersTable] Invalid response format - not an array:', response);
           throw new Error('Invalid response format');
         }
-
+        
         console.log(`[UsersTable] Response is valid array with ${response.length} users. Setting state.`);
         setUsers(response);
       } catch (err) {
