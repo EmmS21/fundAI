@@ -2,7 +2,9 @@ package api
 
 import (
 	"FundAIHub/internal/db"
+	"bytes"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -34,41 +36,60 @@ func (h *DownloadHandler) StartDownload(w http.ResponseWriter, r *http.Request) 
 		Resume    bool   `json:"resume,omitempty"`
 	}
 
+	// It might also be useful to log the raw body first
+	bodyBytes, _ := io.ReadAll(r.Body)
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))                      // Restore the body for Decode
+	log.Printf("[StartDownload] Received Raw Body: %s", string(bodyBytes)) // Optional raw body logging
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[StartDownload] Error decoding request body: %v", err) // Log decoding errors
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
+	// --- Add logging right here ---
+	log.Printf("[StartDownload] Attempting to parse ContentID: [%s]", req.ContentID) // Log the exact string being parsed
+
+	// This part expects the value to be a valid UUID string.
 	contentID, err := uuid.Parse(req.ContentID)
 	if err != nil {
+		// Log the error from uuid.Parse
+		log.Printf("[StartDownload] Error parsing ContentID '%s': %v", req.ContentID, err)
 		http.Error(w, "Invalid content ID", http.StatusBadRequest)
 		return
 	}
 
 	// Get hardware_id and user_id from middleware context
+	log.Printf("[StartDownload] Getting context values for device and user") // Added log
 	deviceID := r.Context().Value("device_id").(string)
 	userID := r.Context().Value("user_id").(string)
+	log.Printf("[StartDownload] Context values - DeviceID: %s, UserID: %s", deviceID, userID) // Added log
 
 	// Convert deviceID string to UUID
+	log.Printf("[StartDownload] Parsing DeviceID string to UUID: [%s]", deviceID) // Added log
 	deviceUUID, err := uuid.Parse(deviceID)
 	if err != nil {
+		log.Printf("[StartDownload] Error parsing DeviceID '%s': %v", deviceID, err) // Log device ID parse error
 		http.Error(w, "Invalid device ID", http.StatusBadRequest)
 		return
 	}
+	log.Printf("[StartDownload] DeviceID parsed successfully: %s", deviceUUID.String()) // Added log
 
 	download := &db.Download{
 		DeviceID:  deviceUUID,
 		UserID:    userID,
-		ContentID: contentID,
+		ContentID: contentID, // Uses the parsed UUID
 		Status:    "started",
 	}
+	log.Printf("[StartDownload] Creating download record: %+v", download) // Added log
 
 	if err := h.store.CreateDownload(r.Context(), download); err != nil {
-		log.Printf("[Error] Failed to create download: %v", err)
+		log.Printf("[StartDownload] [Error] Failed to create download in DB: %v", err) // Clarified log source
 		http.Error(w, "Failed to start download", http.StatusInternalServerError)
 		return
 	}
 
+	log.Printf("[StartDownload] Download record created successfully. Sending response.") // Added log
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(download)
 }
