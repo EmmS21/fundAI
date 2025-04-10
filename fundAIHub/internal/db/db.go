@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
@@ -29,6 +30,12 @@ func NewConnection(cfg Config) (*sql.DB, error) {
 		log.Printf("Error pinging database: %v", err)
 		return nil, err
 	}
+
+	// Set pool parameters
+	db.SetMaxOpenConns(25)                 // Example: Limit to 25 open connections
+	db.SetMaxIdleConns(10)                 // Example: Keep up to 10 idle connections
+	db.SetConnMaxLifetime(5 * time.Minute) // Example: Reuse connections for up to 5 minutes
+	db.SetConnMaxIdleTime(1 * time.Minute) // Example: Close connections idle for > 1 minute
 
 	log.Println("Successfully connected to database")
 	return db, nil
