@@ -177,36 +177,48 @@ func (h *DownloadHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DownloadHandler) GetDownloadURL(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[GetDownloadURL] Handler started for request: %s", r.URL.String()) // Added log
+
 	if r.Method != http.MethodGet {
+		log.Printf("[GetDownloadURL] Error: Method not allowed (%s)", r.Method) // Added log
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	contentID := r.URL.Query().Get("content_id")
+	log.Printf("[GetDownloadURL] Attempting to get content_id from query: [%s]", contentID) // Added log
 	if contentID == "" {
+		log.Printf("[GetDownloadURL] Error: Missing content_id query parameter") // Added log
 		http.Error(w, "Missing content ID", http.StatusBadRequest)
 		return
 	}
 
+	log.Printf("[GetDownloadURL] Attempting to parse contentID string: [%s]", contentID) // Added log
 	id, err := uuid.Parse(contentID)
 	if err != nil {
+		log.Printf("[GetDownloadURL] Error parsing contentID '%s': %v", contentID, err) // Added log
 		http.Error(w, "Invalid content ID", http.StatusBadRequest)
 		return
 	}
+	log.Printf("[GetDownloadURL] ContentID parsed successfully: %s", id.String()) // Added log
 
 	// Generate URL with 1-hour expiration
+	log.Printf("[GetDownloadURL] Calling urlGenerator.GenerateURL for ID: %s", id.String()) // Added log
 	url, err := h.urlGenerator.GenerateURL(id, time.Hour)
 	if err != nil {
-		log.Printf("[Error] Failed to generate download URL: %v", err)
+		// This log already exists, but added context
+		log.Printf("[GetDownloadURL] [Error] urlGenerator.GenerateURL failed: %v", err)
 		http.Error(w, "Failed to generate download URL", http.StatusInternalServerError)
 		return
 	}
+	log.Printf("[GetDownloadURL] urlGenerator.GenerateURL succeeded. URL: %s", url) // Added log
 
 	response := map[string]string{
 		"download_url": url,
 		"expires_in":   "1h",
 	}
 
+	log.Printf("[GetDownloadURL] Sending success response: %+v", response) // Added log
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
