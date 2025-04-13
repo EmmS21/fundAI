@@ -318,6 +318,7 @@ func (h *DownloadHandler) HandleSignedDownload(w http.ResponseWriter, r *http.Re
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", content.Size))
 	}
 	log.Printf("[HandleSignedDownload] Set download headers.")
+	log.Printf("[HandleSignedDownload] Headers set: %v", w.Header())
 
 	// 6. Stream the file content
 	log.Printf("[HandleSignedDownload] Starting file stream to client...")
