@@ -102,56 +102,72 @@ func (h *DownloadHandler) StartDownload(w http.ResponseWriter, r *http.Request) 
 
 // UpdateStatus updates the status of an existing download
 func (h *DownloadHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
+	// 1. Check Method
 	if r.Method != http.MethodPut {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	downloadID := r.URL.Query().Get("id")
-	log.Printf("[Debug] Received request to update download ID: %s", downloadID)
-
-	if downloadID == "" {
-		http.Error(w, "Missing download ID", http.StatusBadRequest)
-		return
-	}
-
-	var update struct {
+	// 2. Define struct for request body
+	var updateReq struct {
+		ID              string  `json:"id"` // Expect 'id' from frontend body
 		Status          string  `json:"status"`
-		BytesDownloaded int64   `json:"bytes_downloaded"`
-		ErrorMessage    *string `json:"error_message,omitempty"`
+		BytesDownloaded int64   `json:"bytes_downloaded"`        // Keep optional fields if frontend might send them
+		ErrorMessage    *string `json:"error_message,omitempty"` // Use pointer for optional field
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
+	// 3. Decode JSON body into the struct
+	if err := json.NewDecoder(r.Body).Decode(&updateReq); err != nil {
+		log.Printf("[UpdateStatus] Error decoding request body: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+	log.Printf("[UpdateStatus] Received update request body: %+v", updateReq)
 
-	id, err := uuid.Parse(downloadID)
-	if err != nil {
-		log.Printf("[Error] Failed to parse UUID: %v", err)
-		http.Error(w, "Invalid download ID", http.StatusBadRequest)
+	// 4. Validate and Parse the ID from the struct
+	if updateReq.ID == "" {
+		log.Printf("[UpdateStatus] Error: Missing 'id' field in request body")
+		http.Error(w, "Missing download ID in request body", http.StatusBadRequest)
 		return
 	}
-	log.Printf("[Debug] Parsed UUID: %s", id)
 
-	download, err := h.store.GetDownloadByID(r.Context(), id)
+	downloadUUID, err := uuid.Parse(updateReq.ID)
 	if err != nil {
-		log.Printf("[Error] Failed to find download: %v", err)
-		http.Error(w, "Download not found", http.StatusNotFound)
+		log.Printf("[UpdateStatus] Error parsing download ID '%s' from body: %v", updateReq.ID, err)
+		http.Error(w, "Invalid download ID format", http.StatusBadRequest)
 		return
 	}
-	log.Printf("[Debug] Found download: %+v", download)
+	log.Printf("[UpdateStatus] Parsed Download UUID from body: %s", downloadUUID)
 
-	download.Status = update.Status
-	download.BytesDownloaded = update.BytesDownloaded
-	download.ErrorMessage = update.ErrorMessage
+	// 5. Fetch the existing download record from DB using the parsed UUID
+	download, err := h.store.GetDownloadByID(r.Context(), downloadUUID) // Use the UUID parsed from the body
+	if err != nil {
+		// Handle potential database errors (e.g., not found)
+		if err == sql.ErrNoRows { // Assuming db uses standard sql errors
+			log.Printf("[UpdateStatus] Error: Download record not found for ID: %s", downloadUUID)
+			http.Error(w, "Download not found", http.StatusNotFound)
+		} else {
+			log.Printf("[UpdateStatus] [Error] Failed to find download record: %v", err)
+			http.Error(w, "Failed to retrieve download record", http.StatusInternalServerError)
+		}
+		return
+	}
+	log.Printf("[UpdateStatus] Found download record to update: %+v", download)
 
+	// 6. Update the download record fields
+	download.Status = updateReq.Status
+	download.BytesDownloaded = updateReq.BytesDownloaded // Assuming frontend sends this
+	download.ErrorMessage = updateReq.ErrorMessage       // Update optional error message
+
+	// 7. Save the updated record to the database
 	if err := h.store.UpdateDownload(r.Context(), download); err != nil {
-		log.Printf("[Error] Failed to update download: %v", err)
-		http.Error(w, "Failed to update download", http.StatusInternalServerError)
+		log.Printf("[UpdateStatus] [Error] Failed to update download record in DB: %v", err)
+		http.Error(w, "Failed to update download status", http.StatusInternalServerError)
 		return
 	}
+	log.Printf("[UpdateStatus] Successfully updated download record ID: %s", downloadUUID)
 
+	// 8. Send success response (return the updated record)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(download)
 }
