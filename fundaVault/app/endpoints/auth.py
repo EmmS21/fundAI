@@ -92,19 +92,6 @@ async def authenticate_device(
 
         user_email = user_response.data[0]['email']
 
-        # Optional: Update last_verified_at timestamp
-        update_response = db.table('devices')\
-                            .update({'last_verified_at': datetime.now(timezone.utc).isoformat()})\
-                            .eq('hardware_id', hardware_id)\
-                            .execute()
-
-        # Use hasattr for safer error checking
-        update_has_error = hasattr(update_response, 'error') and update_response.error
-        if update_has_error:
-             # Log the error but don't necessarily fail the auth for this
-             logger.error(f"Failed to update last_verified_at for device {hardware_id}: {update_response.error}")
-        # No need for commit/rollback with Supabase client library
-
         logger.info(f"Device authentication successful: HardwareID=[{hardware_id}] UserID=[{user_id}]")
         return DeviceAuthResponse(authenticated=True, user_id=user_id, email=user_email)
 

@@ -936,6 +936,8 @@ function setupIpcHandlers(/* dependencies */) {
           })
         });
 
+        log.info(`[Download] Sending contentId: ${appId} to /api/downloads/start`);
+
         if (!startDownloadResponse.ok) {
            const errorBody = await startDownloadResponse.text();
            log.error(`[Download] Failed to start download: ${startDownloadResponse.status} - ${errorBody}`);
@@ -946,12 +948,13 @@ function setupIpcHandlers(/* dependencies */) {
         }
 
         const startDownloadData = await startDownloadResponse.json();
-        const downloadId = startDownloadData.downloadId;
-        log.info(`[Download] Started successfully, Download ID: ${downloadId}`);
+        log.info(`[Download] Received response from /api/downloads/start:`, JSON.stringify(startDownloadData));
+        const recordId = startDownloadData.id;
+        log.info(`[Download] Started successfully, Download Record ID: ${recordId}`);
 
 
         // Get the actual download URL
-        const getDownloadUrlEndpoint = `${HUBSTORE_URL}/api/downloads/url?downloadId=${downloadId}`;
+        const getDownloadUrlEndpoint = `${HUBSTORE_URL}/api/downloads/url?content_id=${appId}`;
         log.info(`[Download] Getting download URL from ${getDownloadUrlEndpoint}`);
         const getDownloadUrlResponse = await fetch(getDownloadUrlEndpoint, {
           headers: {
@@ -969,50 +972,92 @@ function setupIpcHandlers(/* dependencies */) {
         }
 
         const downloadUrlData = await getDownloadUrlResponse.json();
-        const downloadUrl = downloadUrlData.downloadUrl;
+        const downloadUrl = downloadUrlData.download_url;
         if (!downloadUrl) {
-            log.error('[Download] Backend did not return a downloadUrl.');
+            log.error('[Download] Backend did not return a downloadUrl (expected download_url key). Response data:', downloadUrlData);
             throw new Error('Failed to retrieve download URL from backend.');
         }
         log.info(`[Download] Received download URL: ${downloadUrl.substring(0, 70)}...`);
 
 
-        // Start download using the download manager
-        const filename = `${appId}-${Date.now()}.zip`;
-        log.info(`[Download] Starting file download for ${filename} from URL`);
-        const downloadPath = await downloadManager.downloadFile(downloadUrl, filename);
-        log.info(`[Download] File downloaded to: ${downloadPath}`);
+        // --- DEFINE handleProgress INSIDE the handler scope ---
+        const handleProgress = (progress) => {
+          log.debug(`[Download Progress] ${appId}: ${progress.percentage}%`); // Use appId for clarity
+          // Use event.sender to send progress back to the initiating renderer
+          if (event && event.sender && !event.sender.isDestroyed()) {
+             event.sender.send('download:progress', { // <-- Use event.sender.send
+               appId: appId,
+               percentage: progress.percentage,
+               transferred: progress.transferred,
+               total: progress.total
+             });
+          }
+        };
+        // --- End handleProgress Definition ---
+
+        // --- Add/Ensure this log ---
+        const fallbackFilename = `${appId}-${Date.now()}.tmp`; // Ensure this is the fallback you intend
+        console.log(`[main.js - LOG 1] Passing to downloadManager: fallbackFilename='${fallbackFilename}'`);
+        // --- End log ---
+
+        log.info(`[Download] Starting file download. Fallback filename: ${fallbackFilename}`); // Keep original log too
+        const fullDownloadUrl = `${HUBSTORE_URL}${downloadUrl}`;
+        log.info(`[Download] Constructed full download URL: ${fullDownloadUrl}`);
+
+        // Call download manager
+        const downloadResult = await downloadManager.downloadFile(
+            fullDownloadUrl,
+            fallbackFilename,
+            handleProgress
+        );
+        const downloadPath = downloadResult.path;
+        const actualFilename = downloadResult.filename;
+
+        // --- ADD THIS LOG ---
+        console.log(`[main.js - LOG 4] Received from downloadManager: downloadPath='${downloadPath}', actualFilename='${actualFilename}'`);
+        // --- END LOG ---
+
+        log.info(`[Download] File downloaded to: ${downloadPath} (Actual Filename: ${actualFilename})`);
+
+        // Send one final '100%' progress event
+        handleProgress({ percentage: 100, transferred: -1, total: -1 });
 
 
         // Update download status to completed
         const updateStatusUrl = `${HUBSTORE_URL}/api/downloads/status`;
-        log.info(`[Download] Updating download status to 'completed' at ${updateStatusUrl} for DownloadID ${downloadId}`);
+        log.info(`[Download] Updating download status to 'completed' at ${updateStatusUrl} for RecordID ${recordId}`);
         const updateStatusResponse = await fetch(updateStatusUrl, {
-          method: 'POST',
+          method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
             'Device-ID': clientDeviceID
           },
           body: JSON.stringify({
-            downloadId: downloadId,
+            id: recordId,
             status: 'completed'
           })
         });
 
         if (!updateStatusResponse.ok) {
             const errorBody = await updateStatusResponse.text();
-            log.warn(`[Download] Failed to update download status post-completion: ${updateStatusResponse.status} - ${errorBody}.`);
+            if (recordId === undefined) {
+              log.warn(`[Download] Failed to update status because RecordID was undefined. Backend response: ${updateStatusResponse.status} - ${errorBody}.`);
+            } else {
+              log.warn(`[Download] Failed to update download status post-completion: ${updateStatusResponse.status} - ${errorBody}.`);
+            }
         } else {
-             log.info(`[Download] Post-download status updated successfully for ${downloadId}`);
+             log.info(`[Download] Post-download status updated successfully for ${recordId}`);
         }
 
 
-        // Notify renderer of completion
+        // Notify renderer of completion (event.sender is reliable here too)
         log.info(`[Download] Notifying renderer of completion for ${appId}`);
-        event.sender.send('download:complete', {
-          appId,
-          path: downloadPath
-        });
+        if (event && event.sender && !event.sender.isDestroyed()) {
+           event.sender.send('download:complete', { // <-- Use event.sender.send
+             appId,
+             path: downloadPath
+           });
+        }
 
         return {
           success: true,
@@ -1020,8 +1065,12 @@ function setupIpcHandlers(/* dependencies */) {
           path: downloadPath
         };
       } catch (error) {
-        log.error('[Download] Error during download process:', error);
-        throw error;
+        log.error(`[Download] Error during download process for ${appId}:`, error);
+         // Optionally send error back to renderer
+         if (event && event.sender && !event.sender.isDestroyed()) {
+           event.sender.send('download:error', { appId: appId, error: error.message }); // Define 'download:error' in preload/renderer if needed
+         }
+        throw error; // Re-throw to reject the invoke promise
       }
     });
 
