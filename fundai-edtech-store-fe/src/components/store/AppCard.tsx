@@ -1,5 +1,12 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { App } from '../../types/app';
+
+// Add this before AppCardProps
+interface DownloadProgress {
+  status: 'idle' | 'downloading' | 'complete' | 'error';  // strict union type of allowed states
+  percentage: number;
+  error?: string;
+}
 
 interface AppCardProps {
   app: App;
@@ -8,8 +15,35 @@ interface AppCardProps {
 }
 
 export const AppCard: React.FC<AppCardProps> = ({ app, onDownload, progress }) => {
-  const isDownloading = progress.status === 'downloading';
-  const isComplete = progress.status === 'complete';
+  // Local state for isDownloading
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  // Ensure we have a valid progress object with default values
+  const currentProgress = {
+    status: progress?.status || 'idle',
+    percentage: progress?.percentage || 0,
+    error: progress?.error
+  };
+
+  // Use useEffect to update isDownloading when status changes
+  useEffect(() => {
+    console.log(`[AppCard ${app.id}] Status changed to:`, currentProgress.status);
+    setIsDownloading(currentProgress.status === 'downloading');
+  }, [currentProgress.status, app.id]);
+
+  const isComplete = currentProgress.status === 'complete';
+  
+  console.log(`[AppCard ${app.id}] Progress state:`, {
+    progress,
+    isDownloading,
+    status: currentProgress.status
+  });
+
+  // Use useEffect to log when props change
+  // React.useEffect(() => {
+  //   console.log(`[AppCard] Progress prop changed for app ${app.id}:`, progress);
+  // }, [progress, app.id]);
+
   return (
     <div className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
       <h3 className="text-lg font-semibold">{app.name}</h3>
@@ -22,18 +56,18 @@ export const AppCard: React.FC<AppCardProps> = ({ app, onDownload, progress }) =
               <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
                 <div
                   className="bg-blue-600 h-2.5 rounded-full"
-                  style={{ width: `${progress.percentage}%` }}
+                  style={{ width: `${currentProgress.percentage}%` }}
                 ></div>
               </div>
-              <span className="text-sm text-muted-foreground">{progress.percentage}%</span>
+              <span className="text-sm text-muted-foreground">{currentProgress.percentage}%</span>
             </div>
-          ) : isComplete ? (
+          ) : currentProgress.status === 'complete' ? (
             <button className="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700">
                Installed / Open
             </button>
-          ) : progress.status === 'error' ? (
+          ) : currentProgress.status === 'error' ? (
              <div className="text-center text-red-500 text-sm">
-               Error: {progress.error?.substring(0, 50) || 'Download failed'}
+               Error: {currentProgress.error?.substring(0, 50) || 'Download failed'}
              </div>
           ) : (
             <button

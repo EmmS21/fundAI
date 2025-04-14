@@ -4,7 +4,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Store Operations
   getApps: () => ipcRenderer.invoke('store:getApps'),
   getAppDetails: (appId) => ipcRenderer.invoke('store:getAppDetails', appId),
-  downloadApp: (appId) => ipcRenderer.invoke('store:downloadApp', appId),
+  downloadApp: (args) => ipcRenderer.invoke('store:downloadApp', args),
   syncApps: () => ipcRenderer.invoke('store:syncApps'),
   
   // Auth Operations
@@ -15,10 +15,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   adminRegisterDevice: (deviceData) => ipcRenderer.invoke('admin:register-device', deviceData),
   
   // Download Progress
-  onDownloadProgress: (callback) => 
-    ipcRenderer.on('download:progress', (_event, ...args) => callback(...args)),
-  onDownloadComplete: (callback) => 
-    ipcRenderer.on('download:complete', (_event, ...args) => callback(...args)),
+  onDownloadProgress: (callback) =>
+    ipcRenderer.on('download-progress', (_event, ...args) => callback(...args)),
+  onDownloadComplete: (callback) =>
+    ipcRenderer.on('download-complete', (_event, ...args) => callback(...args)),
+  onDownloadError: (callback) =>
+    ipcRenderer.on('download-error', (_event, ...args) => callback(...args)),
+  onDownloadCancelled: (callback) =>
+    ipcRenderer.on('download-cancelled', (_event, ...args) => callback(...args)),
 
   // User Operations
   getUsers: () => ipcRenderer.invoke('user:get-all'),
@@ -45,3 +49,41 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 });
+
+contextBridge.exposeInMainWorld('electron', {
+  // Download Management
+  onDownloadProgress: (callback) =>
+    ipcRenderer.on('download-progress', callback),
+  onDownloadComplete: (callback) =>
+    ipcRenderer.on('download-complete', callback),
+  onDownloadError: (callback) => ipcRenderer.on('download-error', callback),
+  cancelDownload: (downloadUrl) =>
+    ipcRenderer.send('cancel-download', downloadUrl),
+  openFile: (filePath) => ipcRenderer.send('open-file', filePath),
+  showItemInFolder: (filePath) =>
+    ipcRenderer.send('show-item-in-folder', filePath),
+
+  // Duplicate Download Handling (NEW)
+  onDownloadDuplicateFound: (callback) => {
+    ipcRenderer.on('download-duplicate-found', callback);
+  },
+  sendDownloadDuplicateResponse: (response) => {
+    ipcRenderer.send('download-duplicate-response', response);
+  },
+
+  // General Listener Removal (Modified to be more generic)
+  // Consider replacing specific onDownload* removals if you adopt this pattern widely
+  removeListener: (channel, callback) => {
+    ipcRenderer.removeListener(channel, callback);
+  },
+  removeAllListeners: (channel) => {
+    ipcRenderer.removeAllListeners(channel);
+  },
+
+  // Provide specific listener removal if needed for this bridge
+  removeDuplicateListener: (callback) => {
+      ipcRenderer.removeListener('download-duplicate-found', callback);
+  }
+});
+
+console.log('Preload script loaded.');

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Store from './pages/Store';
 import Library from './pages/Library';
 import { Header } from './components/layout/Header';
@@ -9,6 +9,8 @@ import { UploadModal } from './components/admin/UploadModal';
 import UsersModal from './components/admin/UsersModal';
 import { useUIStore } from './stores/uiStore';
 import { SubscriptionNoticeOverlay } from './components/common/SubscriptionNoticeOverlay';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 // --- Define interfaces matching electron.d.ts (or import if separate) ---
 interface UpdateInfo {
@@ -152,6 +154,82 @@ export default function App() {
   }, []); // Empty dependency array ensures this runs only once on mount
   // --- End COMBINED Setup Effect ---
 
+  // Listen for duplicate download prompts from the main process
+  useEffect(() => {
+    const handleDuplicateDownload = (
+      _event: any,
+      {
+        originalFilename,
+        potentialDuplicatePath,
+      }: { originalFilename: string; potentialDuplicatePath: string }
+    ) => {
+      console.log(
+        'Renderer received duplicate download info:',
+        originalFilename,
+        potentialDuplicatePath
+      );
+
+      // Function to handle the confirmation action
+      const handleConfirm = (confirm: boolean) => {
+        console.log(`[App handleConfirm] About to send response:`, {
+            confirmed: confirm,
+            originalFilename,
+            potentialDuplicatePath
+        });
+        window.electron.sendDownloadDuplicateResponse({
+            confirmed: confirm,
+            originalFilename,
+            potentialDuplicatePath,
+        });
+      };
+
+      // Custom toast content component
+      const ToastContent = ({ closeToast }: { closeToast?: () => void }) => (
+        <div>
+          <p>
+            "{originalFilename}" already exists. Do you want to download a
+            duplicate?
+          </p>
+          <button
+            onClick={() => {
+              handleConfirm(true);
+              closeToast?.();
+            }}
+            style={{ marginRight: '10px' }}
+          >
+            Download Duplicate
+          </button>
+          <button
+            onClick={() => {
+              handleConfirm(false);
+              closeToast?.();
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      );
+
+      // Display the toast notification
+      toast.warn(<ToastContent />, {
+        position: 'top-center',
+        autoClose: false, // Keep open until user interacts
+        closeOnClick: false,
+        draggable: false,
+        closeButton: false, // Use custom buttons instead
+      });
+    };
+
+    window.electron.onDownloadDuplicateFound(handleDuplicateDownload);
+
+    // Cleanup listener on component unmount
+    return () => {
+      window.electron.removeListener(
+        'download-duplicate-found',
+        handleDuplicateDownload
+      );
+    };
+  }, []); // Empty dependency array ensures this runs only once on mount
 
   // --- Event Handlers ---
   const handleLoginClick = () => {
@@ -313,6 +391,7 @@ export default function App() {
           )}
         </div>
       </div>
+      <ToastContainer />
     </ThemeProvider>
   );
 }
