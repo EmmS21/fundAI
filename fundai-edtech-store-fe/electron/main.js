@@ -859,6 +859,67 @@ function setupIpcHandlers(/* dependencies */) {
     // --- END OF DELETED/COMMENTED BLOCK ---
 
 
+    // --- NEW: Sync Apps Handler ---
+    ipcMain.handle('store:syncApps', async () => {
+      log.info('[SyncApps] Handler invoked.');
+      const url = `${HUBSTORE_URL}/api/content/list`;
+      let updated = false;
+      let fetchedApps = [];
+
+      try {
+        // 1. Fetch latest app list from the server
+        log.info(`[SyncApps] Fetching latest app list from ${url}`);
+        const response = await fetch(url, { signal: AbortSignal.timeout(15000) }); // 15-second timeout
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          log.error(`[SyncApps] Failed to fetch app list: ${response.status} - ${errorText}`);
+          // Don't update cache on fetch failure, return current cache if available
+          const cachedApps = store.get('appCache', []); // Default to empty array if no cache
+          log.warn('[SyncApps] Fetch failed, returning potentially stale cache.');
+          return { success: false, updated: false, apps: cachedApps, error: `HTTP error ${response.status}` };
+        }
+
+        fetchedApps = await response.json();
+        log.info(`[SyncApps] Successfully fetched ${fetchedApps.length} apps.`);
+
+        // 2. Get current cache
+        const cachedApps = store.get('appCache', []); // Default to empty array
+
+        // 3. Compare (simple JSON string comparison)
+        const fetchedAppsString = JSON.stringify(fetchedApps);
+        const cachedAppsString = JSON.stringify(cachedApps);
+
+        if (fetchedAppsString !== cachedAppsString) {
+          log.info('[SyncApps] Fetched app list differs from cache. Updating cache.');
+          store.set('appCache', fetchedApps); // Update the cache
+          updated = true;
+          log.info('[SyncApps] Local app cache updated.');
+        } else {
+          log.info('[SyncApps] Fetched app list matches cache. No update needed.');
+        }
+
+        // 4. Return success and the potentially updated list
+        return { success: true, updated: updated, apps: fetchedApps };
+
+      } catch (error) {
+        log.error('[SyncApps] Error during app sync:', error);
+        // Attempt to return cache on error, otherwise indicate total failure
+        const cachedApps = store.get('appCache', null);
+        if (cachedApps !== null) {
+            log.warn('[SyncApps] Sync failed due to error, returning potentially stale cache.');
+            return { success: false, updated: false, apps: cachedApps, error: error.message || 'Unknown sync error' };
+        } else {
+            log.error('[SyncApps] Sync failed and no cache available.');
+            // Rethrow or return a specific error structure
+             throw new Error(`Failed to sync apps and no cache available: ${error.message}`);
+             // Or: return { success: false, updated: false, apps: [], error: `Sync failed, no cache: ${error.message}` };
+        }
+      }
+    });
+    // --- END: Sync Apps Handler ---
+
+
     // Handler for fetching books - Modified to return placeholder
     ipcMain.handle('books:getBooks', async () => {
         log.info(`IPC: Handling books:getBooks - Returning 'Coming Soon' placeholder.`);
@@ -929,9 +990,8 @@ function setupIpcHandlers(/* dependencies */) {
         }
 
       let finalFilenameToUse = intendedFilename;
-      let proceedWithDownload = true; // Assume we proceed unless cancelled
+      let proceedWithDownload = true; // We'll manage this based on the response
 
-      // --- Main try block for the entire handler's core logic ---
       try {
           // 1. Get Download URL
           const getDownloadUrlEndpoint = `${HUBSTORE_URL}/api/downloads/url?content_id=${appId}`;
@@ -960,109 +1020,129 @@ function setupIpcHandlers(/* dependencies */) {
           const potentialDuplicatePath = path.join(downloadsPath, intendedFilename);
           log.info(`[Download] Checking duplicate: ${potentialDuplicatePath}`);
 
-          // Ensure fs.existsSync is handled safely within this try block
           if (fs.existsSync(potentialDuplicatePath)) {
-              log.warn(`[Download] Duplicate file found: ${potentialDuplicatePath}`);
-              proceedWithDownload = false; // Pause default action
+              log.warn(`[Download] Duplicate found: ${intendedFilename}`);
+              proceedWithDownload = false; // Assume cancel unless confirmed
 
-              const userConfirmed = await new Promise((resolve) => {
-                  pendingDuplicateConfirmations[potentialDuplicatePath] = resolve;
-                  log.info(`[Download] Sending duplicate prompt for ${intendedFilename}`);
-                  if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
-                      mainWindow.webContents.send('download-duplicate-found', {
-                          originalFilename: intendedFilename,
-                          potentialDuplicatePath: potentialDuplicatePath,
-                      });
-                  } else {
-                       log.error("[Download] Cannot send prompt, mainWindow unavailable.");
-                       resolve(false); // Auto-cancel if window gone
-                       delete pendingDuplicateConfirmations[potentialDuplicatePath];
-                  }
-                   // Optional Timeout Here
-              }); // End of promise
+              // Send event to renderer and WAIT for response
+              mainWindow.webContents.send('download-duplicate-found', {
+                  originalFilename: intendedFilename,
+                  potentialDuplicatePath: potentialDuplicatePath
+              });
 
-              if (userConfirmed) {
-                  log.info(`[Download] User confirmed duplicate. Generating unique name...`);
-                  finalFilenameToUse = generateUniqueFilename(downloadsPath, intendedFilename); // Ensure helper is defined
-                  proceedWithDownload = true; // Allow download with new name
+              // --- Wait for the specific response ---
+              const userResponse = await new Promise((resolve) => {
+                  ipcMain.once('download-duplicate-response', (event, response) => {
+                      log.info(`[Download] Received download-duplicate-response:`, response);
+                      // Ensure the response corresponds to the file we asked about
+                      // --- Modify the check to use appId if filename might change ---
+                      // We should primarily rely on the filename asked about initially for matching the response
+                      if (response && response.originalFilename === intendedFilename) {
+                           resolve(response);
+                      } else {
+                          log.warn(`[Download] Received duplicate response for wrong file/context. Expected originalFilename: ${intendedFilename}, Got: ${response?.originalFilename}`);
+                          // Resolve false to prevent proceeding if the response context seems wrong
+                          // resolve({ confirmed: false }); 
+                           // Or keep listening if multiple concurrent prompts are possible and robustly handled
+                           // For now, assume mismatch means cancel this path
+                      }
+                  });
+                   // Add a timeout? Consider what happens if the renderer never responds.
+                   // setTimeout(() => resolve({ confirmed: false }), 30000); // Example: default to cancel after 30s
+              });
+              // --- End waiting ---
+
+
+              if (userResponse && userResponse.confirmed) {
+                  log.info(`[Download] User confirmed duplicate download for: ${intendedFilename} (AppID: ${appId})`);
+                  const downloadsPath = app.getPath('downloads'); // Ensure downloadsPath is defined here
+                  finalFilenameToUse = generateUniqueFilename(downloadsPath, intendedFilename);
+                  log.info(`[Download] Generated unique filename: ${finalFilenameToUse}`);
+                  proceedWithDownload = true;
               } else {
-                  log.info(`[Download] User cancelled duplicate download.`);
+                  log.info(`[Download] User cancelled duplicate download for: ${intendedFilename} (AppID: ${appId})`);
                   if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
-                      log.info(`[Download] Sending download-cancelled event for ${intendedFilename} with appId ${appId}`);
-                      mainWindow.webContents.send('download-cancelled', { 
-                          filename: intendedFilename,
-                          appId: appId  // Make sure we're sending the appId
-                      });
-                      log.info(`[Download] Sent download-cancelled event`);
+                     log.info(`[Download] Sending download-cancelled event for ${intendedFilename} with appId ${appId}`);
+                     mainWindow.webContents.send('download-cancelled', {
+                         // Send the ORIGINAL appId and the intended filename the user saw
+                         filename: intendedFilename, 
+                         appId: appId 
+                     });
                   }
-                  // proceedWithDownload remains false
+                  proceedWithDownload = false;
               }
-          } else {
-              log.info(`[Download] No duplicate found.`);
-              // proceedWithDownload remains true, finalFilenameToUse remains intendedFilename
-          }
+          } // End duplicate check
 
           // 3. Start Download (Conditional)
           if (proceedWithDownload) {
-               log.info(`[Download] Calling downloadManager for: ${finalFilenameToUse}`);
-               // Ensure progress handler is defined and accessible
-               if (typeof handleProgress !== 'function') {
-                  log.error("[Download] handleProgress function is not defined!");
-                  throw new Error('Internal setup error: Progress handler missing.');
-               }
-               // Assuming downloadManager.downloadFile returns a promise
-               downloadManager.downloadFile(fullDownloadUrl, finalFilenameToUse, handleProgress)
-                  .then(result => {
-                      log.info('[Download] downloadManager success:', result);
-                      if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
-                          mainWindow.webContents.send('download-complete', result); // Send full result
-                      }
-                  })
-                  .catch(error => {
-                      log.error('[Download] downloadManager error:', error);
-                      if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
-                          mainWindow.webContents.send('download-error', {
-                              filename: finalFilenameToUse,
-                              error: error.message || 'Unknown download error.'
-                          });
-                      }
-                      // Note: Errors from the async download don't automatically reject the handle's promise
-                  });
-               // Return success from the handle's perspective (initiation)
-               return { success: true, filename: finalFilenameToUse };
+             log.info(`[Download] Calling downloadManager for: ${finalFilenameToUse} (AppID: ${appId})`);
+             if (typeof handleProgress !== 'function') {
+                log.error("[Download] handleProgress function is not defined!");
+                throw new Error('Internal setup error: Progress handler missing.');
+             }
+             
+             // Pass appId to the progress handler context if needed by handleProgress itself
+             // e.g., by wrapping handleProgress or modifying it
+             const progressCallback = (progress) => handleProgress(progress, appId); // Example wrap
+
+             downloadManager.downloadFile(fullDownloadUrl, finalFilenameToUse, progressCallback) // Use wrapped handler
+                .then(result => {
+                    // Result likely contains { filename (renamed), path }
+                    log.info('[Download] downloadManager success:', result);
+                    if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
+                        // --- Ensure appId is included in the 'download-complete' payload ---
+                        mainWindow.webContents.send('download-complete', { 
+                            ...result, // Contains actual filename and path
+                            appId: appId // Add the original appId
+                        }); 
+                    }
+                })
+                .catch(error => {
+                    log.error('[Download] downloadManager error:', error);
+                    if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
+                         // --- Ensure appId is included in the 'download-error' payload ---
+                        mainWindow.webContents.send('download-error', {
+                            filename: finalFilenameToUse, // The name we attempted to save as
+                            error: error.message || 'Unknown download error.',
+                            appId: appId // Add the original appId
+                        });
+                    }
+                });
+             // Return success from the handle's perspective (initiation)
+             // Return the *original* appId and the *final* filename it will be saved as
+             return { success: true, filename: finalFilenameToUse, appId: appId }; 
           } else {
               // If proceedWithDownload is false (due to cancellation)
-              return { cancelled: true, filename: intendedFilename };
+              log.info(`[Download] Download process halted for ${intendedFilename} (AppID: ${appId}).`);
+              // Return cancellation status with original identifiers
+              return { cancelled: true, filename: intendedFilename, appId: appId }; 
           }
 
       // --- CATCH block for the main try block ---
       } catch (error) {
-          // This block MUST immediately follow the closing brace of the 'try' block above
-          log.error(`[Download] Error within store:downloadApp handler for ${intendedFilename}:`, error);
-          // Send error back to the specific renderer call that used invoke
-          if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('download-error', { // Also send generic error event
-                  filename: finalFilenameToUse, // Name we were trying to use
-                  error: error.message || 'Error setting up download.'
-              });
-          }
-          // Re-throw the error so the promise returned by ipcMain.handle is rejected
-          throw error;
-      } // --- END OF CATCH for main try block ---
-
-      // ** End of revised store:downloadApp **
+           log.error(`[Download] Error within store:downloadApp handler for ${intendedFilename} (AppID: ${appId}):`, error);
+           // Send error event with appId if possible
+           if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed() && appId) {
+                mainWindow.webContents.send('download-error', {
+                    filename: finalFilenameToUse, // Or intendedFilename if error happened before renaming
+                    error: error.message || 'Caught general download error.',
+                    appId: appId // Add the original appId
+                });
+           }
+           throw error; // Re-throw error for the ipcMain.handle promise
+      } // --- END OF CATCH ---
     }); // --- End of revised store:downloadApp handler ---
 
 
-    // --- Existing Progress Handler (ensure it's defined) ---
-    // Define handleProgress - it needs access to mainWindow
-        const handleProgress = (progress) => {
-        if (mainWindow && mainWindow.webContents && progress) {
-            // console.log('[Main] Sending progress:', progress.percentage); // Optional logging
-            mainWindow.webContents.send('download-progress', progress);
-        } else {
-            // console.warn('[Main] Cannot send progress - mainWindow or progress data invalid.');
-        }
+    // --- Existing Progress Handler ---
+    // Ensure handleProgress is defined, accessible, and correctly sends 'download-progress'
+    const handleProgress = (progress, appId) => { // Add appId parameter
+      if (mainWindow && mainWindow.webContents && progress) {
+          // --- Ensure appId is included in the 'download-progress' payload ---
+          mainWindow.webContents.send('download-progress', { ...progress, appId: appId }); 
+      } else {
+          // console.warn('[Main] Cannot send progress - mainWindow or progress data invalid.');
+      }
     };
 
     // --- Keep other existing handlers ---
@@ -1084,6 +1164,8 @@ function setupIpcHandlers(/* dependencies */) {
 
     // Add this inside the setupIpcHandlers function
 
+    // --- COMMENT OUT/REMOVE THIS DUPLICATE LISTENER ---
+    /* 
     ipcMain.on('download-duplicate-response', (event, { confirmed, potentialDuplicatePath }) => {
         log.info(`[Download Response] Received response for ${potentialDuplicatePath}: Confirmed = ${confirmed}`);
         const resolve = pendingDuplicateConfirmations[potentialDuplicatePath];
@@ -1095,6 +1177,8 @@ function setupIpcHandlers(/* dependencies */) {
             log.warn(`[Download Response] No pending confirmation found for path: ${potentialDuplicatePath}`);
         }
     });
+    */
+   // --- END COMMENT OUT/REMOVE ---
 
     // ... rest of setupIpcHandlers ...
 
