@@ -1,144 +1,231 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { App } from '../../types/app';
 import { AppCard } from './AppCard';
 import { useAppStore } from '../../stores/appStore';
 import { useUIStore } from '../../stores/uiStore';
 
-interface AppGridProps {
-  apps: App[];
-  onAppClick?: (app: App) => void;
+// Type definitions for API and Events (consider moving to a d.ts file)
+// Ensure this matches what's exposed in preload.js under 'electronAPI'
+interface ElectronAPI {
+    getApps: () => Promise<App[]>;
+    downloadApp: (args: { appId: string; filename: string }) => Promise<any>;
+    onDownloadProgress: (callback: (data: DownloadProgressData) => void) => void;
+    onDownloadComplete: (callback: (data: DownloadCompleteData) => void) => void;
+    onDownloadError: (callback: (data: DownloadErrorData) => void) => void;
+    onDownloadCancelled: (callback: (data: DownloadCancelledData) => void) => void;
+    removeListener: (channel: string, callback: (...args: any[]) => void) => void;
+    // Add ALL other methods exposed under electronAPI in preload.js
+    syncApps: () => Promise<any>;
+    getAppDetails: (appId: string) => Promise<any>;
+    adminLogin: (credentials: any) => Promise<any>;
+    checkAdmin: () => Promise<boolean>;
+    clearAuth: () => Promise<boolean>;
+    adminRegisterDevice: (deviceData: any) => Promise<any>;
+    getUsers: () => Promise<any[]>;
+    updateUserStatus: (userId: string, status: string) => Promise<any>;
+    deleteUser: (userId: string) => Promise<any>;
+    updateUserSubscription: (userId: string, payload: any) => Promise<any>;
+    deleteUserSubscription: (userId: string) => Promise<any>;
+    subscribeUser: (userId: string) => Promise<any>;
+    getBooks: () => Promise<any[]>; // Assuming Book[] type exists
+    onUpdateAvailable: (callback: (info: any) => void) => void;
+    onUpdateProgress: (callback: (progress: any) => void) => void;
+    onUpdateDownloaded: (callback: (info: any) => void) => void;
+    onUpdateError: (callback: (errorMessage: string) => void) => void;
+    restartApp: () => void;
+    removeAllUpdateListeners: () => void;
+    getAppVersion: () => Promise<string>;
+}
+
+declare global {
+    interface Window {
+        electronAPI: ElectronAPI;
+        // Keep the other bridge if needed
+         electron: {
+            onDownloadDuplicateFound: (callback: (data: any) => void) => void;
+            sendDownloadDuplicateResponse: (response: any) => void;
+            removeDuplicateListener: (callback: (...args: any[]) => void) => void;
+            openFile: (filePath: string) => void;
+            showItemInFolder: (filePath: string) => void;
+         }
+    }
+}
+
+// Interfaces for Download Events Data (match data sent from main.js)
+interface DownloadProgressData {
+  appId?: string; // Make appId optional if sometimes only filename is sent
+  filename: string;
+  percentage: number;
+  path: string;
+  transferred: number;
+  total: number;
+}
+interface DownloadCompleteData {
+  appId?: string;
+  filename: string;
+  path: string;
+}
+interface DownloadErrorData {
+  appId?: string;
+  filename: string;
+  error: string;
+}
+// --- Interface for Cancelled Data ---
+interface DownloadCancelledData {
+    filename: string;
+    appId?: string; // Include appId if main.js sends it
 }
 
 // Define the structure for progress state
 interface DownloadProgress {
-  status: 'idle' | 'downloading' | 'complete' | 'error';
+  status: 'idle' | 'downloading' | 'complete' | 'error'; // Use strict types
   percentage: number;
-  error?: string; // Store error message if download fails
+  error?: string;
 }
-
-// Define the type for the progress map
-type AppDownloadProgressMap = {
-  [appId: string]: DownloadProgress;
-};
+type AppDownloadProgressMap = { [appId: string]: DownloadProgress; };
+interface AppGridProps { apps: App[]; onAppClick?: (app: App) => void; }
 
 export const AppGrid: React.FC<AppGridProps> = ({ apps, onAppClick }) => {
   const { loadApps, syncApps, isOffline } = useAppStore();
   const { showSubNoticeOverlay } = useUIStore();
-  // State to hold progress for all apps displayed by this grid
   const [downloadProgress, setDownloadProgress] = useState<AppDownloadProgressMap>({});
+
+  // Add an effect to log state changes
+  React.useEffect(() => {
+    console.log('[AppGrid] Download progress state changed:', downloadProgress);
+  }, [downloadProgress]);
+
+  // Helper to find appId consistently
+  const findAppId = useCallback((filename: string): string | undefined => {
+      // Find app where app.name matches the filename received from the event
+      const foundApp = apps.find(app => app.name === filename);
+      return foundApp?.id;
+  }, [apps]); // Dependency on 'apps' state is crucial
 
   useEffect(() => {
     loadApps();
     const syncInterval = setInterval(() => {
-        if (!isOffline) {
-            syncApps();
-        }
+      if (!isOffline) { syncApps(); }
     }, 15 * 60 * 1000);
 
-    // --- Setup IPC Listeners ---
-    const handleProgress = (data: { appId: string; percentage: number }) => {
-      console.log(`[AppGrid] Progress for ${data.appId}: ${data.percentage}%`);
-      console.log(`[AppGrid] State BEFORE update for ${data.appId}:`, downloadProgress[data.appId]);
-      setDownloadProgress(prev => {
-          const newState = {
-             ...prev,
-             [data.appId]: {
-               ...prev[data.appId],
-               status: 'downloading',
-               percentage: data.percentage,
-             }
-          };
-          console.log(`[AppGrid] State AFTER update for ${data.appId}:`, newState[data.appId]);
-          return newState;
-       });
+    // --- Listener Handlers ---
+    const handleProgress = (data: DownloadProgressData) => {
+      // Try finding appId using the helper, prioritize data.appId if present
+      const appId = data.appId || findAppId(data.filename);
+      if (!appId) return;
+      setDownloadProgress(prev => ({ ...prev, [appId]: { ...prev[appId], status: 'downloading', percentage: data.percentage } }));
     };
 
-    const handleComplete = (data: { appId: string; path: string; error?: string }) => {
-      console.log(`[AppGrid] Complete for ${data.appId}`, data.error ? `Error: ${data.error}` : `Path: ${data.path}`);
-      console.log(`[AppGrid] State BEFORE complete update for ${data.appId}:`, downloadProgress[data.appId]);
-      setDownloadProgress(prev => {
-          const newState = {
-            ...prev,
-            [data.appId]: {
-               status: data.error ? 'error' : 'complete',
-               percentage: data.error ? prev[data.appId]?.percentage ?? 0 : 100,
-               error: data.error,
+    const handleComplete = (data: DownloadCompleteData) => {
+      const appId = data.appId || findAppId(data.filename);
+      if (!appId) return;
+      console.log(`[AppGrid] Complete ${appId}`);
+      setDownloadProgress(prev => ({ ...prev, [appId]: { status: 'complete', percentage: 100, error: undefined } }));
+    };
+
+    const handleError = (data: DownloadErrorData) => {
+      const appId = data.appId || findAppId(data.filename);
+      if (!appId) return;
+      console.error(`[AppGrid] Error ${appId}: ${data.error}`);
+      setDownloadProgress(prev => ({ ...prev, [appId]: { ...prev[appId], status: 'error', error: data.error } }));
+    };
+
+    const handleCancelled = (data: DownloadCancelledData) => {
+        console.log(`[AppGrid handleCancelled] START - Received event:`, data);
+        const appId = data.appId;
+        if (!appId) {
+            console.warn('[AppGrid handleCancelled] No appId in cancellation event:', data);
+            return;
+        }
+
+        console.log(`[AppGrid handleCancelled] Setting progress for ${appId} to cancelled`);
+        setDownloadProgress(prev => {
+            console.log(`[AppGrid handleCancelled] Previous state:`, prev);
+            const newState = {
+                ...prev,
+                [appId]: { status: 'cancelled', percentage: 0 }
+            };
+            console.log(`[AppGrid handleCancelled] New state:`, newState);
+            return newState;
+        });
+    };
+
+    // Add logging for event registration
+    console.log('[AppGrid] Setting up download-cancelled event listener');
+    window.electronAPI.onDownloadCancelled(handleCancelled);
+
+    // Register listeners using window.electronAPI
+    const api = window.electronAPI;
+    if (api) {
+        // Add direct registration for each event
+        api.onDownloadProgress(handleProgress);
+        api.onDownloadComplete(handleComplete);
+        api.onDownloadError(handleError);
+        api.onDownloadCancelled(handleCancelled); // This is the critical one
+
+        // Keep track for cleanup
+        const listeners = [
+            { channel: 'download-progress', handler: handleProgress },
+            { channel: 'download-complete', handler: handleComplete },
+            { channel: 'download-error', handler: handleError },
+            { channel: 'download-cancelled', handler: handleCancelled }
+        ];
+
+        // Cleanup function
+        return () => {
+            console.log("[AppGrid] Cleanup initiated.");
+            clearInterval(syncInterval);
+            
+            if (api.removeListener) {
+                listeners.forEach(({ channel, handler }) => {
+                    api.removeListener(channel, handler);
+                });
             }
-          };
-          return newState;
-       });
-      // Optionally: reload apps list or update specific app status in main store
-      // loadApps();
-    };
-
-    // Check if API is available before registering listeners
-    if (window.electronAPI?.onDownloadProgress) {
-        window.electronAPI.onDownloadProgress(handleProgress);
-    }
-    if (window.electronAPI?.onDownloadComplete) {
-        window.electronAPI.onDownloadComplete(handleComplete);
+            console.log('[AppGrid] Cleaning up download-cancelled event listener');
+        };
     }
 
-    // --- Cleanup Listeners ---
-    // Returning a function from useEffect performs cleanup on unmount
-    return () => {
-      // It's generally good practice to remove listeners, but preload.js doesn't
-      // currently expose removeListener functions. If you add them, use them here.
-      // For now, the listeners attached via preload will persist but shouldn't cause
-      // issues unless the component remounts frequently without page reload.
-      console.log("[AppGrid] Cleanup: Listeners might persist (no removeListener exposed).");
-    };
+  }, [apps, findAppId, isOffline, loadApps, syncApps]);
 
-  }, [loadApps, syncApps, isOffline]); // Dependencies for initial setup
 
-  const handleDownload = async (appId: string) => {
-    if (isOffline) {
-        console.log('[AppGrid] Download attempt while offline.');
-        alert("Cannot start download while offline.");
-        return;
-    }
-
-    // --- Set initial downloading state ---
+  const handleDownload = async (appId: string, filename: string) => {
+    console.log(`[AppGrid handleDownload] Starting download for ${appId}`);
+    
     setDownloadProgress(prev => ({
-        ...prev,
-        [appId]: { status: 'downloading', percentage: 0 }
+      ...prev,
+      [appId]: { status: 'downloading', percentage: 0, error: undefined }
     }));
-    console.log(`[AppGrid] Attempting download for appId: ${appId}`);
 
     try {
-      // The actual download result (path) is handled by onDownloadComplete now
-      await window.electronAPI.downloadApp(appId);
-      console.log(`[AppGrid] downloadApp IPC invocation successful for ${appId}. Waiting for progress/completion events.`);
-      // Don't assume success here, wait for the 'download:complete' event
-    } catch (error: any) {
-      console.error(`[AppGrid] Error invoking downloadApp for ${appId}:`, error);
-       // --- Update state on invocation error ---
-       setDownloadProgress(prev => ({
-           ...prev,
-           [appId]: { status: 'error', percentage: 0, error: error.message }
-       }));
-
-      if (error && error.message && typeof error.message === 'string' && error.message.includes('SUBSCRIPTION_INACTIVE_OR_DEVICE_UNREGISTERED')) {
-        console.log('[AppGrid] Detected subscription/device registration error. Showing overlay.');
-        showSubNoticeOverlay();
-      } else {
-        alert(`Download failed: ${error.message}`);
-      }
+      const result = await window.electronAPI.downloadApp({ appId, filename });
+      console.log(`[AppGrid handleDownload] Download result:`, result);
+    } catch (error) {
+      console.error(`[AppGrid handleDownload] Error:`, error);
+      setDownloadProgress(prev => ({
+        ...prev,
+        [appId]: { status: 'error', percentage: 0, error: error.message }
+      }));
     }
   };
+
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
       {apps.map((app) => {
-        // Calculate the progress prop for this specific app
         const progressProp = downloadProgress[app.id] ?? { status: 'idle', percentage: 0 };
+        // --- Use app.name as filename ---
+        const filenameToUse = app.name || `${app.id}-download`; // Fallback if name is missing
+
+        // --- TEMPORARY LOG ---
+        // console.log(`[AppGrid Rendering] App: ${app.id}, Progress being passed to AppCard:`, progressProp);
+        // --------------------
 
         return (
           <AppCard
             key={app.id}
             app={app}
-            onDownload={() => handleDownload(app.id)}
-            progress={progressProp} // Pass the calculated prop
+            onDownload={() => handleDownload(app.id, filenameToUse)}
+            progress={progressProp}
           />
         );
       })}
