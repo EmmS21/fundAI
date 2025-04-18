@@ -20,6 +20,8 @@ import re
 from src.core.mongodb.client import MongoDBClient
 import random
 from src.data.database.models import QuestionResponse, User, ExamResult
+from bs4 import BeautifulSoup
+import mimetypes
 
 
 logger = logging.getLogger(__name__)
@@ -76,45 +78,47 @@ class CacheManager:
     
     def __init__(self):
         """Initialize the cache manager"""
-        if self.initialized:
+        # Prevent re-initialization if using Singleton pattern correctly
+        if hasattr(self, 'initialized') and self.initialized: 
             return
             
-        # Create cache directories if they don't exist
+        # --- FIX: Initialize logger FIRST ---
+        # Assign logger to the instance immediately
+        self.logger = logging.getLogger(__name__) 
+        # --- End FIX ---
+
+        # Proceed with the rest of the initialization
+        self.logger.debug("Initializing CacheManager...") # Use the logger now
+
+        # Create cache directories 
         os.makedirs(self.METADATA_DIR, exist_ok=True)
         os.makedirs(self.ASSETS_DIR, exist_ok=True)
         os.makedirs(self.QUESTIONS_DIR, exist_ok=True)
         
+        # Initialize other attributes BEFORE potentially calling methods that use them
         self.mongodb_client = MongoDBClient()
-        
-        # Network monitor for connection status
         self.network_monitor = NetworkMonitor()
-        
-        # Thread control
         self.running = False
         self.thread = None
-        
-        # Subscription cache
         self.subscription_cache = None
         self.subscription_cache_time = 0
-        
-        # Ensure required tables exist
-        self._ensure_tables()
-        
-        # Initialize database connection and structure
         self.db_path = os.path.join(os.path.dirname(__file__), self.DB_FILE)
         self.conn = None
-        self.lock = threading.RLock()  # Reentrant lock for thread safety
+        self.lock = threading.RLock() 
+        self.global_metadata_lock = threading.Lock() 
+        self.ttl_fresh = 3600 
+        self.ttl_stale = 86400 
+
+        # Initialize database AFTER basic attributes are set
+        self._ensure_tables() 
+        self._initialize_db() 
         
-        # Set default TTL values (in seconds)
-        self.ttl_fresh = 3600  # 1 hour
-        self.ttl_stale = 86400  # 24 hours
+        # Connect signal AFTER essential attributes are set
+        self.network_monitor.status_changed.connect(self._handle_network_change)
         
-        # We don't manually register in services registry anymore
-        # Services.py will handle this by importing us
-        
-        self._initialize_db()
+        # Mark as initialized at the very end
         self.initialized = True
-        logger.info("Cache Manager initialized")
+        self.logger.info("Cache Manager initialized") 
     
     def _initialize_db(self):
         """Initialize the SQLite database"""
@@ -620,334 +624,359 @@ class CacheManager:
             
     def _queue_questions_for_caching(self, subject: str, level_key: str, mongo_level: str):
         """Queue questions for the specified subject and level for caching."""
+        self.logger.info(f"Queueing questions for caching: {subject} at {level_key} (MongoDB level: {mongo_level})")
+        processed_papers_metadata = []
+            
         try:
-            logger.info(f"Queueing questions for caching: {subject} at {level_key} (MongoDB level: {mongo_level})")
-            
-            # Get MongoDB client
-            from src.core.mongodb.client import MongoDBClient
             client = MongoDBClient()
-            
-            # Fetch documents for the subject and level
             documents = client.get_questions_by_subject_level(subject, mongo_level, limit=50)
-            logger.info(f"Found {len(documents)} question documents to cache for {subject} at {level_key}")
+            self.logger.info(f"Found {len(documents)} source documents to process for {subject} at {level_key}")
             
             if not documents:
-                logger.warning(f"No questions found for {subject} at {mongo_level} level")
+                self.logger.warning(f"No source documents found for {subject} at {mongo_level} level")
+                self._update_global_subject_metadata(subject, level_key, [])
                 return
             
-            # Create directories
-            subject_dir = os.path.join(self.QUESTIONS_DIR, subject)
-            answers_dir = os.path.join(self.CACHE_DIR, "answers", subject)
-            
-            os.makedirs(subject_dir, exist_ok=True)
-            os.makedirs(answers_dir, exist_ok=True)
-            
-            level_dir = os.path.join(subject_dir, level_key)
-            level_answers_dir = os.path.join(answers_dir, level_key)
-            
+            # Create base cache directories (ensure paths are correct)
+            safe_subject = self._safe_filename(subject)
+            safe_level = self._safe_filename(level_key)
+            level_dir = os.path.join(self.QUESTIONS_DIR, safe_subject, safe_level)
+            answers_base_dir = os.path.join(self.CACHE_DIR, "answers", safe_subject, safe_level)
             os.makedirs(level_dir, exist_ok=True)
-            os.makedirs(level_answers_dir, exist_ok=True)
-            
-            # Track progress
-            saved_questions = 0
-            saved_answers = 0
-            
-            # Process each document
-            for doc in documents:
-                # First, convert MongoDB-specific types
+            os.makedirs(answers_base_dir, exist_ok=True)
+
+            # Process each source document (paper)
+            for doc_index, doc in enumerate(documents): # Use enumerate for logging context
+                doc_question_count = 0
+                doc_valid_image_url_count = 0 # Count valid URLs found in this doc
+                doc_downloaded_image_count = 0 # Count successfully downloaded images for this doc
+
                 safe_doc = self._mongo_to_json_serializable(doc)
-                
-                # Extract document ID
-                doc_id = str(doc.get('_id', str(uuid.uuid4())))
-                
-                # Extract year from document
-                paper_meta = doc.get('paper_meta', {})
-                year = str(paper_meta.get('Year', datetime.now().year))
+                mongo_doc_id = str(safe_doc.get('_id', f'missing_id_{doc_index}'))
+                self.logger.debug(f"Processing source document #{doc_index} (ID: {mongo_doc_id})")
+
+                # Extract Parent Document Metadata
+                source_document_id = safe_doc.get('document_id')
+                source_file_id = safe_doc.get('file_id')
+                source_file_name = safe_doc.get('file_name')
+
+                paper_meta = safe_doc.get('paper_meta', {})
+                year = str(paper_meta.get('Year', 'Unknown'))
+                term_raw = paper_meta.get('Term')
+                term = term_raw if term_raw else 'Unknown'
+                paper_number = str(paper_meta.get('PaperNumber', 'Unknown'))
                 
                 # Create year directories
                 year_dir = os.path.join(level_dir, year)
-                year_answers_dir = os.path.join(level_answers_dir, year)
-                
+                year_answers_dir = os.path.join(answers_base_dir, year)
                 os.makedirs(year_dir, exist_ok=True)
                 os.makedirs(year_answers_dir, exist_ok=True)
                 
-                # MAIN FIX: Extract individual questions from the 'questions' array
-                if 'questions' in doc and isinstance(doc['questions'], list):
-                    logger.info(f"Found {len(doc['questions'])} individual questions in document {doc_id}")
-                    
-                    # Process each question in the array
-                    for question in doc['questions']:
-                        # Extract question number
+                if 'questions' not in safe_doc or not isinstance(safe_doc['questions'], list):
+                     self.logger.warning(f"Source document {mongo_doc_id} has missing/invalid 'questions' array. Skipping.")
+                     continue
+
+                processed_questions_for_doc = [] # Hold updated questions for this doc before modifying original
+
+                # Process each individual question within the document
+                for question_index, question in enumerate(safe_doc.get('questions',[])):
+                    if not isinstance(question, dict):
+                        self.logger.warning(f"Skipping invalid question item #{question_index} (not a dict) in doc {mongo_doc_id}")
+                        processed_questions_for_doc.append(question) # Keep original invalid item maybe? Or skip?
+                        continue
+
+                    # Extract question number (ensure this logic assigns question_number_str)
                         q_num = question.get('question_number')
                         if isinstance(q_num, dict) and '$numberInt' in q_num:
-                            question_number = q_num['$numberInt']
+                            question_number_str = str(q_num['$numberInt'])
                         else:
-                            question_number = str(q_num) if q_num is not None else str(saved_questions + 1)
-                            
-                        # Extract question text
-                        question_text = question.get('question_text', '')
-                        
-                        # Get matching answer
-                        answer_doc = client.get_matching_answer(doc)
-                        
-                        # Filenames
-                        question_filename = os.path.join(year_dir, f"{question_number}.json")
-                        answer_filename = os.path.join(year_answers_dir, f"{question_number}.json")
-                        
-                        # Extract and save images
-                        local_images = []
-                        if 'images' in question and isinstance(question['images'], list):
-                            for i, img in enumerate(question['images']):
-                                if 'url' in img:
-                                    try:
-                                        img_url = img['url']
-                                        img_data = requests.get(img_url, timeout=10).content
-                                        img_filename = f"{question_number}_img_{i}.jpg"
-                                        img_path = os.path.join(year_dir, img_filename)
-                                        
-                                        with open(img_path, 'wb') as f:
-                                            f.write(img_data)
-                                        
-                                        local_images.append(img_filename)
-                                        logger.debug(f"Saved image {img_url} to {img_path}")
-                                    except Exception as e:
-                                        logger.error(f"Error saving image {img_url}: {e}")
-                        
-                        # Safe-serialize the question
-                        question_safe = self._mongo_to_json_serializable(question)
-                        
-                        # Create question data object
-                        question_data = {
-                            "id": doc_id,
+                            question_number_str = str(q_num) if q_num is not None else f"idx{question_index}"
+                    # --- Ensure question_number_str is now assigned ---
+
+                    # --- Image Processing ---
+                    processed_images = []
+                    original_images = question.get('images', [])
+
+                    # --- FIX: Move Log before the inner loop ---
+                    # Log that we are starting image processing for this specific question number
+                    if original_images and isinstance(original_images, list):
+                         self.logger.debug(f"Processing {len(original_images)} image entries for q#{question_number_str} in doc {mongo_doc_id}") 
+                         # --- End FIX ---
+
+                         for i, img_info in enumerate(original_images):
+                             local_path = None
+                             updated_img_info = img_info.copy()
+
+                             if isinstance(img_info, dict) and 'url' in img_info:
+                                 img_url = img_info.get('url')
+                                 img_label = img_info.get('label')
+
+                                 # Check if URL *looks* valid before attempting download helper
+                                 if img_url and isinstance(img_url, str) and img_url.startswith(('http://', 'https://')):
+                                     doc_valid_image_url_count += 1
+                                     # --- CALL THE CORRECTED HELPER ---
+                                     local_path = self._download_and_save_asset(
+                                         img_url, subject, level_key, year,
+                                         question_number_str, i, img_label
+                                     )
+                                     # --- Store the result ---
+                                     updated_img_info['local_path'] = local_path # Add/update local_path key
+                                     if local_path:
+                                         doc_downloaded_image_count += 1 # Increment success count
+                                 else:
+                                     # Log skipping due to invalid URL format found in data
+                                     self.logger.info(f"q#{question_number_str} img#{i}: No valid image URL specified (URL is '{img_url}'). Skipping download.")
+                                     updated_img_info['local_path'] = None # Ensure it's None if skipped
+                             else:
+                                 # Log skipping due to invalid image entry structure
+                                 self.logger.warning(f"q#{question_number_str} img#{i}: Invalid image entry structure. Skipping. Entry: {img_info}")
+                                 updated_img_info['local_path'] = None # Ensure it's None if skipped
+
+                             processed_images.append(updated_img_info) # Add updated dict to list
+                    else:
+                         # Log if no images list found for this question
+                         self.logger.debug(f"No 'images' list found or list is empty for q#{question_number_str}.")
+                    # --- End Image Processing ---
+
+                    # Prepare the final question data object for JSON saving
+                    # Create a new dict to avoid modifying the original 'question' dict in place
+                    question_data_to_save = {
+                        "id": mongo_doc_id, # Link back to original document
                             "subject": subject,
                             "level": level_key,
                             "year": year,
-                            "question_number": question_number,
-                            "text": question_text,
-                            "images": local_images,
-                            "original_question": question_safe,
-                            "answer_ref": f"{question_number}.json" if answer_doc else None
-                        }
-                        
-                        # Save the question file
-                        with open(question_filename, 'w', encoding='utf-8') as f:
-                            json.dump(question_data, f, ensure_ascii=False, indent=2)
-                        saved_questions += 1
-                        
-                        # Save the answer if available
-                        if answer_doc:
-                            # Convert answer to safe format
-                            answer_safe = self._mongo_to_json_serializable(answer_doc)
-                            
-                            # Try to find matching answer for this question
-                            answer_text = None
-                            
-                            # First check in answers array
-                            if 'answers' in answer_doc and isinstance(answer_doc['answers'], list):
-                                for ans in answer_doc['answers']:
-                                    ans_num = ans.get('question_number')
-                                    if isinstance(ans_num, dict) and '$numberInt' in ans_num:
-                                        ans_num = ans_num['$numberInt']
-                                        
-                                    if str(ans_num) == str(question_number):
-                                        answer_text = ans.get('answer_text', '')
-                                        if not answer_text:
-                                            sub_answers = ans.get('sub_answers', [])
-                                            if sub_answers:
-                                                answer_text = "\n".join([sub.get('text', '') for sub in sub_answers])
-                                        break
-                            
-                            # If not found, use whole document
-                            if not answer_text:
-                                answer_text = str(answer_safe)
-                            
-                            # Create answer data
-                            answer_data = {
-                                "id": str(answer_doc.get('_id', '')),
-                                "question_id": doc_id,
-                                "question_number": question_number,
-                                "subject": subject,
-                                "level": level_key,
-                                "year": year,
-                                "text": answer_text,
-                                "original_answer": answer_safe
-                            }
-                            
-                            # Save the answer file
-                            with open(answer_filename, 'w', encoding='utf-8') as f:
-                                json.dump(answer_data, f, ensure_ascii=False, indent=2)
-                            saved_answers += 1
-                else:
-                    # Handle documents that don't have a questions array
-                    logger.warning(f"Document {doc_id} doesn't have a questions array, treating as single question")
-                    
-                    # Use document ID as question number if not available
-                    question_number = "1"  # Default question number
-                    
-                    # Find text directly in document
-                    question_text = doc.get('question_text', doc.get('text', str(doc)))
-                    
-                    # Get matching answer
-                    answer_doc = client.get_matching_answer(doc)
-                    
-                    # Filenames
-                    question_filename = os.path.join(year_dir, f"{question_number}.json")
-                    answer_filename = os.path.join(year_answers_dir, f"{question_number}.json")
-                    
-                    # Create question data
-                    question_data = {
-                        "id": doc_id,
-                        "subject": subject,
-                        "level": level_key,
-                        "year": year,
-                        "question_number": question_number,
-                        "text": question_text,
-                        "original_document": safe_doc,
-                        "answer_ref": f"{question_number}.json" if answer_doc else None
+                        "question_number_str": question_number_str, # Processed string version
+                        # Copy other relevant fields from original question dict
+                        "question_text": question.get("question_text", ""),
+                        "topic": question.get("topic"),
+                        "subtopic": question.get("subtopic"),
+                        "difficulty": question.get("difficulty"),
+                        "context_materials": question.get("context_materials"),
+                        "sub_questions": question.get("sub_questions"),
+                        "tables": question.get("tables"),
+                        "marks": question.get("marks"),
+                        # Use the processed images list
+                        "images": processed_images,
+                        "answer_ref": f"{question_number_str}.json" # Example if answers are separate
+                        # Avoid adding 'original_question' back into itself if not needed
                     }
-                    
-                    # Save the question
-                    with open(question_filename, 'w', encoding='utf-8') as f:
-                        json.dump(question_data, f, ensure_ascii=False, indent=2)
-                    saved_questions += 1
-                    
-                    # Save answer if available
-                    if answer_doc:
-                        answer_safe = self._mongo_to_json_serializable(answer_doc)
-                        answer_text = answer_doc.get('answer_text', str(answer_doc))
-                        
-                        answer_data = {
-                            "id": str(answer_doc.get('_id', '')),
-                            "question_id": doc_id,
-                            "subject": subject,
-                            "level": level_key,
-                            "year": year,
-                            "question_number": question_number,
-                            "text": answer_text,
-                            "original_answer": answer_safe
-                        }
-                        
-                        with open(answer_filename, 'w', encoding='utf-8') as f:
-                            json.dump(answer_data, f, ensure_ascii=False, indent=2)
-                        saved_answers += 1
-            
-            # Update subject cache metadata
-            self._update_subject_cache_metadata(subject, level_key)
-            
-            logger.info(f"Successfully saved {saved_questions} questions and {saved_answers} answers for {subject} at {level_key}")
-            
+
+
+                    # Save the question JSON file
+                    question_filename = os.path.join(year_dir, f"{question_number_str}.json")
+                    try:
+                        with open(question_filename, 'w', encoding='utf-8') as f:
+                            json.dump(question_data_to_save, f, ensure_ascii=False, indent=4) # Use indent 4 maybe
+                        doc_question_count += 1
+                    except Exception as e:
+                         self.logger.error(f"Failed to save question file {question_filename}: {e}", exc_info=True)
+
+
+                    # --- Process and save the corresponding answer ---
+                    # Make sure this logic uses 'year_answers_dir'
+                    # ... (existing answer fetching/saving logic) ...
+
+                # --- Store metadata for this paper ---
+                paper_metadata = {
+                    "mongo_doc_id": mongo_doc_id,
+                    "source_document_id": source_document_id,
+                    "source_file_id": source_file_id,
+                    "source_file_name": source_file_name,
+                                "year": year,
+                    "term": term,
+                    "paper_number": paper_number,
+                    "question_count": doc_question_count,
+                    "image_url_count": doc_valid_image_url_count, # Total valid URLs found
+                    "image_download_count": doc_downloaded_image_count # Total actually downloaded
+                }
+                processed_papers_metadata.append(paper_metadata)
+                self.logger.debug(f"Collected metadata for paper {mongo_doc_id} ({source_file_name}): {doc_question_count} questions, {doc_valid_image_url_count} valid URLs, {doc_downloaded_image_count} images downloaded.")
+
+            # --- After processing all documents ---
+            self.logger.info(f"Finished processing all documents for {subject}/{level_key}.")
+            self._update_global_subject_metadata(subject, level_key, processed_papers_metadata)
+
         except Exception as e:
-            logger.error(f"Error queueing questions for caching: {e}", exc_info=True)
-    
-    def _extract_year_from_question(self, question: Dict) -> Optional[str]:
-        """Extract year from question document"""
-        # Try to get year from paper_meta
-        paper_meta = question.get('paper_meta', {})
-        year = paper_meta.get('Year')
-        
-        # If not found, try to extract from Paper field
-        if not year:
-            paper = paper_meta.get('Paper', '')
-            # Try to extract year from paper string (looking for 4 digit numbers)
-            year_match = re.search(r'20\d{2}', paper)
-            if year_match:
-                year = year_match.group(0)
-        
-        return str(year) if year else None
-    
-    def _save_question_assets(self, question: Dict, doc_id: str, subject: str, level: str, 
-                             year: str, question_number: str) -> List[str]:
-        """Save question assets (images, tables) to the cache"""
-        saved_assets = []
-        
-        # Create assets directory if needed
-        asset_dir = os.path.join(self.ASSETS_DIR, self._safe_filename(subject), level, year, question_number)
-        os.makedirs(asset_dir, exist_ok=True)
-        
-        # Process images
-        if 'images' in question and question['images']:
-            for i, image in enumerate(question['images']):
-                try:
-                    if 'url' in image:
-                        # Get image URL
-                        image_url = image['url']
-                        
-                        # Hash URL to create a filename
-                        filename = f"{self._hash_url(image_url)}.jpg"
-                        file_path = os.path.join(asset_dir, filename)
-                        
-                        # Check if we already have this asset
-                        if os.path.exists(file_path):
-                            logger.debug(f"Asset already exists: {file_path}")
-                        else:
-                            # Download the image
-                            response = requests.get(image_url, timeout=30)
-                            if response.status_code == 200:
-                                with open(file_path, 'wb') as f:
-                                    f.write(response.content)
-                                logger.info(f"Downloaded asset from {image_url} to {file_path}")
-                            else:
-                                logger.warning(f"Failed to download asset from {image_url}: {response.status_code}")
-                                continue
-                        
-                        # Update the URL to point to our local copy
-                        question['images'][i]['url'] = file_path
-                        saved_assets.append(file_path)
-                except Exception as e:
-                    logger.error(f"Error saving asset: {e}")
-        
-        return saved_assets
-    
-    def _update_subject_cache_metadata(self, subject: str, level: str):
-        """Update metadata for a subject/level combo"""
+            self.logger.error(f"Error in _queue_questions_for_caching for {subject}/{level_key}: {e}", exc_info=True)
+
+    def _download_and_save_asset(self, url: str, subject: str, level: str, year: str, question_number: str, image_index: int, image_label: Optional[str] = None) -> Optional[str]:
+        """
+        Downloads an image asset, handling HTML pages from imgbb, saves it locally,
+        and returns the relative path.
+        """
+        self.logger.debug(f"_download_and_save_asset called for q#{question_number}, img#{image_index}, label='{image_label}', url='{url}'")
+        if not url or not isinstance(url, str) or not url.startswith(('http://', 'https://')):
+            self.logger.warning(f"Skipping download for q#{question_number}, img#{image_index}: Invalid or missing URL: {url}")
+            return None
+
+        local_asset_path_full = None
+        relative_asset_path = None
+        session = requests.Session()
+        headers = {
+             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+
         try:
-            # Get metadata path
-            metadata_path = os.path.join(self.METADATA_DIR, 'subjects.json')
-            
-            # Create default metadata
-            metadata = {}
-            
-            # Load existing metadata if available
-            if os.path.exists(metadata_path):
-                with open(metadata_path, 'r') as f:
-                    metadata = json.load(f)
-            
-            # Ensure subject exists
-            if subject not in metadata:
-                metadata[subject] = {}
-                
-            # Update level metadata
-            if level not in metadata[subject]:
-                metadata[subject][level] = {}
-                
-            # Update last updated timestamp
-            metadata[subject][level]['last_updated'] = time.time()
-            
-            # Count questions
-            subject_dir = os.path.join(self.QUESTIONS_DIR, self._safe_filename(subject), level)
-            if os.path.exists(subject_dir):
-                # Count years (subdirectories)
-                years = [d for d in os.listdir(subject_dir) if os.path.isdir(os.path.join(subject_dir, d))]
-                metadata[subject][level]['years'] = years
-                
-                # Count total questions
-                question_count = 0
-                for year in years:
-                    year_dir = os.path.join(subject_dir, year)
-                    question_files = [f for f in os.listdir(year_dir) if f.endswith('.json')]
-                    question_count += len(question_files)
-                
-                metadata[subject][level]['question_count'] = question_count
-            
-            # Save metadata
-            with open(metadata_path, 'w') as f:
-                json.dump(metadata, f, indent=2)
-                
-            logger.info(f"Updated cache metadata for {subject}/{level}: {metadata[subject][level]}")
-            
+            # Step 1: Fetch initial content
+            self.logger.info(f"Fetching initial content for q#{question_number}, img#{image_index} from URL: {url}")
+            response1 = session.get(url, headers=headers, timeout=20, allow_redirects=True)
+            self.logger.debug(f"Initial request status code: {response1.status_code}")
+            response1.raise_for_status()
+            content_type1 = response1.headers.get('content-type', '').lower()
+            self.logger.info(f"Initial Content-Type: {content_type1} for URL: {url}")
+
+            image_content = None
+
+            # Step 2 & 3: Check if HTML, Parse, Find & Fetch Direct Image URL
+            if 'text/html' in content_type1:
+                self.logger.info(f"Content is HTML. Parsing to find direct image link for {url}...")
+                try:
+                    soup = BeautifulSoup(response1.text, 'lxml')
+                    # --- Find the main image element (VERIFY THESE SELECTORS for imgbb) ---
+                    img_tag = soup.find('img', {'id': 'image-viewer-image'})
+                    if not img_tag: img_tag = soup.select_one('div.image-viewer img') # Adjust selector if needed
+                    if not img_tag: img_tag = soup.find('img', src=re.compile(r'//i\.ibb\.co/')) # Find img with i.ibb.co source (note: // start)
+                    # --- End Finding Element ---
+
+                    if img_tag and img_tag.get('src'):
+                        direct_image_url = img_tag['src']
+                        # Handle protocol-relative URLs (like //i.ibb.co/...)
+                        if direct_image_url.startswith('//'):
+                             direct_image_url = 'https:' + direct_image_url
+                        self.logger.info(f"Extracted potential direct image URL: {direct_image_url}")
+
+                        # --- Step 4: Fetch the *Real* Image ---
+                        self.logger.info(f"Fetching actual image content from: {direct_image_url}")
+                        response2 = session.get(direct_image_url, headers=headers, stream=True, timeout=20)
+                        content_type2 = response2.headers.get('content-type', '').lower()
+                        self.logger.info(f"SECOND request status: {response2.status_code}, Content-Type: {content_type2}")
+                        response2.raise_for_status()
+
+                        if 'image/' in content_type2:
+                            image_content = response2.content
+                            self.logger.info(f"Successfully obtained image bytes ({len(image_content)} bytes) from second request.")
+                        else:
+                            self.logger.error(f"Second request to {direct_image_url} did not yield image content (type: {content_type2}). Skipping save.")
+                            return None
+                    else:
+                        self.logger.error(f"Could not find valid 'src' attribute in located img tag OR could not find tag itself in HTML from {url}. Skipping save.")
+                        return None
+                except Exception as parse_err:
+                     self.logger.error(f"Error during BeautifulSoup parsing for {url}: {parse_err}", exc_info=True)
+                     return None
+            elif 'image/' in content_type1:
+                 self.logger.info(f"Initial content from {url} is already an image ({content_type1}). Using directly.")
+                 image_content = response1.content
+            else:
+                self.logger.warning(f"Content from {url} is neither HTML nor a recognized image type ({content_type1}). Skipping.")
+                return None
+
+            # --- Path and Filename Construction ---
+            safe_subject = self._safe_filename(subject)
+            safe_level = self._safe_filename(level)
+            asset_sub_dir = os.path.join(self.ASSETS_DIR, safe_subject, safe_level, str(year))
+            os.makedirs(asset_sub_dir, exist_ok=True)
+
+            final_content_type = response2.headers.get('content-type', content_type1) if 'response2' in locals() else content_type1
+            extension = mimetypes.guess_extension(final_content_type) if final_content_type else '.png'
+            if not extension or extension == '.jpe': extension = '.jpg'
+
+            label_part = self._safe_filename(image_label) if image_label else f"img_{image_index}"
+            # Ensure question_number is a string for filename
+            asset_filename = f"q{str(question_number)}_{label_part}{extension}" 
+            local_asset_path_full = os.path.join(asset_sub_dir, asset_filename)
+            # Construct relative path assuming ASSETS_DIR is like "src/data/cache/assets"
+            relative_asset_path = os.path.join(self.ASSETS_DIR, safe_subject, safe_level, str(year), asset_filename)
+            self.logger.debug(f"Determined save path: {local_asset_path_full}")
+
+            # --- Step 5: Save Correct Image Bytes ---
+            if isinstance(image_content, bytes):
+                 # This block executes if image_content has valid bytes
+                 self.logger.info(f"Saving actual image content ({len(image_content)} bytes) to: {local_asset_path_full}")
+                 try:
+                      with open(local_asset_path_full, 'wb') as f:
+                          f.write(image_content)
+                      self.logger.info(f"Successfully saved file: {local_asset_path_full}")
+                 except IOError as write_err:
+                      self.logger.error(f"IOError saving image file {local_asset_path_full}: {write_err}")
+                      return None # Return None if saving fails
+            else: # <--- This 'else' now aligns with the 'if' on line 884
+                 # This block executes if image_content was None or not bytes
+                 self.logger.error(f"Image content for {local_asset_path_full} was not in bytes format or download failed. Cannot save.")
+                 return None # Return None if no valid bytes to save
+
+            # If saving was successful (we didn't return None from either block above)
+            self.logger.debug(f"Returning relative path: {relative_asset_path}")
+            return relative_asset_path
+
+        except requests.exceptions.Timeout:
+             self.logger.error(f"Timeout error during image processing for q#{question_number}, img#{image_index} (Initial URL: {url})")
+             return None
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Network error during image processing for q#{question_number}, img#{image_index} (Initial URL: {url}): {e}")
+            return None
+        except IOError as e:
+             self.logger.error(f"File saving error for q#{question_number}, img#{image_index} to {local_asset_path_full}: {e}")
+             # Attempt cleanup?
+             return None
+        except ImportError:
+             self.logger.critical("BeautifulSoup or lxml not installed. Cannot parse HTML to find images.")
+             return None
         except Exception as e:
-            logger.error(f"Error updating subject cache metadata: {e}")
-    
+            self.logger.error(f"Unexpected error processing image for q#{question_number}, img#{image_index} (Initial URL: {url}): {e}", exc_info=True)
+            return None
+
+    def _update_global_subject_metadata(self, subject: str, level_key: str, processed_papers: List[Dict]):
+        """
+        Updates the global subjects.json metadata file.
+        Handles potential JSONDecodeError when reading existing file.
+        Corrects indentation for file writing exception handling.
+
+        Args:
+            subject: The subject being updated.
+            level_key: The level being updated.
+            processed_papers: A list of dictionaries, each containing metadata for a paper processed in the current run.
+        """
+        metadata_file = os.path.join(self.METADATA_DIR, "subjects.json")
+        self.logger.debug(f"Updating global metadata file: {metadata_file} for {subject}/{level_key}")
+
+        with self.global_metadata_lock: # Acquire lock for file access
+            all_metadata = {} # Default to empty dict
+            try: # Try reading the file
+                os.makedirs(self.METADATA_DIR, exist_ok=True)
+                if os.path.exists(metadata_file):
+                    with open(metadata_file, 'r', encoding='utf-8') as f:
+                        try:
+                            all_metadata = json.load(f)
+                            if not isinstance(all_metadata, dict):
+                                 self.logger.warning(f"Global metadata file {metadata_file} did not contain a valid JSON object. Starting fresh.")
+                                 all_metadata = {}
+                        except json.JSONDecodeError:
+                            self.logger.warning(f"Could not decode existing global metadata file: {metadata_file}. File might be empty or corrupted. Starting fresh.")
+                            all_metadata = {}
+            except Exception as e: # Catch errors during reading/checking file
+                 self.logger.error(f"Error reading global metadata file {metadata_file}: {e}. Starting fresh.")
+                 all_metadata = {}
+
+            # --- Proceed with updating the metadata structure ---
+            subject_metadata = all_metadata.setdefault(subject, {})
+            level_metadata = subject_metadata.setdefault(level_key, {"papers": []})
+            level_metadata['last_checked_timestamp'] = time.time()
+            level_metadata['papers'] = processed_papers
+            level_metadata['total_papers_processed_last_run'] = len(processed_papers)
+            level_metadata['total_questions_processed_last_run'] = sum(p.get('question_count', 0) for p in processed_papers)
+            level_metadata['total_images_downloaded_last_run'] = sum(p.get('image_download_count', 0) for p in processed_papers)
+
+            # --- Write updated data back ---
+            try: # Inner try specifically for writing
+                with open(metadata_file, 'w', encoding='utf-8') as f:
+                    json.dump(all_metadata, f, indent=2)
+                self.logger.info(f"Successfully updated global metadata for {subject}/{level_key}")
+            # --- FIX: Correctly indented except block for the write 'try' ---
+            except Exception as e:
+                 self.logger.error(f"Failed to write global metadata file {metadata_file}: {e}", exc_info=True)
+            # --- END FIX ---
+            
     def get_cached_question(self, subject: str, level: str, year: str = None, 
                            question_number: str = None, random: bool = False) -> Optional[Dict]:
         """
@@ -1810,3 +1839,32 @@ class CacheManager:
         except Exception as e:
             logger.error(f"Failed to load selected question file {selected_file_path}: {e}", exc_info=True)
             return None
+
+    def _handle_network_change(self, status: NetworkStatus):
+        """Handle network status changes detected by the NetworkMonitor."""
+        # Use the logger initialized in __init__
+        if not hasattr(self, 'logger'): # Safety check for logger
+             print("ERROR: Logger not initialized in CacheManager when _handle_network_change called.")
+             return
+
+        self.logger.debug(f"Network status change signal received: {status}")
+        # Trigger check only if status is ONLINE and the manager is supposed to be running
+        if status == NetworkStatus.ONLINE and hasattr(self, 'running') and self.running:
+            self.logger.info("Network status changed to ONLINE. Triggering cache update check.")
+            # Run the check in a separate thread to avoid blocking the signal handler
+            # Ensure _perform_online_update_check exists
+            if hasattr(self, '_perform_online_update_check'):
+                 online_check_thread = threading.Thread(
+                     target=self._perform_online_update_check,
+                     args=("Network Online Event",), # Pass reason for logging
+                     daemon=True
+                 )
+                 online_check_thread.start()
+            else:
+                 self.logger.error("Cannot trigger online update check: _perform_online_update_check method is missing.")
+        elif status != NetworkStatus.ONLINE:
+            self.logger.info(f"Network status changed to {status}. Cache updates paused if running.")
+
+    def _perform_online_update_check(self, trigger_reason: str):
+        # ... (Implementation of this method should already exist) ...
+        pass

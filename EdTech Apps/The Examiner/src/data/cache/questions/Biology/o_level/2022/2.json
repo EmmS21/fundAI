@@ -1,58 +1,56 @@
 {
-  "id": "67d50ebecec12312c07d55f9",
-  "subject": "Biology",
-  "level": "o_level",
-  "year": "2022",
-  "question_number": "2",
-  "text": "A man decides to do some fitness training to improve his ability to provide oxygen to his muscles.",
-  "images": [],
-  "original_question": {
-    "question_number": 2,
+    "id": "67d50ebecec12312c07d55f9",
+    "subject": "Biology",
+    "level": "o_level",
+    "year": "2022",
+    "question_number_str": "2",
     "question_text": "A man decides to do some fitness training to improve his ability to provide oxygen to his muscles.",
     "topic": "Human Biology",
     "subtopic": "Respiration and Exercise",
     "difficulty": {
-      "level": "Medium",
-      "justification": "Combines understanding of respiratory system and exercise physiology"
+        "level": "Medium",
+        "justification": "Combines understanding of respiratory system and exercise physiology"
     },
+    "context_materials": null,
     "sub_questions": [
-      {
-        "sub_number": "a(i)",
-        "text": "Describe the route an oxygen molecule takes from the atmosphere to reach the muscles.",
-        "marks": 4
-      },
-      {
-        "sub_number": "a(ii)",
-        "text": "Suggest two body changes that would improve his ability to provide oxygen to his muscles.",
-        "marks": 2
-      },
-      {
-        "sub_number": "b(i)",
-        "text": "State the name of the chemical process that uses oxygen to release energy in the muscles.",
-        "marks": 2
-      },
-      {
-        "sub_number": "b(ii)",
-        "text": "Use the graph to determine the maximum volume of oxygen the man consumes in one minute.",
-        "marks": 1
-      },
-      {
-        "sub_number": "b(iii)",
-        "text": "Explain why he can only increase exercise intensity beyond maximum oxygen consumption for a short period.",
-        "marks": 3
-      },
-      {
-        "sub_number": "b(iv)",
-        "text": "Sketch a line to show the expected results of successful fitness training.",
-        "marks": 2
-      }
+        {
+            "sub_number": "a(i)",
+            "text": "Describe the route an oxygen molecule takes from the atmosphere to reach the muscles.",
+            "marks": 4
+        },
+        {
+            "sub_number": "a(ii)",
+            "text": "Suggest two body changes that would improve his ability to provide oxygen to his muscles.",
+            "marks": 2
+        },
+        {
+            "sub_number": "b(i)",
+            "text": "State the name of the chemical process that uses oxygen to release energy in the muscles.",
+            "marks": 2
+        },
+        {
+            "sub_number": "b(ii)",
+            "text": "Use the graph to determine the maximum volume of oxygen the man consumes in one minute.",
+            "marks": 1
+        },
+        {
+            "sub_number": "b(iii)",
+            "text": "Explain why he can only increase exercise intensity beyond maximum oxygen consumption for a short period.",
+            "marks": 3
+        },
+        {
+            "sub_number": "b(iv)",
+            "text": "Sketch a line to show the expected results of successful fitness training.",
+            "marks": 2
+        }
     ],
+    "tables": null,
+    "marks": 14,
     "images": [
-      {
-        "description": "Graph showing oxygen consumption vs exercise intensity"
-      }
+        {
+            "description": "Graph showing oxygen consumption vs exercise intensity",
+            "local_path": null
+        }
     ],
-    "marks": 14
-  },
-  "answer_ref": "2.json"
+    "answer_ref": "2.json"
 }

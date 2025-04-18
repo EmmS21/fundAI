@@ -1,48 +1,49 @@
 {
-  "id": "67d50f7779dac53b183510c3",
-  "subject": "Biology",
-  "level": "o_level",
-  "year": "2024",
-  "question_number": "5",
-  "text": "Study of Bacillus subtilis bacterium and its use in biotechnology",
-  "images": [],
-  "original_question": {
-    "question_number": 5,
+    "id": "67d50f7779dac53b183510c3",
+    "subject": "Biology",
+    "level": "o_level",
+    "year": "2024",
+    "question_number_str": "5",
     "question_text": "Study of Bacillus subtilis bacterium and its use in biotechnology",
     "topic": "Biology",
     "subtopic": "Biotechnology and Microorganisms",
     "difficulty": {
-      "level": "Hard",
-      "justification": "Combines microbiology, biotechnology, and data analysis"
+        "level": "Hard",
+        "justification": "Combines microbiology, biotechnology, and data analysis"
     },
+    "context_materials": null,
     "sub_questions": [
-      {
-        "sub_number": "a",
-        "text": "Questions about bacterial structure and function",
-        "marks": 7
-      },
-      {
-        "sub_number": "b",
-        "text": "Questions about bacterial growth",
-        "marks": 7
-      },
-      {
-        "sub_number": "c",
-        "text": "Question about lipase function",
-        "marks": 3
-      }
+        {
+            "sub_number": "a",
+            "text": "Questions about bacterial structure and function",
+            "marks": 7
+        },
+        {
+            "sub_number": "b",
+            "text": "Questions about bacterial growth",
+            "marks": 7
+        },
+        {
+            "sub_number": "c",
+            "text": "Question about lipase function",
+            "marks": 3
+        }
     ],
+    "tables": null,
+    "marks": 17,
     "images": [
-      {
-        "label": "Fig. 5.1",
-        "description": "Diagram of B. subtilis"
-      },
-      {
-        "label": "Fig. 5.2",
-        "description": "Graphs showing bacterial growth"
-      }
+        {
+            "label": "Fig. 5.1",
+            "description": "Diagram of B. subtilis",
+            "url": "https://ibb.co/bgmMKT56",
+            "local_path": "src/data/cache/assets/biology/o_level/2024/q5_fig_51.png"
+        },
+        {
+            "label": "Fig. 5.2",
+            "description": "Graphs showing bacterial growth",
+            "url": "https://ibb.co/zV11CV1q",
+            "local_path": "src/data/cache/assets/biology/o_level/2024/q5_fig_52.png"
+        }
     ],
-    "marks": 17
-  },
-  "answer_ref": "5.json"
+    "answer_ref": "5.json"
 }
