@@ -1,12 +1,53 @@
 import logging
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QScrollArea, QSizePolicy, QDialog)
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QScrollArea, QSizePolicy, QDialog, QFrame)
 from PySide6.QtGui import QPixmap, QImage, QFont, QGuiApplication
 from PySide6.QtCore import Qt, Signal, QUrl
 from src.data.cache.cache_manager import CacheManager
 import os
 import sys
+import json
+from src.core.ai.marker import get_ai_feedback # <-- Import the AI feedback function
 
 logger = logging.getLogger(__name__)
+
+# --- QSS Styles ---
+# Define styles here for better organization
+PAPER_STYLE = """
+    QScrollArea#QuestionScrollArea {{
+        border: 1px solid #E5E7EB; /* Subtle border like paper edge */
+        background-color: #fdfaf2; /* Off-white paper color */
+    }}
+    QWidget#QuestionContainer {{
+        background-color: #fdfaf2; /* Ensure container matches */
+        padding: 15px; /* Add padding inside the paper */
+    }}
+    QLabel#QuestionTextLabel {{
+        background-color: transparent; /* Make label background transparent */
+        color: #111827; /* Darker text color */
+        font-size: 15px; /* Adjust as needed */
+        /* Removed padding here, handled by container */
+    }}
+"""
+
+MARKS_BUTTON_STYLE = """
+    QPushButton.MarksButton {{
+        background-color: #DBEAFE; /* Light blue background */
+        color: #1E40AF; /* Darker blue text */
+        border: 1px solid #BFDBFE;
+        border-radius: 12px; /* Rounded edges */
+        padding: 3px 8px; /* Adjust padding */
+        font-size: 11px; /* Smaller font for marks */
+        font-weight: bold;
+        min-width: 60px; /* Ensure minimum size */
+        text-align: center;
+    }}
+    QPushButton.MarksButton:hover {{
+        background-color: #93C5FD; /* Brighter blue on hover */
+        border: 1px solid #60A5FA;
+        /* Basic pulse effect idea (optional): slightly larger padding */
+        /* padding: 4px 9px; */
+    }}
+"""
 
 class QuestionView(QWidget):
     """Widget to display a single question and handle user interaction."""
@@ -30,6 +71,7 @@ class QuestionView(QWidget):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(15)
+        self.setStyleSheet(PAPER_STYLE + MARKS_BUTTON_STYLE) # Apply styles
 
         # --- Header ---
         header_layout = QHBoxLayout()
@@ -45,24 +87,38 @@ class QuestionView(QWidget):
         self.main_layout.addLayout(header_layout)
 
         # --- Question Display Area (Scrollable) ---
-        # Use QScrollArea for potentially long questions
         scroll_area = QScrollArea()
+        scroll_area.setObjectName("QuestionScrollArea") # Set object name for styling
         scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet("QScrollArea { border: none; background-color: #FFFFFF; }") # White background
+        # scroll_area.setStyleSheet("QScrollArea { border: none; background-color: #FFFFFF; }") # Replaced by QSS
 
-        question_container = QWidget() # Widget inside scroll area
-        question_layout = QVBoxLayout(question_container)
+        # --- Container for all question content ---
+        # Use a QFrame for better structure and potential borders/padding
+        self.question_content_widget = QFrame()
+        self.question_content_widget.setObjectName("QuestionContainer") # Set object name
+        self.question_layout = QVBoxLayout(self.question_content_widget) # Layout *inside* the container
+        self.question_layout.setContentsMargins(10, 10, 10, 10) # Padding within the container
+        self.question_layout.setSpacing(10) # Spacing between question elements
 
+        # --- Main Question Text Label ---
         self.question_text_label = QLabel("Loading question...")
-        self.question_text_label.setWordWrap(True) # Allow text wrapping
+        self.question_text_label.setObjectName("QuestionTextLabel") # Set object name
+        self.question_text_label.setWordWrap(True)
         self.question_text_label.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.question_text_label.setStyleSheet("font-size: 16px; padding: 10px; background-color: white; color: black;")
-        question_layout.addWidget(self.question_text_label)
-        question_layout.addStretch(1)
-        # TODO: Add widgets for images if needed later
+        # self.question_text_label.setStyleSheet("font-size: 16px; padding: 10px; background-color: white; color: black;") # Replaced by QSS
+        self.question_layout.addWidget(self.question_text_label)
 
-        scroll_area.setWidget(question_container)
-        self.main_layout.addWidget(scroll_area, 1) # Give scroll area stretchy space
+        # --- Placeholder for dynamically added elements (like marks buttons) ---
+        # This layout will hold sub-questions and their marks buttons
+        self.sub_elements_layout = QVBoxLayout()
+        self.sub_elements_layout.setSpacing(8)
+        self.question_layout.addLayout(self.sub_elements_layout)
+
+
+        self.question_layout.addStretch(1) # Push content to the top
+
+        scroll_area.setWidget(self.question_content_widget) # Set the container as the scroll area's widget
+        self.main_layout.addWidget(scroll_area, 1)
 
         # --- Answer Input Area ---
         self.answer_input = QTextEdit()
@@ -104,7 +160,7 @@ class QuestionView(QWidget):
                 background-color: #9333EA;
             }
         """)
-        # submit_button.clicked.connect(self._submit_answer) # TODO: Implement submit logic
+        submit_button.clicked.connect(self._submit_answer)
 
         button_layout.addStretch()
         # button_layout.addWidget(previous_button)
@@ -131,6 +187,24 @@ class QuestionView(QWidget):
     def load_random_question(self):
         """Fetches and displays a random question from the cache."""
         self.logger.info(f"Loading random question for {self.subject_name} - {self.level_key}")
+
+        # --- Clear previous dynamic content ---
+        # Clear widgets from the sub-elements layout BEFORE loading new data
+        while self.sub_elements_layout.count():
+            item = self.sub_elements_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+            else: # If it's a layout, clear it recursively (optional, depends on structure)
+                 layout = item.layout()
+                 if layout is not None:
+                      # Basic recursive clear (can be enhanced)
+                      while layout.count():
+                           sub_item = layout.takeAt(0)
+                           sub_widget = sub_item.widget()
+                           if sub_widget: sub_widget.deleteLater()
+
+
         try:
             question_data = self.cache_manager.get_random_question(self.subject_name, self.level_key)
             self.logger.debug(f"Raw question data received: {question_data}")
@@ -138,88 +212,78 @@ class QuestionView(QWidget):
             if question_data:
                 self.current_question_data = question_data
 
-                # --- Build formatted question text ---
-                formatted_text = []
+                # --- Build and Display Question Content ---
 
-                # Get main text from top level (corrected)
-                main_text = question_data.get('text')
-                if not main_text:
-                    main_text = question_data.get('question_text', '')
-                if main_text:
-                     formatted_text.append(main_text.strip())
+                # 1. Display Main Question Text (if any)
+                main_text = question_data.get('text') or question_data.get('question_text', '')
+                self.question_text_label.setText(main_text.strip())
+                self.question_text_label.setVisible(bool(main_text.strip())) # Show/hide if empty
 
-                # Get sub-questions from top level (corrected)
+                # 2. Process Sub-Questions (Create separate widgets)
                 sub_questions = question_data.get('sub_questions', [])
                 if sub_questions and isinstance(sub_questions, list):
-                    if main_text: formatted_text.append("")
-                    formatted_text.append("<b>Sub Questions:</b>")
-                    for sq in sub_questions:
-                         if isinstance(sq, dict):
-                              marks_val = sq.get('marks')
-                              marks_text = f" [{marks_val} marks]" if marks_val is not None else ""
-                              sub_num_str = sq.get('sub_number', '?')
-                              sub_text_str = sq.get('text', '')
-                              sub_text = f"<b>{sub_num_str}</b>) {sub_text_str}{marks_text}"
-                              formatted_text.append(sub_text)
-                         else:
-                              self.logger.warning(f"Skipping invalid sub_question item (not a dict): {sq}")
+                     # Optional: Add a label like "Sub Questions:"
+                     # sub_q_header = QLabel("<b>Sub Questions:</b>")
+                     # self.sub_elements_layout.addWidget(sub_q_header)
 
-                # Add image descriptions from the TOP-LEVEL images list
+                     for sq_index, sq in enumerate(sub_questions):
+                         if isinstance(sq, dict):
+                             marks_val = sq.get('marks')
+                             sub_num_str = sq.get('sub_number', f'({sq_index+1})') # Fallback numbering
+                             sub_text_str = sq.get('text', '').strip()
+
+                             # Layout for a single sub-question row (text + marks)
+                             sub_q_row_layout = QHBoxLayout()
+                             sub_q_row_layout.setSpacing(10)
+
+                             # Sub-question Text Label
+                             sub_q_text = f"<b>{sub_num_str}</b>) {sub_text_str}"
+                             sub_q_label = QLabel(sub_q_text)
+                             sub_q_label.setWordWrap(True)
+                             sub_q_label.setStyleSheet("background-color: transparent;") # Ensure transparency
+                             sub_q_row_layout.addWidget(sub_q_label, 1) # Give text stretchy space
+
+                             # Marks Button (if marks exist)
+                             if marks_val is not None:
+                                 marks_button = QPushButton(f"{marks_val} marks")
+                                 marks_button.setProperty("class", "MarksButton") # For QSS styling
+                                 # marks_button.setToolTip("Click to highlight relevant section?") # Optional tooltip
+                                 # Connect signal if needed: marks_button.clicked.connect(lambda m=marks_val: self._handle_marks_click(m))
+                                 sub_q_row_layout.addWidget(marks_button) # Add button to row
+                             else:
+                                 sub_q_row_layout.addStretch(0) # Add stretch if no button to align items
+
+                             # Add the row layout to the main sub-elements layout
+                             self.sub_elements_layout.addLayout(sub_q_row_layout)
+
+                         else:
+                             self.logger.warning(f"Skipping invalid sub_question item (not a dict): {sq}")
+
+
+                # 3. Add Diagram Descriptions (as simple labels for now)
                 images = question_data.get('images', [])
                 if images and any(img.get('description') for img in images if isinstance(img, dict)):
-                    if main_text or sub_questions: formatted_text.append("")
-                    formatted_text.append("<b>Diagrams:</b>")
-                    for img in images:
-                        if isinstance(img, dict) and img.get('description'):
+                     # Optional: Add a label like "Diagrams:"
+                     # diag_header = QLabel("<b>Diagrams:</b>")
+                     # self.sub_elements_layout.addWidget(diag_header) # Add to sub-elements layout
+
+                     for img in images:
+                         if isinstance(img, dict) and img.get('description'):
                              label_part = f"{img.get('label', '')}: " if img.get('label') else ""
-                             formatted_text.append(f"- {label_part}{img.get('description', '')}")
+                             desc_text = f"- {label_part}{img.get('description', '')}"
+                             desc_label = QLabel(desc_text)
+                             desc_label.setWordWrap(True)
+                             desc_label.setStyleSheet("background-color: transparent;")
+                             self.sub_elements_layout.addWidget(desc_label) # Add description to layout
 
-                # --- Set the text ---
-                final_text_html = "<br>".join(formatted_text).strip()
-                self.logger.debug(f"Formatted question text (length {len(final_text_html)}): {final_text_html[:300]}...")
 
-                self.question_text_label.setTextFormat(Qt.RichText)
-                self.question_text_label.setText(final_text_html)
                 self.answer_input.clear()
+                self.answer_input.setEnabled(True)
 
-                # --- RESTORED: UI update debugging logs ---
-                self.logger.debug("Attempting to force UI updates and log state...")
-                try: # Wrap debug code in try/except to prevent it crashing main logic
-                    self.question_text_label.adjustSize()
-                    container_widget = self.question_text_label.parentWidget()
-                    if container_widget:
-                         container_widget.adjustSize()
-                         container_widget.update()
-                    self.question_text_label.update()
 
-                    label_size = self.question_text_label.size()
-                    container_size = container_widget.size() if container_widget else "N/A"
-                    # Find the QScrollArea parent more reliably
-                    scroll_area = self.findChild(QScrollArea) # Check if findChild works as expected
-                    if not scroll_area: # Fallback if findChild fails
-                        scroll_area = self.question_text_label.parentWidget().parentWidget().parentWidget() # Example of traversing parents, adjust based on actual hierarchy
-                        if not isinstance(scroll_area, QScrollArea):
-                             scroll_area = None
-
-                    scroll_area_size = scroll_area.size() if scroll_area else "N/A"
-                    scroll_area_widget_size = scroll_area.widget().size() if scroll_area and scroll_area.widget() else "N/A"
-
-                    self.logger.debug(f"--- UI State After setText ---")
-                    self.logger.debug(f"QLabel size: {label_size}")
-                    self.logger.debug(f"Container QWidget size: {container_size}")
-                    self.logger.debug(f"ScrollArea size: {scroll_area_size}")
-                    self.logger.debug(f"ScrollArea's Widget (question_container) size: {scroll_area_widget_size}")
-                    self.logger.debug(f"QLabel visible: {self.question_text_label.isVisible()}")
-                    self.logger.debug(f"Container visible: {container_widget.isVisible() if container_widget else 'N/A'}")
-                    self.logger.debug(f"ScrollArea visible: {scroll_area.isVisible() if scroll_area else 'N/A'}")
-                    self.logger.debug(f"--- End UI State ---")
-                except Exception as debug_e:
-                    self.logger.warning(f"Error during UI debug update/log: {debug_e}")
-                # --- END RESTORED DEBUG BLOCK ---
-
-                # --- Populate Image Links (Uses top-level images) ---
+                # --- Populate Image Links --- (Keep existing logic)
                 self._clear_image_links()
-                images = question_data.get('images', [])
+                images = question_data.get('images', []) # Get images again for links
 
                 if images and isinstance(images, list):
                     valid_images_found = False
@@ -283,11 +347,15 @@ class QuestionView(QWidget):
                 error_msg = f"No cached questions found for {self.subject_name} - {self._get_level_display_name(self.level_key)}."
                 logger.warning(error_msg)
                 self.question_text_label.setText(error_msg)
+                self.question_text_label.setVisible(True)
                 self.answer_input.setEnabled(False)
+                self._clear_image_links() # Clear images if no question loaded
 
         except Exception as e:
             logger.error(f"Error loading question: {e}", exc_info=True)
             self.question_text_label.setText(f"Error loading question: {str(e)}")
+            self.question_text_label.setVisible(True)
+            self._clear_image_links()
 
     # Placeholder - adapt key->name mapping as needed
     def _get_level_display_name(self, level_key):
@@ -299,15 +367,107 @@ class QuestionView(QWidget):
         }
         return display_names.get(level_key, level_key.replace('_', ' ').title())
 
-    # --- Placeholder for future implementation ---
-    # def _submit_answer(self):
-    #     if self.current_question_data:
-    #         user_answer = self.answer_input.toPlainText()
-    #         question_id = self.current_question_data.get('question_id')
-    #         logger.info(f"Submitting answer for question {question_id}: {user_answer[:50]}...")
-    #         # TODO: Add logic to save the answer, maybe trigger local AI feedback, etc.
-    #         # After submitting, might want to load the next question or show feedback
-    #         self.load_random_question() # Example: load next question after submit
+    def _submit_answer(self):
+        if self.current_question_data:
+            user_answer = self.answer_input.toPlainText().strip()
+            
+            # --- Extract necessary info from current question data ---\
+            question_id = self.current_question_data.get('id')
+            subject = self.current_question_data.get('subject')
+            level = self.current_question_data.get('level')
+            year = self.current_question_data.get('year')
+            answer_ref = self.current_question_data.get('answer_ref') # e.g., "1a.json"
+            
+            # Basic validation
+            if not all([question_id, subject, level, year, answer_ref]):
+                self.logger.error("Could not submit answer: Missing critical data in current_question_data (id, subject, level, year, or answer_ref)")
+                # TODO: Show error message to user
+                return
+            
+            if not user_answer:
+                self.logger.warning("User tried to submit an empty answer.")
+                # TODO: Show message to user to enter an answer
+                return
+
+            # --- Calculate Marks (Keep existing logic) ---\
+            marks = self.current_question_data.get('marks')
+            if marks is None and 'sub_questions' in self.current_question_data:
+                try:
+                    marks = sum(sq.get('marks', 0) or 0 for sq in self.current_question_data['sub_questions'] if isinstance(sq, dict))
+                except TypeError:
+                    marks = None 
+                    self.logger.warning(f"Could not sum marks from sub-questions for question {question_id}")
+            
+            # --- Construct path to the correct answer file ---\
+            # Use CacheManager's base paths if available, otherwise construct relatively
+            base_answer_dir = getattr(self.cache_manager, 'ANSWERS_DIR', os.path.join("src", "data", "cache", "answers"))
+            safe_subject = getattr(self.cache_manager, '_safe_filename', lambda s: s)(subject) # Use safe filename func if possible
+            answer_file_path = os.path.join(base_answer_dir, safe_subject, level, str(year), answer_ref)
+            
+            self.logger.debug(f"Attempting to load correct answer from: {answer_file_path}")
+            
+            correct_answer_data = None
+            try:
+                with open(answer_file_path, 'r', encoding='utf-8') as f:
+                    correct_answer_data = json.load(f)
+                self.logger.info(f"Successfully loaded correct answer for question {question_id}")
+            except FileNotFoundError:
+                self.logger.error(f"Correct answer file not found at: {answer_file_path}")
+                # TODO: Show error to user - "Could not retrieve marking information"
+                return
+            except json.JSONDecodeError:
+                self.logger.error(f"Error decoding JSON from answer file: {answer_file_path}")
+                # TODO: Show error to user
+                return
+            except Exception as e:
+                self.logger.error(f"Unexpected error loading answer file {answer_file_path}: {e}", exc_info=True)
+                # TODO: Show error to user
+                return
+            
+            # --- Now we have: ---\
+            # self.current_question_data (dict)
+            # correct_answer_data (dict)
+            # user_answer (str)
+            # marks (int or None)
+
+            self.logger.info(f"Ready for AI Marking - QID: {question_id}, Marks: {marks}")
+            self.logger.debug(f"User Answer: {user_answer}")
+            # self.logger.debug(f"Correct Answer Data: {correct_answer_data}") # Potentially large, log carefully
+
+            # TODO:
+            # 1. Create src/core/ai/marker.py with get_ai_feedback(question, correct_answer, user_answer, marks)
+            # 2. Import and call get_ai_feedback here
+            # --- Call the AI marker service ---
+            self.logger.info("Calling AI feedback service...")
+            feedback, suggestions = get_ai_feedback(
+                question_data=self.current_question_data, 
+                correct_answer_data=correct_answer_data,
+                user_answer=user_answer,
+                marks=marks
+            )
+
+            if feedback or suggestions:
+                self.logger.info("Received AI feedback/suggestions.")
+                # TODO: Display feedback and suggestions in the UI
+                print("--- AI FEEDBACK ---") # Temporary console output
+                print(f"Feedback: {feedback}")
+                print(f"Suggestions: {suggestions}")
+                print("-------------------")
+                # Maybe disable input/submit here and show feedback, 
+                # then provide a button to go to the next question.
+            else:
+                self.logger.error("Failed to get valid feedback from AI service.")
+                # TODO: Show error message to user ("Could not get AI feedback at this time.")
+
+            # 3. Process the response (feedback, suggestions) and display it
+            # 4. Update UI state (e.g., disable submit, show feedback area)
+
+            # Placeholder action: Clear input and load next question
+            # We might want to change this behavior now - e.g., wait for user to acknowledge feedback
+            self.answer_input.clear()
+            self.load_random_question()
+        else:
+            self.logger.warning("Submit button clicked, but no current question data loaded.")
 
     def _clear_image_links(self):
         """Removes all widgets from the image links layout."""

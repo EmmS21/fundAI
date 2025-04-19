@@ -1,0 +1,46 @@
+{
+    "id": "67d50ebecec12312c07d55f9",
+    "subject": "Biology",
+    "level": "o_level",
+    "year": "2022",
+    "question_number_str": "1",
+    "answer_details": {
+        "question_number": 1,
+        "question_text": "The diagram shows human skin.",
+        "topic": "Human Biology",
+        "subtopic": "Skin Structure and Temperature Regulation",
+        "difficulty": {
+            "level": "Medium",
+            "justification": "Requires knowledge of skin structure and temperature regulation mechanisms"
+        },
+        "sub_questions": [
+            {
+                "sub_number": "a(i)",
+                "text": "Identify the parts labelled B and C.",
+                "marks": 2
+            },
+            {
+                "sub_number": "a(ii)",
+                "text": "Describe how part B is involved in maintaining a constant body temperature when the external temperature drops.",
+                "marks": 3
+            },
+            {
+                "sub_number": "b",
+                "text": "Part A is unevenly distributed in human skin. Name part A and suggest reasons for this uneven distribution.",
+                "marks": 3
+            },
+            {
+                "sub_number": "c",
+                "text": "The thickness of layer D can change over several months. Suggest and explain one reason for a decrease in the thickness.",
+                "marks": 2
+            }
+        ],
+        "images": [
+            {
+                "description": "Diagram of human skin with labeled parts A, B, C, and D",
+                "url": "https://ibb.co/ycNrw2gv"
+            }
+        ],
+        "marks": 10
+    }
+}
