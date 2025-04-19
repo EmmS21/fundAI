@@ -1,0 +1,37 @@
+{
+    "id": "67d50f7779dac53b183510c3",
+    "subject": "Biology",
+    "level": "o_level",
+    "year": "2024",
+    "question_number_str": "3",
+    "answer_details": {
+        "question_number": 3,
+        "question_text": "Analysis of a capillary network photomicrograph",
+        "topic": "Biology",
+        "subtopic": "Blood and Circulation",
+        "difficulty": {
+            "level": "Hard",
+            "justification": "Requires analysis of microscope image, calculations, and understanding of disease"
+        },
+        "sub_questions": [
+            {
+                "sub_number": "a",
+                "text": "Questions about red blood cells and blood components",
+                "marks": 8
+            },
+            {
+                "sub_number": "b",
+                "text": "Questions about malaria and its effects",
+                "marks": 6
+            }
+        ],
+        "images": [
+            {
+                "label": "Fig. 3.1",
+                "description": "Photomicrograph of capillary network",
+                "url": "https://ibb.co/4wP3fKMw"
+            }
+        ],
+        "marks": 14
+    }
+}

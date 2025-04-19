@@ -1,0 +1,18 @@
+{
+    "id": "67d50f56da1cae21c770da4d",
+    "subject": "Biology",
+    "level": "o_level",
+    "year": "2024",
+    "question_number_str": "7",
+    "answer_details": {
+        "question_number": 7,
+        "question_text": "Questions about plastic pollution and biodegradation",
+        "topic": "Environmental Science",
+        "subtopic": "Pollution and Decomposition",
+        "difficulty": {
+            "level": "Medium",
+            "justification": "Combines calculations with environmental impact analysis"
+        },
+        "marks": 11
+    }
+}

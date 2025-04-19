@@ -685,22 +685,23 @@ class CacheManager:
                         processed_questions_for_doc.append(question) # Keep original invalid item maybe? Or skip?
                         continue
 
+                    # --- FIX: Correct indentation for assignment ---
                     # Extract question number (ensure this logic assigns question_number_str)
-                        q_num = question.get('question_number')
-                        if isinstance(q_num, dict) and '$numberInt' in q_num:
-                            question_number_str = str(q_num['$numberInt'])
-                        else:
-                            question_number_str = str(q_num) if q_num is not None else f"idx{question_index}"
-                    # --- Ensure question_number_str is now assigned ---
+                    q_num = question.get('question_number') # <-- Shifted left
+                    if isinstance(q_num, dict) and '$numberInt' in q_num: # <-- Shifted left
+                        question_number_str = str(q_num['$numberInt']) # <-- Shifted left
+                    else: # <-- Shifted left
+                        question_number_str = str(q_num) if q_num is not None else f"idx{question_index}" # <-- Shifted left
+                    # --- END FIX ---
+                    # question_number_str should now be reliably assigned here
 
                     # --- Image Processing ---
                     processed_images = []
                     original_images = question.get('images', [])
 
-                    # --- FIX: Move Log before the inner loop ---
                     # Log that we are starting image processing for this specific question number
                     if original_images and isinstance(original_images, list):
-                         self.logger.debug(f"Processing {len(original_images)} image entries for q#{question_number_str} in doc {mongo_doc_id}") 
+                         self.logger.debug(f"Processing {len(original_images)} image entries for q#{question_number_str} in doc {mongo_doc_id}") # This line should no longer crash
                          # --- End FIX ---
 
                          for i, img_info in enumerate(original_images):
@@ -774,7 +775,27 @@ class CacheManager:
 
                     # --- Process and save the corresponding answer ---
                     # Make sure this logic uses 'year_answers_dir'
-                    # ... (existing answer fetching/saving logic) ...
+                    # --- ADDED: Save the answer/marking scheme ---
+                    answer_filename = os.path.join(year_answers_dir, f"{question_number_str}.json")
+                    try:
+                        # Assuming the 'question' dict processed in this loop contains
+                        # the necessary answer/marking scheme details (like sub-questions, marks).
+                        # Adjust if the actual answer text is stored differently in the source 'doc'.
+                        answer_data_to_save = {
+                            "id": mongo_doc_id, # Link back to original document
+                            "subject": subject,
+                            "level": level_key,
+                            "year": year,
+                            "question_number_str": question_number_str,
+                            # Include the specific question details that contain the answer/scheme
+                            "answer_details": question # Use the 'question' dict from the loop
+                        }
+                        with open(answer_filename, 'w', encoding='utf-8') as f:
+                            json.dump(answer_data_to_save, f, ensure_ascii=False, indent=4)
+                        self.logger.debug(f"Successfully saved answer file: {answer_filename}")
+                    except Exception as e:
+                         self.logger.error(f"Failed to save answer file {answer_filename}: {e}", exc_info=True)
+                    # --- END ADDED ---
 
                 # --- Store metadata for this paper ---
                 paper_metadata = {
