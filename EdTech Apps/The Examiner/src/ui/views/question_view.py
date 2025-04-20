@@ -439,25 +439,33 @@ class QuestionView(QWidget):
             # 2. Import and call get_ai_feedback here
             # --- Call the AI marker service ---
             self.logger.info("Calling AI feedback service...")
-            feedback, suggestions = get_ai_feedback(
-                question_data=self.current_question_data, 
+            parsed_response = get_ai_feedback(
+                question_data=self.current_question_data,
                 correct_answer_data=correct_answer_data,
                 user_answer=user_answer,
                 marks=marks
             )
 
-            if feedback or suggestions:
-                self.logger.info("Received AI feedback/suggestions.")
-                # TODO: Display feedback and suggestions in the UI
+            # Check if the response is valid
+            if parsed_response and "Error" not in parsed_response:
+                self.logger.info("Received and parsed AI feedback/suggestions.")
+                # TODO: Display feedback and suggestions in the UI using parsed_response dict
                 print("--- AI FEEDBACK ---") # Temporary console output
-                print(f"Feedback: {feedback}")
-                print(f"Suggestions: {suggestions}")
-                print("-------------------")
+                for heading, content in parsed_response.items():
+                    print(f"## {heading}:\n{content}\n")
+                # print(f"Feedback: {parsed_response.get('Feedback', 'N/A')}")
+                # print(f"Mark Awarded: {parsed_response.get('Mark Awarded', 'N/A')}")
+                # ... access other sections as needed ...
+                print("-------------------\n")
                 # Maybe disable input/submit here and show feedback, 
                 # then provide a button to go to the next question.
             else:
-                self.logger.error("Failed to get valid feedback from AI service.")
-                # TODO: Show error message to user ("Could not get AI feedback at this time.")
+                # Handle cases where model wasn't found, server failed, request failed, or parsing failed
+                error_message = "Failed to get valid feedback from AI service."
+                if isinstance(parsed_response, dict) and "Error" in parsed_response:
+                    error_message = f"AI Service Error: {parsed_response['Error']}"
+                self.logger.error(error_message)
+                # TODO: Show specific error message to user ("Could not get AI feedback: [Reason]")
 
             # 3. Process the response (feedback, suggestions) and display it
             # 4. Update UI state (e.g., disable submit, show feedback area)
