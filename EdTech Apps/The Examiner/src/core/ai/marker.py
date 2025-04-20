@@ -6,6 +6,9 @@ from typing import Dict, Optional, Tuple
 from pathlib import Path # For handling home directory
 from llama_cpp import Llama
 
+# --- Import the examples ---
+from .prompt_examples import FEW_SHOT_EXAMPLES
+
 logger = logging.getLogger(__name__)
 
 # --- Configuration ---
@@ -176,55 +179,64 @@ def get_ai_feedback(
         logger.error("Could not proceed without model path.")
         return None
 
-    # --- 1. Construct the Prompt ---
+    # --- 1. Construct the Few-Shot Prompt ---
     question_text = question_data.get('question_text', 'N/A')
     sub_questions = question_data.get('sub_questions', 'N/A')
     max_marks_str = str(marks) if marks is not None else 'N/A'
     correct_answer_details = correct_answer_data.get('answer_details', 'Marking scheme not available.')
 
-    prompt = f"""
-**ROLE:** You are a strict AI Examiner following Cambridge International marking standards. You are fair but demand a high level of understanding and precision. Do not be overly lenient or unnecessarily pedantic. Your goal is to provide insightful, actionable feedback to help the student improve significantly.
+    # Start building the prompt
+    prompt_parts = [
+        """**ROLE:** You are a strict AI Examiner following Cambridge International marking standards. You are fair but demand a high level of understanding and precision. Do not be overly lenient or unnecessarily pedantic. Your goal is to provide insightful, actionable feedback to help the student improve significantly.
 
 **TASK:** Evaluate the student's answer below based *only* on the provided Question and Marking Scheme/Correct Answer details. Award a mark out of the maximum available, provide detailed feedback, identify knowledge gaps, suggest specific study topics, propose reflection questions, present the correct answer, and rate the student's understanding objectively.
 
-**INPUT DATA:**
+**CRITICAL INSTRUCTIONS - FOLLOW EXACTLY:**
+*   Your response MUST start *immediately* with the first heading (`## Mark Awarded`). Do NOT include any introduction or preamble.
+*   You MUST use the following Markdown headings *exactly* as written, including the `##` and spacing. Do NOT invent new headings or omit any. Use the format shown in the examples below.
 
+**FORMATTING HEADINGS:**
+1.  `## Mark Awarded`
+2.  `## Feedback`
+3.  `## Understanding Gap`
+4.  `## Study Topics`
+5.  `## Self-Reflection Questions`
+6.  `## Correct Answer`
+7.  `## Understanding Rating`
+
+--- EXAMPLES START ---
+"""
+    ]
+
+    # Add the examples from the imported list
+    for i, example in enumerate(FEW_SHOT_EXAMPLES):
+        prompt_parts.append(f"--- Example {i+1} ---")
+        prompt_parts.append("**INPUT DATA:**")
+        prompt_parts.append(example["input"].strip())
+        prompt_parts.append("**RESPONSE:**")
+        prompt_parts.append(example["output"].strip())
+        prompt_parts.append("--- End Example {i+1} ---\n")
+
+    # Add the separator and the actual query
+    prompt_parts.append("""--- EXAMPLES END ---
+
+**NOW, EVALUATE THE FOLLOWING INPUT:**
+
+**INPUT DATA:**
+""")
+    prompt_parts.append(f"""
 *   **Question:** {question_text}
 *   **Sub-questions (if any):** {sub_questions}
 *   **Maximum Marks:** {max_marks_str}
 *   **Marking Scheme / Correct Answer:** {correct_answer_details}
 *   **Student's Answer:** {user_answer}
+""")
+    prompt_parts.append("**RESPONSE:**") # Signal for AI to start its response
 
-**CRITICAL INSTRUCTIONS - FOLLOW EXACTLY:**
-*   Your response MUST start *immediately* with the first heading. Do NOT include any introduction or preamble.
-*   You MUST use the following Markdown headings *exactly* as written, including the `##` and spacing. Do NOT invent new headings or omit any.
+    # Join all parts into the final prompt string
+    prompt = "\n".join(prompt_parts)
 
-1.  `## Mark Awarded`
-    *   Award a numerical mark from 0 to {max_marks_str}. Be strict. Award 0 if the answer shows no relevant understanding or is completely incorrect according to the scheme. Provide only the mark (e.g., "3 / {max_marks_str}").
-
-2.  `## Feedback`
-    *   Provide constructive feedback on the student's answer.
-    *   Clearly state strengths (what the student did well).
-    *   Clearly state weaknesses (where the student went wrong or missed points according to the scheme).
-
-3.  `## Understanding Gap`
-    *   Based *specifically* on the difference between the student's answer and the marking scheme, identify the core concepts or skills the student appears to be lacking.
-
-4.  `## Study Topics`
-    *   List *specific* topics and subtopics the student should study to address the identified understanding gap. These must be directly relevant to the question and the errors made. Avoid generic advice. Use bullet points.
-
-5.  `## Self-Reflection Questions`
-    *   Provide 2-3 questions the student should ask themselves to improve their approach to *this type* of question next time. These questions should be *contextual* to the specific misunderstanding identified (e.g., "Did I confuse term X with term Y?", "Did I consider all parts of the command word 'describe'?"). Use bullet points.
-
-6.  `## Correct Answer`
-    *   Present the key points of the correct answer based *only* on the provided Marking Scheme / Correct Answer details.
-
-7.  `## Understanding Rating`
-    *   Provide an objective rating of the student's understanding demonstrated *in this answer*. Use *only* one of the following ratings: Excellent, Good, Fair, Poor, Very Poor. Be stricter in your assessment, reflecting high expectations.
-
-**RESPONSE:**
-"""
-    logger.debug(f"Generated AI Prompt:\n{prompt[:500]}...")
+    logger.debug(f"Generated Few-Shot AI Prompt (structure):\n{prompt[:200]}...\n...\n...{prompt[-200:]}") # Log start/end
 
     # --- 2. Load Model and Generate Response ---
     llm = None
@@ -242,7 +254,7 @@ def get_ai_feedback(
         output = llm(
             prompt,
             max_tokens=MAX_TOKENS,
-            stop=["\n## ", "## ", "Feedback:", "Understanding Gap:", "Study Topics:", "Correct Answer:", "Understanding Rating:"], # More aggressive stopping
+            stop=["<|endoftext|>", "<|im_end|>"],
             temperature=0.2,
             echo=False
         )
@@ -250,7 +262,7 @@ def get_ai_feedback(
         response_text = output.get("choices", [{}])[0].get("text")
         if response_text:
              logger.info("Received response from AI model.")
-             # logger.debug(f"AI Raw Response Text:\n{response_text}") # Log full response only if debug is needed
+             logger.debug(f"AI Raw Response Text:\n{response_text}") # <-- UNCOMMENT THIS LINE
         else:
              logger.warning("AI response 'choices' or 'text' field is missing or empty.")
              logger.debug(f"Full AI output dict: {output}")
@@ -268,6 +280,10 @@ def get_ai_feedback(
 
     # --- 3. Parse the Response ---
     if response_text:
+        # --- ADDED: Log raw text BEFORE parsing ---
+        logger.info(f"RAW AI Response Text to be Parsed:\n---------------------\n{response_text}\n---------------------")
+        # --- END ADDED ---
+
         logger.info("Parsing AI response using flexible parser...")
         parsed_data = parse_ai_response(response_text) # Call the new parser
         if parsed_data:
