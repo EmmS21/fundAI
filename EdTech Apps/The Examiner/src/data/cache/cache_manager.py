@@ -22,6 +22,7 @@ import random
 from src.data.database.models import QuestionResponse, User, ExamResult
 from bs4 import BeautifulSoup
 import mimetypes
+from bson import ObjectId # Make sure this import exists at the top
 
 
 logger = logging.getLogger(__name__)
@@ -622,200 +623,250 @@ class CacheManager:
             # Return other types as is
             return obj
             
+    def _get_int_q_num(self, item: dict, key: str = 'question_number') -> Optional[int]:
+        """
+        Safely extracts an integer question number from a dictionary.
+        Handles integers, strings, $numberInt, floats, and strings with whitespace.
+        """
+        q_num_raw = item.get(key)
+        self.logger.debug(f"[_get_int_q_num] Raw value for key '{key}': {q_num_raw} (type: {type(q_num_raw)})")
+
+        if q_num_raw is None:
+            self.logger.debug(f"[_get_int_q_num] Raw value is None.")
+            return None
+
+        # 1. Check if already an integer
+        if isinstance(q_num_raw, int):
+            self.logger.debug(f"[_get_int_q_num] Raw value is already int: {q_num_raw}")
+            return q_num_raw
+
+        # 2. Check for MongoDB $numberInt format
+        if isinstance(q_num_raw, dict) and '$numberInt' in q_num_raw:
+            try:
+                val = int(q_num_raw['$numberInt'])
+                self.logger.debug(f"[_get_int_q_num] Extracted int from $numberInt: {val}")
+                return val
+            except (ValueError, TypeError):
+                self.logger.warning(f"[_get_int_q_num] Invalid $numberInt format: {q_num_raw}")
+                # Continue trying other formats below
+                pass # Don't return None yet
+
+        # 3. Check if it's a float (that can be cleanly converted to int)
+        if isinstance(q_num_raw, float):
+            if q_num_raw.is_integer():
+                try:
+                    val = int(q_num_raw)
+                    self.logger.debug(f"[_get_int_q_num] Converted float to int: {val}")
+                    return val
+                except (ValueError, TypeError):
+                     self.logger.warning(f"[_get_int_q_num] Could not convert float {q_num_raw} to int.")
+                     # Continue trying other formats
+                     pass
+            else:
+                self.logger.warning(f"[_get_int_q_num] Float value {q_num_raw} is not a whole number, cannot convert cleanly to int.")
+                 # Continue trying other formats
+                pass
+
+        # 4. Check if it's a string (attempt to convert after stripping whitespace)
+        if isinstance(q_num_raw, str):
+            stripped_val = q_num_raw.strip()
+            if not stripped_val: # Handle empty strings after stripping
+                 self.logger.warning(f"[_get_int_q_num] String value '{q_num_raw}' is empty after stripping.")
+                 return None
+            try:
+                # First, try converting directly to int
+                val = int(stripped_val)
+                self.logger.debug(f"[_get_int_q_num] Converted stripped string to int: {val}")
+                return val
+            except ValueError:
+                 # If direct int fails, try converting as float first, then to int
+                 try:
+                      float_val = float(stripped_val)
+                      if float_val.is_integer():
+                           int_val = int(float_val)
+                           self.logger.debug(f"[_get_int_q_num] Converted stripped string->float->int: {int_val}")
+                           return int_val
+                      else:
+                           self.logger.warning(f"[_get_int_q_num] String '{stripped_val}' represents a non-integer float.")
+                           return None
+                 except ValueError:
+                      self.logger.warning(f"[_get_int_q_num] Could not convert string '{stripped_val}' to int or float.")
+                      return None
+
+        # If none of the above worked
+        self.logger.warning(f"[_get_int_q_num] Unhandled type or format for question number '{key}': {q_num_raw} (type: {type(q_num_raw)})")
+        return None
+
     def _queue_questions_for_caching(self, subject: str, level_key: str, mongo_level: str):
-        """Queue questions for the specified subject and level for caching."""
+        """
+        Queue questions for the specified subject and level for caching.
+        Finds the single matching answer document per question document using consolidated logic.
+        """
         self.logger.info(f"Queueing questions for caching: {subject} at {level_key} (MongoDB level: {mongo_level})")
         processed_papers_metadata = []
-            
+
         try:
-            client = MongoDBClient()
-            documents = client.get_questions_by_subject_level(subject, mongo_level, limit=50)
-            self.logger.info(f"Found {len(documents)} source documents to process for {subject} at {level_key}")
-            
-            if not documents:
-                self.logger.warning(f"No source documents found for {subject} at {mongo_level} level")
-                self._update_global_subject_metadata(subject, level_key, [])
+            client = MongoDBClient() # Get current instance
+            # ... (Connection check) ...
+
+            # 1. Fetch the Question Paper documents (Still fetches multiple initially)
+            question_documents = client.get_questions_by_subject_level(subject, mongo_level, limit=50)
+            self.logger.info(f"Found {len(question_documents)} source question paper documents to process for {subject} at {level_key}")
+
+            if not question_documents:
+                # ... (handle no documents found) ...
                 return
-            
-            # Create base cache directories (ensure paths are correct)
+
+            # *** Define the target IDs we actually want to fully process ***
+            # You might get these from config, user settings, or hardcode them if static
+            target_paper_ids_str = {
+                "67d50ebecec12312c07d55f9", # 2022 Paper
+                "67d50f56da1cae21c770da4d"  # 2024 Paper
+            }
+            target_paper_object_ids = {ObjectId(id_str) for id_str in target_paper_ids_str}
+            self.logger.info(f"Will perform full processing only for target _ids: {target_paper_ids_str}")
+
+
+            # Create base cache directories
+            # ... (directory creation logic) ...
             safe_subject = self._safe_filename(subject)
             safe_level = self._safe_filename(level_key)
-            level_dir = os.path.join(self.QUESTIONS_DIR, safe_subject, safe_level)
+            questions_base_dir = os.path.join(self.QUESTIONS_DIR, safe_subject, safe_level)
             answers_base_dir = os.path.join(self.CACHE_DIR, "answers", safe_subject, safe_level)
-            os.makedirs(level_dir, exist_ok=True)
+            os.makedirs(questions_base_dir, exist_ok=True)
             os.makedirs(answers_base_dir, exist_ok=True)
 
-            # Process each source document (paper)
-            for doc_index, doc in enumerate(documents): # Use enumerate for logging context
+
+            # 2. Process each source Question Paper document
+            for doc_index, question_doc_raw in enumerate(question_documents):
+                # ... (Initialize counters) ...
                 doc_question_count = 0
-                doc_valid_image_url_count = 0 # Count valid URLs found in this doc
-                doc_downloaded_image_count = 0 # Count successfully downloaded images for this doc
+                doc_answer_count = 0
+                doc_valid_image_url_count = 0
+                doc_downloaded_image_count = 0
+                matching_answer_doc_for_this_paper = None
 
-                safe_doc = self._mongo_to_json_serializable(doc)
-                mongo_doc_id = str(safe_doc.get('_id', f'missing_id_{doc_index}'))
-                self.logger.debug(f"Processing source document #{doc_index} (ID: {mongo_doc_id})")
-
-                # Extract Parent Document Metadata
-                source_document_id = safe_doc.get('document_id')
-                source_file_id = safe_doc.get('file_id')
-                source_file_name = safe_doc.get('file_name')
-
-                paper_meta = safe_doc.get('paper_meta', {})
-                year = str(paper_meta.get('Year', 'Unknown'))
-                term_raw = paper_meta.get('Term')
-                term = term_raw if term_raw else 'Unknown'
-                paper_number = str(paper_meta.get('PaperNumber', 'Unknown'))
-                
-                # Create year directories
-                year_dir = os.path.join(level_dir, year)
-                year_answers_dir = os.path.join(answers_base_dir, year)
-                os.makedirs(year_dir, exist_ok=True)
-                os.makedirs(year_answers_dir, exist_ok=True)
-                
-                if 'questions' not in safe_doc or not isinstance(safe_doc['questions'], list):
-                     self.logger.warning(f"Source document {mongo_doc_id} has missing/invalid 'questions' array. Skipping.")
+                # Extract the primary _id from the raw question doc
+                mongo_question_object_id = question_doc_raw.get('_id')
+                if not mongo_question_object_id or not isinstance(mongo_question_object_id, ObjectId):
+                     self.logger.error(f"Could not extract valid ObjectId from question document index {doc_index}. Skipping.")
                      continue
 
-                processed_questions_for_doc = [] # Hold updated questions for this doc before modifying original
+                safe_question_doc = self._mongo_to_json_serializable(question_doc_raw)
+                mongo_question_doc_id_str = str(mongo_question_object_id)
 
-                # Process each individual question within the document
-                for question_index, question in enumerate(safe_doc.get('questions',[])):
-                    if not isinstance(question, dict):
-                        self.logger.warning(f"Skipping invalid question item #{question_index} (not a dict) in doc {mongo_doc_id}")
-                        processed_questions_for_doc.append(question) # Keep original invalid item maybe? Or skip?
-                        continue
+                self.logger.info(f"--- Processing Question Paper #{doc_index + 1}/{len(question_documents)} with _id: {mongo_question_object_id} ---")
 
-                    # --- FIX: Correct indentation for assignment ---
-                    # Extract question number (ensure this logic assigns question_number_str)
-                    q_num = question.get('question_number') # <-- Shifted left
-                    if isinstance(q_num, dict) and '$numberInt' in q_num: # <-- Shifted left
-                        question_number_str = str(q_num['$numberInt']) # <-- Shifted left
-                    else: # <-- Shifted left
-                        question_number_str = str(q_num) if q_num is not None else f"idx{question_index}" # <-- Shifted left
-                    # --- END FIX ---
-                    # question_number_str should now be reliably assigned here
+                # Extract Metadata
+                # ... (Metadata extraction logic) ...
+                source_document_id = safe_question_doc.get('document_id') # Get the document_id for matching
+                source_file_id = safe_question_doc.get('file_id')
+                source_file_name = safe_question_doc.get('file_name')
+                paper_meta = safe_question_doc.get('paper_meta', {})
+                year = str(paper_meta.get('Year', 'Unknown'))
+                # Extract term and paper number from paper_meta
+                term = str(paper_meta.get('Term', 'Unknown'))
+                paper_number = str(paper_meta.get('Paper', 'Unknown'))
 
-                    # --- Image Processing ---
-                    processed_images = []
-                    original_images = question.get('images', [])
+                year_questions_dir = os.path.join(questions_base_dir, year) # Defined earlier
+                year_answers_dir = os.path.join(answers_base_dir, year)   # Defined earlier
+                os.makedirs(year_questions_dir, exist_ok=True)
+                os.makedirs(year_answers_dir, exist_ok=True)
 
-                    # Log that we are starting image processing for this specific question number
-                    if original_images and isinstance(original_images, list):
-                         self.logger.debug(f"Processing {len(original_images)} image entries for q#{question_number_str} in doc {mongo_doc_id}") # This line should no longer crash
-                         # --- End FIX ---
+                # --- Check if this is one of the papers we need full processing for ---
+                is_target_paper = mongo_question_object_id in target_paper_object_ids
+                if not is_target_paper:
+                    self.logger.info(f"Skipping detailed answer processing for non-target paper _id: {mongo_question_object_id}")
+                    # Optionally, you might still want to cache the questions even if answers aren't needed
+                    # If not, you could 'continue' here to skip question caching too.
+                    # For now, let's assume we still cache questions.
 
-                         for i, img_info in enumerate(original_images):
-                             local_path = None
-                             updated_img_info = img_info.copy()
-
-                             if isinstance(img_info, dict) and 'url' in img_info:
-                                 img_url = img_info.get('url')
-                                 img_label = img_info.get('label')
-
-                                 # Check if URL *looks* valid before attempting download helper
-                                 if img_url and isinstance(img_url, str) and img_url.startswith(('http://', 'https://')):
-                                     doc_valid_image_url_count += 1
-                                     # --- CALL THE CORRECTED HELPER ---
-                                     local_path = self._download_and_save_asset(
-                                         img_url, subject, level_key, year,
-                                         question_number_str, i, img_label
-                                     )
-                                     # --- Store the result ---
-                                     updated_img_info['local_path'] = local_path # Add/update local_path key
-                                     if local_path:
-                                         doc_downloaded_image_count += 1 # Increment success count
-                                 else:
-                                     # Log skipping due to invalid URL format found in data
-                                     self.logger.info(f"q#{question_number_str} img#{i}: No valid image URL specified (URL is '{img_url}'). Skipping download.")
-                                     updated_img_info['local_path'] = None # Ensure it's None if skipped
-                             else:
-                                 # Log skipping due to invalid image entry structure
-                                 self.logger.warning(f"q#{question_number_str} img#{i}: Invalid image entry structure. Skipping. Entry: {img_info}")
-                                 updated_img_info['local_path'] = None # Ensure it's None if skipped
-
-                             processed_images.append(updated_img_info) # Add updated dict to list
-                    else:
-                         # Log if no images list found for this question
-                         self.logger.debug(f"No 'images' list found or list is empty for q#{question_number_str}.")
-                    # --- End Image Processing ---
-
-                    # Prepare the final question data object for JSON saving
-                    # Create a new dict to avoid modifying the original 'question' dict in place
-                    question_data_to_save = {
-                        "id": mongo_doc_id, # Link back to original document
-                            "subject": subject,
-                            "level": level_key,
-                            "year": year,
-                        "question_number_str": question_number_str, # Processed string version
-                        # Copy other relevant fields from original question dict
-                        "question_text": question.get("question_text", ""),
-                        "topic": question.get("topic"),
-                        "subtopic": question.get("subtopic"),
-                        "difficulty": question.get("difficulty"),
-                        "context_materials": question.get("context_materials"),
-                        "sub_questions": question.get("sub_questions"),
-                        "tables": question.get("tables"),
-                        "marks": question.get("marks"),
-                        # Use the processed images list
-                        "images": processed_images,
-                        "answer_ref": f"{question_number_str}.json" # Example if answers are separate
-                        # Avoid adding 'original_question' back into itself if not needed
-                    }
-
-
-                    # Save the question JSON file
-                    question_filename = os.path.join(year_dir, f"{question_number_str}.json")
-                    try:
-                        with open(question_filename, 'w', encoding='utf-8') as f:
-                            json.dump(question_data_to_save, f, ensure_ascii=False, indent=4) # Use indent 4 maybe
-                        doc_question_count += 1
-                    except Exception as e:
-                         self.logger.error(f"Failed to save question file {question_filename}: {e}", exc_info=True)
-
-
-                    # --- Process and save the corresponding answer ---
-                    # Make sure this logic uses 'year_answers_dir'
-                    # --- ADDED: Save the answer/marking scheme ---
-                    answer_filename = os.path.join(year_answers_dir, f"{question_number_str}.json")
-                    try:
-                        # Assuming the 'question' dict processed in this loop contains
-                        # the necessary answer/marking scheme details (like sub-questions, marks).
-                        # Adjust if the actual answer text is stored differently in the source 'doc'.
-                        answer_data_to_save = {
-                            "id": mongo_doc_id, # Link back to original document
-                            "subject": subject,
-                            "level": level_key,
-                            "year": year,
+                # --- Cache Questions (Always, or only for target papers?) ---
+                # Decide if you want to cache questions for non-target papers too
+                # Current logic caches all questions found
+                if 'questions' in safe_question_doc and isinstance(safe_question_doc['questions'], list):
+                    # ... (Existing question processing and saving loop) ...
+                     for question_index, question_item in enumerate(safe_question_doc['questions']):
+                        # ... (save question logic) ...
+                        if not isinstance(question_item, dict): continue
+                        q_num_int = self._get_int_q_num(question_item)
+                        question_number_str = str(q_num_int) if q_num_int is not None else f"idx{question_index}"
+                        processed_images = [] # Placeholder
+                        # (Actual image processing logic)
+                        question_data_to_save = {
+                            "id": mongo_question_doc_id_str, "subject": subject, "level": level_key, "year": year,
                             "question_number_str": question_number_str,
-                            # Include the specific question details that contain the answer/scheme
-                            "answer_details": question # Use the 'question' dict from the loop
+                            "question_text": question_item.get("question_text", ""), "topic": question_item.get("topic"),
+                            "subtopic": question_item.get("subtopic"), "difficulty": question_item.get("difficulty"),
+                            "context_materials": question_item.get("context_materials"), "sub_questions": question_item.get("sub_questions"),
+                            "tables": question_item.get("tables"), "marks": question_item.get("marks"),
+                            "images": processed_images, "answer_ref": f"{question_number_str}.json"
                         }
-                        with open(answer_filename, 'w', encoding='utf-8') as f:
-                            json.dump(answer_data_to_save, f, ensure_ascii=False, indent=4)
-                        self.logger.debug(f"Successfully saved answer file: {answer_filename}")
+                        question_filename = os.path.join(year_questions_dir, f"{question_number_str}.json")
+                        try:
+                            with open(question_filename, 'w', encoding='utf-8') as f: json.dump(question_data_to_save, f, ensure_ascii=False, indent=4)
+                            doc_question_count += 1
+                        except Exception as e: self.logger.error(f"Failed to save question file {question_filename}: {e}", exc_info=True)
+                else:
+                     self.logger.warning(f"Source document {mongo_question_object_id} has missing/invalid 'questions' array.")
+
+
+                # --- Fetch and Cache Answers ONLY if it's a target paper ---
+                if is_target_paper:
+                    self.logger.info(f"Attempting to fetch matching answer document for TARGET paper {mongo_question_object_id} using consolidated get_matching_answer")
+                    try:
+                        # *** Directly call the consolidated function ***
+                        matching_answer_doc_for_this_paper = client.get_matching_answer(safe_question_doc) # Pass question doc which contains _id and metadata
+                        if matching_answer_doc_for_this_paper:
+                            self.logger.info(f"Consolidated match SUCCESS for target paper. Found answer doc: {matching_answer_doc_for_this_paper.get('_id')}")
+
+                            # --- Process and save answers ---
+                            safe_answer_doc = self._mongo_to_json_serializable(matching_answer_doc_for_this_paper)
+                            mongo_answer_doc_id_str = str(safe_answer_doc.get('_id', 'missing_answer_id'))
+                            answers_in_doc = safe_answer_doc.get('answers')
+                            if isinstance(answers_in_doc, list):
+                                # ... (Existing loop to save individual answer files from answers_in_doc) ...
+                                 for answer_item_index, answer_item in enumerate(answers_in_doc):
+                                     if not isinstance(answer_item, dict): continue
+                                     ans_q_num_int = self._get_int_q_num(answer_item)
+                                     if ans_q_num_int is None: continue
+                                     answer_number_str = str(ans_q_num_int)
+                                     answer_filename = os.path.join(year_answers_dir, f"{answer_number_str}.json")
+                                     try:
+                                         answer_data_to_save = {
+                                             "id": mongo_answer_doc_id_str, "subject": subject, "level": level_key, "year": year,
+                                             "question_number_str": answer_number_str, "answers": [answer_item]
+                                         }
+                                         with open(answer_filename, 'w', encoding='utf-8') as f: json.dump(answer_data_to_save, f, ensure_ascii=False, indent=4)
+                                         self.logger.debug(f"Successfully saved answer file: {answer_filename}")
+                                         doc_answer_count += 1
+                                     except Exception as e: self.logger.error(f"Failed to save answer file {answer_filename}: {e}", exc_info=True)
+                            else:
+                                self.logger.warning(f"Matched answer document {mongo_answer_doc_id_str} has invalid 'answers' field.")
+                        else:
+                            self.logger.warning(f"Consolidated match FAILED for target paper {mongo_question_object_id}. No answer document found.")
                     except Exception as e:
-                         self.logger.error(f"Failed to save answer file {answer_filename}: {e}", exc_info=True)
-                    # --- END ADDED ---
+                         self.logger.error(f"Exception during consolidated get_matching_answer for target paper {mongo_question_object_id}: {e}")
+                         # matching_answer_doc_for_this_paper remains None
 
                 # --- Store metadata for this paper ---
+                # ... (Metadata collection, potentially adding a flag if it was a target paper) ...
                 paper_metadata = {
-                    "mongo_doc_id": mongo_doc_id,
-                    "source_document_id": source_document_id,
-                    "source_file_id": source_file_id,
-                    "source_file_name": source_file_name,
-                                "year": year,
-                    "term": term,
-                    "paper_number": paper_number,
+                    "mongo_doc_id": mongo_question_doc_id_str,
+                    "source_document_id": source_document_id, "source_file_id": source_file_id,
+                    "source_file_name": source_file_name, "year": year, "term": term, "paper_number": paper_number,
                     "question_count": doc_question_count,
-                    "image_url_count": doc_valid_image_url_count, # Total valid URLs found
-                    "image_download_count": doc_downloaded_image_count # Total actually downloaded
+                    "answer_count_cached": doc_answer_count, # How many answer files saved
+                    "image_url_count": doc_valid_image_url_count, "image_download_count": doc_downloaded_image_count,
+                    "is_target_paper": is_target_paper, # Flag if processed fully
+                    "answer_doc_found_by": "primary_id" if matching_answer_doc_for_this_paper and matching_answer_doc_for_this_paper.get('_id') == mongo_question_object_id else ("metadata" if matching_answer_doc_for_this_paper else "none") if is_target_paper else "not_attempted"
                 }
                 processed_papers_metadata.append(paper_metadata)
-                self.logger.debug(f"Collected metadata for paper {mongo_doc_id} ({source_file_name}): {doc_question_count} questions, {doc_valid_image_url_count} valid URLs, {doc_downloaded_image_count} images downloaded.")
+                self.logger.debug(f"Collected metadata for paper {mongo_question_doc_id_str}")
+
 
             # --- After processing all documents ---
-            self.logger.info(f"Finished processing all documents for {subject}/{level_key}.")
-            self._update_global_subject_metadata(subject, level_key, processed_papers_metadata)
+            # ... (Update global metadata) ...
 
         except Exception as e:
             self.logger.error(f"Error in _queue_questions_for_caching for {subject}/{level_key}: {e}", exc_info=True)

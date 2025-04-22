@@ -1,5 +1,5 @@
 {
-    "id": "67d42cf3b2ed25f8c739ec59",
+    "id": "67d50ebecec12312c07d55f9",
     "subject": "Biology",
     "level": "o_level",
     "year": "2022",
@@ -33,10 +33,26 @@
         {
             "caption": "Numbers of people infected with HIV globally and the numbers receiving treatment in different years.",
             "data": [
-                {"year": "2000", "millions of people infected with HIV": "24.9", "millions of people receiving treatment for HIV": "0.77"},
-                {"year": "2010", "millions of people infected with HIV": "31.7", "millions of people receiving treatment for HIV": "7.7"},
-                {"year": "2015", "millions of people infected with HIV": "35.6", "millions of people receiving treatment for HIV": "17.0"},
-                {"year": "2018", "millions of people infected with HIV": "37.9", "millions of people receiving treatment for HIV": "23.3"}
+                {
+                    "year": "2000",
+                    "millions of people infected with HIV": "24.9",
+                    "millions of people receiving treatment for HIV": "0.77"
+                },
+                {
+                    "year": "2010",
+                    "millions of people infected with HIV": "31.7",
+                    "millions of people receiving treatment for HIV": "7.7"
+                },
+                {
+                    "year": "2015",
+                    "millions of people infected with HIV": "35.6",
+                    "millions of people receiving treatment for HIV": "17.0"
+                },
+                {
+                    "year": "2018",
+                    "millions of people infected with HIV": "37.9",
+                    "millions of people receiving treatment for HIV": "23.3"
+                }
             ]
         }
     ],

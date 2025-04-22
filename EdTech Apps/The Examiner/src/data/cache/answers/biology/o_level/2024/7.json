@@ -1,0 +1,36 @@
+{
+    "id": "67d50f56da1cae21c770da4d",
+    "subject": "Biology",
+    "level": "o_level",
+    "year": "2024",
+    "question_number_str": "7",
+    "answers": [
+        {
+            "question_number": 7,
+            "answer_text": "Answers related to plastic pollution calculation, biodegradation, and environmental impacts.",
+            "marking_scheme": {
+                "total_marks": 11
+            },
+            "sub_answers": [
+                {
+                    "sub_number": "a",
+                    "text": "11(.01) million tonnes",
+                    "marks": 2,
+                    "marking_notes": "1 mark for 11(.01). 1 mark for 'million tonnes'.\nAccept 11 000 000 / 11 010 000 tonnes / tons.\nConverted to standard form = 1.101 × 10^7 or 1.1 × 10^7 tonnes.\nAccept 110.1 × 10^5 tonnes and variations."
+                },
+                {
+                    "sub_number": "b(i)",
+                    "text": "decomposition ;\nbacteria / fungi ;",
+                    "marks": 2,
+                    "marking_notes": "1 mark for decomposition.\n1 mark for bacteria or fungi."
+                },
+                {
+                    "sub_number": "b(ii)",
+                    "text": "1 remains for a very long time / forever AW (in environment) ;\n2 breaks up into AW + micro-plastics / small particles ;\n3 strangles / traps / suffocates / injures AW + animals ;\n4 animals eat it / chokes on it / blocks digestive systems AW ;\n5 enters / affects food chains / webs ;\n6 accumulates + in top predators / along food chain AW ;\n7 covers habitat / covers plants / blocks light ;\n8 less light for / no + photosynthesis ;\n9 burning / combustion ;\n10 toxins from plastics AW;",
+                    "marks": 7,
+                    "marking_notes": "Max 7 marks. 1 mark per valid harmful effect described."
+                }
+            ]
+        }
+    ]
+}

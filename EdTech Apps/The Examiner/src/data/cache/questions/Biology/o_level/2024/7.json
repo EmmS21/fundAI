@@ -1,0 +1,36 @@
+{
+    "id": "67d50f56da1cae21c770da4d",
+    "subject": "Biology",
+    "level": "o_level",
+    "year": "2024",
+    "question_number_str": "7",
+    "question_text": "Plastics are produced in very large amounts by industrial processes around the world. These plastics can enter ecosystems as pollution.",
+    "topic": "Environmental Science & Ecology",
+    "subtopic": "Pollution, Decomposition, Ecosystem Impact",
+    "difficulty": {
+        "level": "Medium",
+        "justification": "Combines calculations with environmental impact analysis and understanding of decomposition."
+    },
+    "context_materials": "The total mass of plastics produced globally in the year 2020 was 367 million tonnes. It is estimated that 3% of all plastics produced globally each year enters the ocean as plastic pollution.",
+    "sub_questions": [
+        {
+            "sub_number": "a",
+            "text": "Calculate the total mass of plastic pollution that is estimated to have entered the ocean during the year 2020.",
+            "marks": 2
+        },
+        {
+            "sub_number": "b(i)",
+            "text": "Some packaging is made from biodegradable carbohydrates.\nMicroorganisms break down larger carbohydrate molecules into smaller molecules.\nIdentify this process and name one type of microorganism that is involved.",
+            "marks": 2
+        },
+        {
+            "sub_number": "b(ii)",
+            "text": "Most plastics that enter ecosystems as pollution are non-biodegradable.\nDescribe the harmful effects of non-biodegradable plastics on both aquatic and terrestrial ecosystems.",
+            "marks": 7
+        }
+    ],
+    "tables": [],
+    "marks": 11,
+    "images": [],
+    "answer_ref": "7.json"
+}

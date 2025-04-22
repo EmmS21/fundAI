@@ -1,5 +1,5 @@
 {
-    "id": "67d50f7779dac53b183510c3",
+    "id": "67d50f56da1cae21c770da4d",
     "subject": "Biology",
     "level": "o_level",
     "year": "2024",
@@ -7,34 +7,46 @@
     "answers": [
         {
             "question_number": 4,
-            "answer_text": "Answers related to plant adaptation to dehydration, photosynthesis, plasmolysis, species definition, and binomial nomenclature.",
+            "answer_text": "Answers related to nephron structure, function, and homeostasis.",
             "marking_scheme": {
-                "total_marks": 12 
+                "total_marks": 14
             },
             "sub_answers": [
                 {
                     "sub_number": "a(i)",
-                    "text": "Chlorophyll/chloroplasts ;\nlarger surface area (after rainfall) ;\nphotosynthesis ;\ncarbohydrates / glucose / starch produced ;\nabsorption / trap + light (energy) ;",
-                    "marks": 4,
-                    "marking_notes": "Max 4 marks. Any four points required."
+                    "text": "(P) Bowman's capsule ;\n(Q) loop of Henle ;\n(R) collecting duct ;",
+                    "marks": 3,
+                    "marking_notes": "1 mark for each correctly identified structure."
                 },
                 {
                     "sub_number": "a(ii)",
-                    "text": "loss of water molecules + osmosis / diffusion / evaporation ;\ncytoplasm shrinks ;\nsap vacuole shrinks ;\ncell membrane pulls away from cell wall ;\nlack of turgor pressure ;\nplasmolysis ;",
-                    "marks": 4,
-                    "marking_notes": "Max 4 marks. Any four points required. Accept marks from a labelled diagram."
+                    "text": "kidney ;",
+                    "marks": 1,
+                    "marking_notes": "1 mark for correct organ."
+                },
+                {
+                    "sub_number": "a(iii)",
+                    "text": "(urinary) bladder ;",
+                    "marks": 1,
+                    "marking_notes": "1 mark for correct organ."
                 },
                 {
                     "sub_number": "b(i)",
-                    "text": "(a group of organisms that) can reproduce / breed / mate ;\nproduce offspring that are fertile ;",
-                    "marks": 2,
-                    "marking_notes": "1 mark for reproduction.\n1 mark for fertile offspring."
+                    "text": "toxic / toxin ;",
+                    "marks": 1,
+                    "marking_notes": "1 mark for correct reason."
                 },
                 {
                     "sub_number": "b(ii)",
-                    "text": "name: binomial ;\n\nadvantage: relevant advantage given\nsame name in all parts of the world / international name /\ncommon names can differ in different parts of the world /\ngenus name helps identify closely related species ;",
-                    "marks": 2,
-                    "marking_notes": "1 mark for 'binomial'.\n1 mark for any valid advantage."
+                    "text": "glucose\n1 enters Bowman's capsule / enters nephron / removed from blood AW ;\n2 by filtration / filtered;\n3 back into blood / reabsorbed + into blood ;\n4 AVP ;\nprotein\n5 doesn't enter Bowman's capsule / doesn't enter nephron / no filtration / not removed from blood AW ;\n6 protein + large AW ;",
+                    "marks": 5,
+                    "marking_notes": "Max 5 marks. Award marks for correct points explaining glucose filtration and reabsorption, and protein non-filtration. AVP = Accept Valid Point."
+                },
+                {
+                    "sub_number": "b(iii)",
+                    "text": "ion concentration + decrease ;\nmore water / higher volume of water / excess water + in fluid S / urine / excreted;\nhomeostasis / to keep concentration of water in blood constant AW;",
+                    "marks": 3,
+                    "marking_notes": "1 mark for decreased ion concentration.\n1 mark for increased water volume in urine.\n1 mark for linking to homeostasis."
                 }
             ]
         }

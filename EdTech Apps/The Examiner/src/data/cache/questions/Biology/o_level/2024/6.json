@@ -1,31 +1,68 @@
 {
-    "id": "67d50f7779dac53b183510c3",
+    "id": "67d50f56da1cae21c770da4d",
     "subject": "Biology",
     "level": "o_level",
     "year": "2024",
     "question_number_str": "6",
-    "question_text": "Comparison of human and plant responses to light",
-    "topic": "Biology",
-    "subtopic": "Coordination and Response",
+    "question_text": "Flowering plants are sometimes grown in soil to provide cut flowers that can then be displayed.",
+    "topic": "Plant Biology",
+    "subtopic": "Plant Nutrition and Transport",
     "difficulty": {
         "level": "Medium",
-        "justification": "Requires understanding of both human and plant responses to stimuli"
+        "justification": "Requires understanding of plant nutrition, calculations, and transport tissues."
     },
-    "context_materials": null,
+    "context_materials": "Table 6.1 shows the information printed on the label of the container of fertiliser powder.",
     "sub_questions": [
         {
-            "sub_number": "a",
-            "text": "Describe how humans and plants coordinate responses to light",
-            "marks": 6
+            "sub_number": "a(i)",
+            "text": "A gardener watered flowering plants with a fertiliser solution containing dissolved chemicals.\nTable 6.1 shows the information printed on the label of the container of fertiliser powder used to prepare this fertiliser solution.\nTo prepare the fertiliser solution, the gardener dissolved 20g of the fertiliser powder in 10dm3 of water.\nCalculate the total mass of sulfur in the fertiliser solution prepared by the gardener.",
+            "marks": 2
+        },
+        {
+            "sub_number": "a(ii)",
+            "text": "Explain which chemical component of the fertiliser solution is the most important to plants for:\nmaking the leaves of the plants green in colour\nthe production of enzymes by cells in the leaves of the plants.",
+            "marks": 4
+        },
+        {
+            "sub_number": "a(iii)",
+            "text": "The chemical components of the fertiliser solution are absorbed by the root hair cells of the plants and are then transported to the leaves.\nComplete the words below to name the three main tissues in the pathway taken by the chemical components of the fertiliser solution from the root hair cells to the leaves.\nThe first letter of each word has been completed for you.\nC .............................................\nX .............................................\nM .............................................",
+            "marks": 3
         },
         {
             "sub_number": "b",
-            "text": "Describe the role of synapses in a reflex arc",
-            "marks": 4
+            "text": "When flowers from the plants are cut and used for display, the leaves are removed before each stem is placed in water.\nA solution containing sucrose is often added to this water.\nSucrose is not needed in fertiliser solution used to water plants growing in soil.\nExplain the benefit of providing sucrose to cut flowers.",
+            "marks": 3
         }
     ],
-    "tables": null,
-    "marks": 10,
+    "tables": [
+        {
+            "label": "Table 6.1",
+            "caption": "Information printed on the label of the container of fertiliser powder.",
+            "data": [
+                {
+                    "chemical component": "nitrates",
+                    "mass/g per 100g fertiliser powder": "4.0"
+                },
+                {
+                    "chemical component": "phosphates",
+                    "mass/g per 100g fertiliser powder": "4.0"
+                },
+                {
+                    "chemical component": "sulfur",
+                    "mass/g per 100g fertiliser powder": "1.0"
+                },
+                {
+                    "chemical component": "magnesium",
+                    "mass/g per 100g fertiliser powder": "0.5"
+                }
+            ],
+            "columns": [
+                "chemical component",
+                "mass/g per 100g fertiliser powder"
+            ]
+        }
+    ],
+    "marks": 12,
     "images": [],
     "answer_ref": "6.json"
 }
