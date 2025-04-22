@@ -1,5 +1,5 @@
 {
-    "id": "67d50f7779dac53b183510c3",
+    "id": "67d50f56da1cae21c770da4d",
     "subject": "Biology",
     "level": "o_level",
     "year": "2024",
@@ -7,28 +7,22 @@
     "answers": [
         {
             "question_number": 1,
-            "answer_text": "Answers related to the human gas exchange system.",
+            "answer_text": "Answers related to plant cell structure identification and function.",
             "marking_scheme": {
-                "total_marks": 10 
+                "total_marks": 5
             },
             "sub_answers": [
                 {
-                    "sub_number": "a(i)",
-                    "text": "intercostal muscle - changes volume of thorax\ngoblet cell - release mucus\nalveoli - exchange of gases\ncilia - remove pathogens\ntrachea - carry air to bronchi",
+                    "sub_number": "a",
+                    "text": "A: chloroplast ; photosynthesis / light energy to chemical energy / make glucose / make starch ;\nB: (sap) vacuole ; storage / turgor / support",
                     "marks": 4,
-                    "marking_notes": "four correct = 4 marks\nthree correct = 3 marks\ntwo correct = 2 marks\none correct = 1 mark"
-                },
-                {
-                    "sub_number": "a(ii)",
-                    "text": "large surface area ;\nthin/flattened + cells / walls ;\nlayer of water AW ;\nclose to capillaries ;",
-                    "marks": 2,
-                    "marking_notes": "Max 2 marks"
+                    "marking_notes": "Structure A: 1 mark for name, 1 mark for function.\nStructure B: 1 mark for name, 1 mark for function."
                 },
                 {
                     "sub_number": "b",
-                    "text": "inspired/inhaled air + expired/exhaled air in correct order ;\nnitrogen ;\noxygen ;\ncarbon dioxide ;",
-                    "marks": 4,
-                    "marking_notes": "1 mark for correct order of titles.\n1 mark each for nitrogen, oxygen, carbon dioxide keys."
+                    "text": "ribosomes ;\nmitochondria ;",
+                    "marks": 1,
+                    "marking_notes": "Max 1 mark. Accept plant cell structures not on syllabus e.g. rough ER, Golgi apparatus etc."
                 }
             ]
         }

@@ -1,5 +1,5 @@
 {
-    "id": "67d50f7779dac53b183510c3",
+    "id": "67d50f56da1cae21c770da4d",
     "subject": "Biology",
     "level": "o_level",
     "year": "2024",
@@ -7,52 +7,40 @@
     "answers": [
         {
             "question_number": 3,
-            "answer_text": "Answers related to blood components, capillaries, tissue fluid, and malaria.",
+            "answer_text": "Answers related to genetic terminology and DNA structure.",
             "marking_scheme": {
-                "total_marks": 14
+                "total_marks": 10
             },
             "sub_answers": [
                 {
-                    "sub_number": "a(i)",
-                    "text": "10 / 1250 or correct equation ;\n0.008 (mm) or 8  10–3 ;\n8 (m) ;",
-                    "marks": 3,
-                    "marking_notes": "1 mark for equation/ratio.\n1 mark for answer in mm.\n1 mark for answer in μm.\n(3 marks for correct final answer in μm)"
-                },
-                {
-                    "sub_number": "a(ii)",
-                    "text": "both same shape AW ;\nW side view / X is a view from above / seen from different angles ;",
-                    "marks": 2,
-                    "marking_notes": "1 mark for shape similarity.\n1 mark for explaining different views."
-                },
-                {
-                    "sub_number": "a(iii)",
-                    "text": "Y = plasma +\nZ = tissue fluid ;\n\nplasma / Y / blood + under pressure / squeezed ;\nplasma / Y passes out of capillaries to form tissue fluid ;",
-                    "marks": 3,
-                    "marking_notes": "1 mark for identifying Y and Z.\n1 mark for pressure explanation.\n1 mark for describing formation of tissue fluid."
+                    "sub_number": "a",
+                    "text": "allele ;\ndominant ;\nheterozygous ;\nhomozygous ;\ngenotype ;",
+                    "marks": 5,
+                    "marking_notes": "1 mark for each correct term in the correct row."
                 },
                 {
                     "sub_number": "b(i)",
-                    "text": "mosquito ;\nvector ;\nsucks up blood from infected woman / sucks up blood containing pathogen ;\ninjects pathogen + into different person ;",
-                    "marks": 3,
-                    "marking_notes": "Max 3 marks. Any three points required."
+                    "text": "double helix ;",
+                    "marks": 1,
+                    "marking_notes": "1 mark for correct term."
                 },
                 {
                     "sub_number": "b(ii)",
-                    "text": "mitosis ;",
+                    "text": "plasmid ;",
                     "marks": 1,
-                    "marking_notes": "1 mark for mitosis."
+                    "marking_notes": "1 mark for correct structure."
                 },
                 {
                     "sub_number": "b(iii)",
-                    "text": "red blood cells destroyed / reduces the number of red blood cells ;",
+                    "text": "(nitrogenous / organic) base ;",
                     "marks": 1,
-                    "marking_notes": "1 mark for correct explanation."
+                    "marking_notes": "1 mark for correct term."
                 },
                 {
                     "sub_number": "b(iv)",
-                    "text": "iron deficiency / lack of iron /\nheavy loss of blood through injury /\nmenstruation ;",
-                    "marks": 1,
-                    "marking_notes": "1 mark for any valid reason."
+                    "text": "codes for AW + proteins / named type of protein ;\ndetermines AW + sequence of amino acids ;\ndetermines AW + shape / structure / function of protein ;",
+                    "marks": 2,
+                    "marking_notes": "Max 2 marks. 1 mark per valid point explaining the importance of the base sequence."
                 }
             ]
         }

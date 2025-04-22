@@ -1,5 +1,5 @@
 {
-    "id": "67d50f7779dac53b183510c3",
+    "id": "67d50f56da1cae21c770da4d",
     "subject": "Biology",
     "level": "o_level",
     "year": "2024",
@@ -7,64 +7,40 @@
     "answers": [
         {
             "question_number": 5,
-            "answer_text": "Answers related to bacterial structure, biotechnology, bacterial growth, and enzyme function (lipase).",
+            "answer_text": "Answers related to pineapple plant reproduction, introduced species, and enzyme (bromelain) function.",
             "marking_scheme": {
-                "total_marks": 17 
+                "total_marks": 15
             },
             "sub_answers": [
                 {
                     "sub_number": "a(i)",
-                    "text": "A + DNA / genetic material ;\nD + ribosome ;\nPart A: contains the gene for the protein / lipase / codes for the production of the protein / lipase / mRNA / codes for sequence of amino acids in protein / lipase ;\nPart D: adds amino acids together to build protein ;",
-                    "marks": 4,
-                    "marking_notes": "1 mark for identifying A.\n1 mark for identifying D.\n1 mark for function of A.\n1 mark for function of D."
+                    "text": "asexual ;",
+                    "marks": 1,
+                    "marking_notes": "1 mark for correct term."
                 },
                 {
                     "sub_number": "a(ii)",
-                    "text": "motile / can move ;",
-                    "marks": 1,
-                    "marking_notes": "1 mark for correct term."
+                    "text": "advantages\nrapid AW ;\nmany new plants formed / greater yield ;\nonly one parent plant needed ;\nplants have same desirable AW + feature / allele / named useful feature ;\nripen at the same time so easier to harvest ;\ndisadvantages\nhave same undesirable AW + feature / allele / named useful feature ;\nnot adapted if change in environment AW ;\nripen at the same time so price goes down / not a constant supply to market ;",
+                    "marks": 4,
+                    "marking_notes": "Max 2 marks for advantages. Max 2 marks for disadvantages."
                 },
                 {
                     "sub_number": "a(iii)",
-                    "text": "genes / DNA can be inserted into them ;\ncan pass into a (bacterial) cell / vector / can carry a gene into a (bacterial) cell ;",
-                    "marks": 2,
-                    "marking_notes": "1 mark for gene insertion.\n1 mark for acting as a vector."
+                    "text": "with hummingbirds :\nsexual reproduction / pollination / fertilisation ;\nseeds formed ;\nhumans / consumers + don't like / find inedible AW ;\nreduced income / business / economy AW ;\nhummingbird introduces diseases ;\nhummingbird + competes with other species ;\n(competes) for named resource ;",
+                    "marks": 4,
+                    "marking_notes": "Max 4 marks. Award marks for valid reasons explaining the negative impact of introducing hummingbirds."
                 },
                 {
                     "sub_number": "b(i)",
-                    "text": "fermenter ;",
-                    "marks": 1,
-                    "marking_notes": "1 mark for correct term."
+                    "text": "protein ;\n→ amino acids ;",
+                    "marks": 2,
+                    "marking_notes": "1 mark for substrate (protein).\n1 mark for product (amino acids)."
                 },
                 {
                     "sub_number": "b(ii)",
-                    "text": "M indicated between 3rd and 4th plots ;",
-                    "marks": 1,
-                    "marking_notes": "1 mark for correctly indicating M on the graph (implied)."
-                },
-                {
-                    "sub_number": "b(iii)",
-                    "text": "0.4 / 0.1  100 ;\n400 (%) ;",
-                    "marks": 2,
-                    "marking_notes": "1 mark for calculation.\n1 mark for correct answer.\n(2 marks for correct answer)"
-                },
-                {
-                    "sub_number": "b(iv)",
-                    "text": "E has higher final biomass / greater increase in biomass (than F)ORA ;\nE reaches max biomass quicker (than F) ORA ;\nE starts at a higher biomass (than F) ORA ;\nE rate of increase of biomass is faster (than F) ORA ;",
-                    "marks": 2,
-                    "marking_notes": "Max 2 marks. Any two valid comparisons. Accept answers that quote figures."
-                },
-                {
-                    "sub_number": "b(v)",
-                    "text": "pH / oxygen / food supply / nutrients / temperature ;",
-                    "marks": 1,
-                    "marking_notes": "1 mark for any valid limiting factor."
-                },
-                {
-                    "sub_number": "c",
-                    "text": "lipase digests / hydrolyses / breaks down + lipids / fats ;\nfatty acids and glycerol produced ;\nbile emulsifies / increases surface area of lipids ;\nbile neutralises acidic food / provides the optimum pH for digestion ;",
-                    "marks": 3,
-                    "marking_notes": "Max 3 marks. 1 mark for lipase action.\n1 mark for products.\n1 mark for bile action (either emulsification or pH)."
+                    "text": "1 increased surface area of powder / bromelain ;\n2 more enzymes / higher surface area + more activity / collisions AW ;\n3 optimum / highest activity + pH 8 ;\n4 high activity across all pH range / pH 3–12 ;\n5 bromelain / enzymes + not denatured ;\n6 stomach + acid / HCl / pH 2 ;\n7 small intestine / duodenum / ileum + alkaline;\n8 effective / active + in stomach and small intestine ;",
+                    "marks": 4,
+                    "marking_notes": "Max 4 marks. Award marks for discussing effectiveness based on pH range, enzyme properties, and digestive system conditions."
                 }
             ]
         }

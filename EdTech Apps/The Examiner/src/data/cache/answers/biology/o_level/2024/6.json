@@ -1,5 +1,5 @@
 {
-    "id": "67d50f7779dac53b183510c3",
+    "id": "67d50f56da1cae21c770da4d",
     "subject": "Biology",
     "level": "o_level",
     "year": "2024",
@@ -7,22 +7,34 @@
     "answers": [
         {
             "question_number": 6,
-            "answer_text": "Answers comparing human and plant responses to light and describing synapse function.",
+            "answer_text": "Answers related to plant nutrition, fertilizers, and transport.",
             "marking_scheme": {
-                "total_marks": 10 
+                "total_marks": 12
             },
             "sub_answers": [
                 {
-                    "sub_number": "a",
-                    "text": "Human:\ndetected by retina / light receptors;\ninvolves neurones / nervous system / electrical impulses;\nresponse is muscular contractions (in iris) ;\ncausing constriction / reduction in size of the pupil ;\nPlants:\ndetected by stem tip ;\ninvolves hormones / auxin ;\nmore moves / diffuses to the side away from light ;\ncausing more growth / elongation + on the shaded side ;\npositive phototropism / plant stem grows/bends + towards the light ;",
-                    "marks": 6,
-                    "marking_notes": "Max 6 marks. Points can describe either human or plant responses or compare them implicitly/explicitly."
+                    "sub_number": "a(i)",
+                    "text": "Calculation: (1.0 / 100) * 20 = 0.2 g",
+                    "marks": 2,
+                    "marking_notes": "1 mark for correct calculation/working. 1 mark for correct answer with unit (g)."
+                },
+                {
+                    "sub_number": "a(ii)",
+                    "text": "making leaves green: magnesium ; chlorophyll (makes leaves green);\nproduction of enzymes: nitrates ; (enzymes made from) amino acids / proteins ;",
+                    "marks": 4,
+                    "marking_notes": "1 mark for magnesium, 1 mark for chlorophyll link. 1 mark for nitrates, 1 mark for amino acid/protein link."
+                },
+                {
+                    "sub_number": "a(iii)",
+                    "text": "(c)ortex ;\n(x)ylem ;\n(m)esophyll ;",
+                    "marks": 3,
+                    "marking_notes": "1 mark for each correct tissue name."
                 },
                 {
                     "sub_number": "b",
-                    "text": "transmission of impulse between neurones ;\nin one direction ;\nneurotransmitter ;\nreleased (from vesicles) into (synaptic) gap ;\ndiffusion + across gap ;\nbinds with receptor (proteins) ;",
-                    "marks": 4,
-                    "marking_notes": "Max 4 marks. Any four points required."
+                    "text": "1 no + photosynthesis ;\n2 to produce glucose / glucose not produced ;\n3 to produce sucrose / sucrose not produced ;\n4 sucrose travels in phloem ;\n5 for respiration / energy ;\n6 flowers / plants + last longer / for days AW;",
+                    "marks": 3,
+                    "marking_notes": "Max 3 marks. 1 mark per valid point explaining the benefit of sucrose."
                 }
             ]
         }

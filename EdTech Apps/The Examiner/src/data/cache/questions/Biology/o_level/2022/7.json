@@ -1,5 +1,5 @@
 {
-    "id": "67d42cf3b2ed25f8c739ec59",
+    "id": "67d50ebecec12312c07d55f9",
     "subject": "Biology",
     "level": "o_level",
     "year": "2022",
@@ -31,12 +31,6 @@
     ],
     "tables": null,
     "marks": 10,
-    "images": [
-        {
-            "description": "Diagram showing a section through a human molar tooth, labelling enamel, dentine, and pulp.",
-            "local_path": "src/data/cache/assets/biology/o_level/2022/q7_img_0.png",
-            "url": "https://ibb.co/FqkZwjhM"
-        }
-    ],
+    "images": [],
     "answer_ref": "7.json"
 }

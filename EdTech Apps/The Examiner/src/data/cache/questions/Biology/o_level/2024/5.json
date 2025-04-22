@@ -1,79 +1,46 @@
 {
-    "id": "67d50f7779dac53b183510c3",
+    "id": "67d50f56da1cae21c770da4d",
     "subject": "Biology",
     "level": "o_level",
     "year": "2024",
     "question_number_str": "5",
-    "question_text": "Bacillus subtilis is a species of bacterium that is widely used in biotechnology. It can be used to manufacture the protein lipase for industrial use.",
-    "topic": "Biology",
-    "subtopic": "Biotechnology and Microorganisms",
+    "question_text": "Fig. 5.1 is a diagram of a pineapple growing on a pineapple plant.",
+    "topic": "Plant Biology, Ecology, and Enzymes",
+    "subtopic": "Plant Reproduction, Introduced Species, Enzyme Function",
     "difficulty": {
         "level": "Hard",
-        "justification": "Combines microbiology, biotechnology, and data analysis"
+        "justification": "Combines multiple biological concepts (reproduction, ecology, enzymes) and application of knowledge"
     },
-    "context_materials": "Fig. 5.1 is a diagram of B. subtilis.\nFig. 5.2 show how the biomass of B. subtilis increases after small populations of bacteria are added to two containers with different environmental conditions.",
+    "context_materials": "Fig. 5.1 is a diagram of a pineapple growing on a pineapple plant.\nFig. 5.2 shows the effect of changing pH on the activity of the enzymes found in bromelain.",
     "sub_questions": [
         {
             "sub_number": "a(i)",
-            "text": "Two of the parts labelled A, B, C and D in Fig. 5.1 are involved in the manufacture of proteins such as lipase.\nIdentify the two parts, name them and explain their role in protein manufacture.",
-            "marks": 4
+            "text": "Pineapple plants can be grown on farms by removing the suckers from a parent plant and planting these in the ground to form new plants.\nState the type of reproduction used to grow pineapple plants in this way.",
+            "marks": 1
         },
         {
             "sub_number": "a(ii)",
-            "text": "Suggest why B. subtilis has flagella.",
-            "marks": 1
+            "text": "State two advantages and two disadvantages of producing pineapple plants in this way.",
+            "marks": 4
         },
         {
             "sub_number": "a(iii)",
-            "text": "Explain why plasmids are useful in biotechnology.",
-            "marks": 2
+            "text": "Pineapples are an important crop in Hawaii, USA. They were introduced to Hawaii from South America.\nBirds called hummingbirds pollinate pineapple flowers. If pollinated, pineapple fruits develop and they contain hard, inedible seeds. If not pollinated, pineapple fruits develop without seeds.\nHummingbirds are not found in Hawaii.\nSuggest why it is illegal to introduce hummingbirds into Hawaii.",
+            "marks": 4
         },
         {
             "sub_number": "b(i)",
-            "text": "B. subtilis can be grown industrially in large containers.\nGive the name of the large industrial containers used to grow bacteria.",
-            "marks": 1
+            "text": "Pineapples contain a mixture of protease enzymes called bromelain.\nWhen bromelain is added to its substrate, a product is formed.\nComplete the word equation to show the substrate and product.",
+            "marks": 2
         },
         {
             "sub_number": "b(ii)",
-            "text": "When B. subtilis is in ideal conditions it can reproduce rapidly, increasing the population size and the biomass of bacteria in the container.\nGraphs E and F in Fig. 5.2 show how the biomass of B. subtilis increases after small populations of bacteria are added to two containers with different environmental conditions.\nIn graph E the biomass increases as shown in Fig. 5.2.\nIndicate using the letter M the part of graph E where bacteria are reproducing most rapidly.",
-            "marks": 1
-        },
-        {
-            "sub_number": "b(iii)",
-            "text": "Calculate the percentage increase in biomass for graph E in the first 6 hours.",
-            "marks": 2
-        },
-        {
-            "sub_number": "b(iv)",
-            "text": "Describe two differences between graph E and graph F.",
-            "marks": 2
-        },
-        {
-            "sub_number": "b(v)",
-            "text": "Suggest one environmental condition which could have caused the differences between graph E and graph F.",
-            "marks": 1
-        },
-        {
-            "sub_number": "c",
-            "text": "Lipase is also produced by the human body.\nExplain why it is produced and how its function is different from the function of bile.",
-            "marks": 3
+            "text": "The effect of changing pH on the activity of the enzymes found in bromelain was investigated. The results of this investigation are shown in Fig. 5.2.\nTo assist digestion, some people swallow bromelain in the form of a powder with their food.\nUse the information in Fig. 5.2 and your knowledge of the human digestive system to discuss the effectiveness of using bromelain in this way.",
+            "marks": 4
         }
     ],
     "tables": null,
-    "marks": 17,
-    "images": [
-        {
-            "label": "Fig. 5.1",
-            "description": "Diagram of B. subtilis",
-            "url": "https://ibb.co/bgmMKT56",
-            "local_path": "src/data/cache/assets/biology/o_level/2024/q5_fig_51.png"
-        },
-        {
-            "label": "Fig. 5.2",
-            "description": "Graphs showing bacterial growth",
-            "url": "https://ibb.co/zV11CV1q",
-            "local_path": "src/data/cache/assets/biology/o_level/2024/q5_fig_52.png"
-        }
-    ],
+    "marks": 15,
+    "images": [],
     "answer_ref": "5.json"
 }

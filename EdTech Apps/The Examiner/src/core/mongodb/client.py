@@ -611,131 +611,106 @@ class MongoDBClient:
     
     def get_matching_answer(self, question_doc: Dict) -> Optional[Dict]:
         """
-        Get the matching answer document for a question.
-        
+        Get the matching answer document for a question paper.
+        PRIORITIZES matching by _id from the question_doc first.
+        Falls back to metadata matching if _id match fails.
+
         Args:
-            question_doc: The question document for which to find a matching answer
-            
+            question_doc: The question document (potentially containing _id)
+
         Returns:
             The answer document, or None if no match is found
         """
-        logger.info(f"Fetching matching answer for question")
-        
+        logger.info(f"--- Entered get_matching_answer (consolidated logic) ---")
+
         try:
-            # Check subscription before accessing MongoDB
-            if not self._check_subscription():
-                logger.warning("Subscription not active, cannot fetch answer")
-                return None
-                
-            # Ensure we're connected
+            # --- Primary Match Attempt: Using _id ---
+            question_object_id = None
+            raw_id = question_doc.get('_id') # Get _id (could be string or ObjectId)
+
+            if isinstance(raw_id, ObjectId):
+                question_object_id = raw_id
+            elif isinstance(raw_id, str):
+                 try:
+                      question_object_id = ObjectId(raw_id)
+                      logger.debug(f"Converted question doc string ID '{raw_id}' to ObjectId: {question_object_id}")
+                 except Exception:
+                      logger.warning(f"Question doc _id '{raw_id}' is a string but not a valid ObjectId format. Cannot use for primary match.")
+            else:
+                logger.info(f"No usable '_id' field found in question_doc for primary matching.")
+
+
+            if question_object_id: # Proceed only if we have a valid ObjectId
+                 logger.info(f"Attempting primary match using _id: {question_object_id}")
+                 if self._ensure_connected():
+                     answers_collection = self.db["extracted-answers"]
+                     answer_doc = answers_collection.find_one({'_id': question_object_id})
+                     if answer_doc:
+                         logger.info(f"Primary match SUCCESS using _id. Found answer doc: {answer_doc.get('_id')}")
+                         return answer_doc # Return the successfully matched document
+                     else:
+                         logger.info(f"Primary match FAILED using _id {question_object_id} (returned None). Proceeding to metadata match.")
+                 else:
+                      logger.error("Cannot perform primary match by _id - MongoDB not connected.")
+            # --- End Primary Match Attempt ---
+
+
+            # --- Fallback Match Attempt: Using Metadata ---
+            logger.info(f"Attempting fallback match using metadata...")
             if not self._ensure_connected():
-                logger.error("Failed to connect to MongoDB")
-                return None
-            
-            # Extract question number - check multiple possible locations
-            question_number = None
-            if 'question_number' in question_doc:
-                question_number = question_doc['question_number']
-                # Handle MongoDB extended JSON format
-                if isinstance(question_number, dict) and '$numberInt' in question_number:
-                    question_number = int(question_number['$numberInt'])
-            
-            # Try other possible fields if not found
-            if question_number is None:
-                for field in ['QuestionNumber', 'Number', 'question_number', 'Question_Number']:
-                    if field in question_doc:
-                        question_number = question_doc[field]
-                        break
-                
-            # Check if question number is in a questions array
-            if question_number is None and 'questions' in question_doc and isinstance(question_doc['questions'], list):
-                for q in question_doc['questions']:
-                    if 'question_number' in q:
-                        question_number = q['question_number']
-                        break
-            
-            # Extract year from the question
-            year = None
-            if 'paper_meta' in question_doc and 'Year' in question_doc['paper_meta']:
-                year = question_doc['paper_meta']['Year']
-            elif 'year' in question_doc:
-                year = question_doc['year']
-            
-            # Extract subject from the question
-            subject = None
-            if 'paper_meta' in question_doc and 'Subject' in question_doc['paper_meta']:
-                subject = question_doc['paper_meta']['Subject']
-            elif 'subject' in question_doc:
-                subject = question_doc['subject']
-            
-            if not subject:
-                logger.warning("No subject found in question, cannot find matching answer")
-                return None
-            
-            # Get level from paper_meta
-            level = None
-            if 'paper_meta' in question_doc and 'Level' in question_doc['paper_meta']:
-                level = question_doc['paper_meta']['Level']
-            elif 'level' in question_doc:
-                level = question_doc['level']
-            
-            # Build a query to find the answer
-            query = {}
-            
-            # Standardize and add subject to query
-            if subject:
-                std_subject = self._standardize_subject(subject)
-                # Use regex for case-insensitive subject matching
-                query['$or'] = [
-                    {'paper_meta.Subject': {'$regex': std_subject, '$options': 'i'}},
-                    {'subject': {'$regex': std_subject, '$options': 'i'}}
-                ]
-            
-            # Try to find answers using question_number and year if available
-            if question_number is not None:
-                answer_query = query.copy()
-                
-                # Use answer level mapping
-                answer_level = None
-                if level:
-                    answer_level = self._standardize_level_name(level)
-                    if answer_level in self.ANSWER_LEVEL_MAPPING.values():
-                        answer_query['paper_meta.Level'] = answer_level
-                
-                # Add question number to query
-                answer_query['$or'] = answer_query.get('$or', []) + [
-                    {'question_number': question_number},
-                    {'QuestionNumber': question_number},
-                    {'answers.question_number': question_number}
-                ]
-                
-                # Add year to query if available
-                if year:
-                    answer_query['$or'].append({'paper_meta.Year': year})
-                
-                # Try to find the answer
-                answer_collection = self.db['extracted-answers']
-                answer = answer_collection.find_one(answer_query)
-                
-                if answer:
-                    self._process_document_id(answer)
-                    logger.info(f"Found matching answer for question number {question_number}")
-                    return answer
-            
-            # If no match found, try more flexible search - just use subject
-            answer_collection = self.db['extracted-answers']
-            answer = answer_collection.find_one(query)
-            
-            if answer:
-                self._process_document_id(answer)
-                logger.info(f"Found answer for subject {subject}")
-                return answer
-            
-            logger.warning(f"No matching answer found for question with subject {subject}")
-            return None
-                
+                 logger.error("Cannot perform fallback match by metadata - MongoDB not connected.")
+                 return None
+
+            # Extract metadata needed for the fallback query
+            paper_meta = question_doc.get('paper_meta', {})
+            subject = paper_meta.get("Subject", question_doc.get("subject"))
+            level = paper_meta.get("Level", question_doc.get("level"))
+            year = paper_meta.get("Year", question_doc.get("year"))
+            paper_number = paper_meta.get("PaperNumber")
+            # Add Term and Version for more specificity if available
+            term = paper_meta.get("Term", question_doc.get("Term"))
+            version = paper_meta.get("Version", question_doc.get("Version"))
+
+
+            if not subject or not level or not year: # Require at least these for a meaningful fallback
+                 logger.warning(f"Insufficient metadata (subject/level/year missing) in question_doc for fallback matching. Doc _id: {question_doc.get('_id')}")
+                 return None
+
+            # Standardize for query
+            standardized_subject = self._standardize_subject_name(subject) # Assuming this helper exists
+            standardized_level_a = self.ANSWER_LEVEL_MAPPING.get(level.lower(), level) # Use ANSWER mapping
+
+            # Build the metadata query - make it more specific
+            query = {
+                 "paper_meta.Subject": {"$regex": f"^{re.escape(standardized_subject)}$", "$options": "i"}, # Exact match, case-insensitive
+                 "paper_meta.Level": standardized_level_a, # Use specific answer level format
+                 "paper_meta.Year": str(year) # Ensure year is string
+            }
+            # Add other specific fields if available
+            if paper_number: query["paper_meta.PaperNumber"] = str(paper_number)
+            if term: query["paper_meta.Term"] = term
+            if version: query["paper_meta.Version"] = str(version)
+            # Add examining board if relevant and consistent
+            # examining_board = paper_meta.get("Examining Board", paper_meta.get("ExaminingBoard"))
+            # if examining_board: query["paper_meta.Examining Board"] = examining_board
+
+
+            logger.info(f"Executing fallback metadata query: {query}")
+            answers_collection = self.db["extracted-answers"]
+            answer_doc = answers_collection.find_one(query) # Use find_one
+
+            if answer_doc:
+                 logger.info(f"Fallback match SUCCESS using metadata. Found answer doc: {answer_doc.get('_id')}")
+                 return answer_doc
+            else:
+                 logger.warning(f"Fallback match FAILED using metadata. No matching answer document found.")
+                 return None
+
+        except SubscriptionRequiredError as e:
+             logger.warning(f"Subscription error in get_matching_answer: {e}")
+             return None
         except Exception as e:
-            logger.error(f"Error fetching matching answer: {e}", exc_info=True)
+            logger.error(f"Error in get_matching_answer: {e}", exc_info=True)
             return None
     
     def get_available_subjects(self) -> List[str]:
