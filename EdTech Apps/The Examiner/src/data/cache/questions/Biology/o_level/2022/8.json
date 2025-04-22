@@ -1,0 +1,31 @@
+{
+    "id": "67d42cf3b2ed25f8c739ec59",
+    "subject": "Biology",
+    "level": "o_level",
+    "year": "2022",
+    "question_number_str": "8",
+    "question_text": "The functions of the body are coordinated by nerve impulses and hormones.",
+    "topic": "Human Biology",
+    "subtopic": "Coordination and Response (Nervous and Endocrine Systems)",
+    "difficulty": {
+        "level": "Medium",
+        "justification": "Requires comparison of nervous and hormonal coordination and application to a specific physiological response (fight-or-flight)."
+    },
+    "context_materials": null,
+    "sub_questions": [
+        {
+            "sub_number": "a",
+            "text": "Compare these two types of coordination.",
+            "marks": 4
+        },
+        {
+            "sub_number": "b",
+            "text": "A girl sees a vehicle travelling towards her at speed as she crosses a road. This triggers nerve impulses and the release of adrenaline in her body.\nDescribe the role of the nerve impulses and adrenaline in helping her to react to this situation.",
+            "marks": 6
+        }
+    ],
+    "tables": null,
+    "marks": 10,
+    "images": [],
+    "answer_ref": "8.json"
+}

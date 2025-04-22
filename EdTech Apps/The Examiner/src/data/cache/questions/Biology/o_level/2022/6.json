@@ -1,0 +1,46 @@
+{
+    "id": "67d42cf3b2ed25f8c739ec59",
+    "subject": "Biology",
+    "level": "o_level",
+    "year": "2022",
+    "question_number_str": "6",
+    "question_text": "There are many different types of virus that can infect animal cells.",
+    "topic": "Human Biology & Cell Biology",
+    "subtopic": "Viruses, HIV, Immune System, Data Interpretation",
+    "difficulty": {
+        "level": "Medium",
+        "justification": "Requires comparison of virus and cell structures, knowledge of HIV transmission, and interpretation of data from a table."
+    },
+    "context_materials": null,
+    "sub_questions": [
+        {
+            "sub_number": "a",
+            "text": "Compare the structure of a typical virus with a typical animal cell.",
+            "marks": 4
+        },
+        {
+            "sub_number": "b(i)",
+            "text": "Human immunodeficiency virus (HIV) is one type of virus.\nDescribe how HIV is transmitted.",
+            "marks": 3
+        },
+        {
+            "sub_number": "b(ii)",
+            "text": "Use the information in the table to describe changes in the numbers of people infected and treated between the years 2000 and 2018.",
+            "marks": 3
+        }
+    ],
+    "tables": [
+        {
+            "caption": "Numbers of people infected with HIV globally and the numbers receiving treatment in different years.",
+            "data": [
+                {"year": "2000", "millions of people infected with HIV": "24.9", "millions of people receiving treatment for HIV": "0.77"},
+                {"year": "2010", "millions of people infected with HIV": "31.7", "millions of people receiving treatment for HIV": "7.7"},
+                {"year": "2015", "millions of people infected with HIV": "35.6", "millions of people receiving treatment for HIV": "17.0"},
+                {"year": "2018", "millions of people infected with HIV": "37.9", "millions of people receiving treatment for HIV": "23.3"}
+            ]
+        }
+    ],
+    "marks": 10,
+    "images": [],
+    "answer_ref": "6.json"
+}

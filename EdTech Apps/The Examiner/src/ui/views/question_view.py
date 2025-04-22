@@ -1,12 +1,13 @@
 import logging
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QScrollArea, QSizePolicy, QDialog, QFrame)
-from PySide6.QtGui import QPixmap, QImage, QFont, QGuiApplication
-from PySide6.QtCore import Qt, Signal, QUrl
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QScrollArea, QSizePolicy, QDialog, QFrame, QMessageBox, QGroupBox)
+from PySide6.QtGui import QPixmap, QImage, QFont, QGuiApplication, QMovie
+from PySide6.QtCore import Qt, Signal, QUrl, QThread
 from src.data.cache.cache_manager import CacheManager
 import os
 import sys
 import json
-from src.core.ai.marker import get_ai_feedback # <-- Import the AI feedback function
+from src.core.ai.marker import run_ai_evaluation # Use the updated orchestrator name
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,59 @@ MARKS_BUTTON_STYLE = """
     }}
 """
 
+# --- ADDED: Simple Waiting Dialog ---
+class WaitingDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Processing")
+        self.setModal(True) # Block interaction with parent window
+        # Remove close button and help context button
+        self.setWindowFlags(Qt.Dialog | Qt.CustomizeWindowHint | Qt.WindowTitleHint | Qt.WindowStaysOnTopHint)
+
+        layout = QVBoxLayout(self)
+        self.label = QLabel("Generating AI Feedback, please wait...")
+        self.label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.label)
+
+        # --- Optional Spinner GIF ---
+        # self.spinner_label = QLabel()
+        # self.movie = QMovie("path/to/your/spinner.gif") # Needs a GIF file
+        # if self.movie.isValid():
+        #     self.spinner_label.setMovie(self.movie)
+        #     layout.addWidget(self.spinner_label, alignment=Qt.AlignCenter)
+        #     self.movie.start()
+        # else:
+        #     logger.warning("Spinner GIF not found or invalid.")
+        # ----------------------------
+
+        self.setMinimumWidth(300)
+        self.setLayout(layout)
+
+# --- Worker Thread for AI Feedback ---
+class AIFeedbackWorker(QThread):
+    # Signal emits the results dictionary
+    feedback_ready = Signal(object)
+
+    def __init__(self, question_data, correct_answer_data, user_answer, marks):
+        super().__init__()
+        self.question_data = question_data
+        self.correct_answer_data = correct_answer_data
+        self.user_answer = user_answer
+        self.marks = marks
+
+    def run(self):
+        """Runs the AI evaluation function in a separate thread."""
+        logger.info("AIFeedbackWorker started (Mark + Justification).")
+        # --- FIX: Call the updated function ---
+        evaluation_results = run_ai_evaluation(
+            self.question_data,
+            self.correct_answer_data,
+            self.user_answer,
+            self.marks
+        )
+        self.feedback_ready.emit(evaluation_results)
+        logger.info("AIFeedbackWorker finished (Mark + Justification).")
+
 class QuestionView(QWidget):
     """Widget to display a single question and handle user interaction."""
 
@@ -62,6 +116,8 @@ class QuestionView(QWidget):
         self.cache_manager = CacheManager()
         self.current_question_data = None # To store the loaded question details
         self.logger = logging.getLogger(__name__)
+        self.feedback_worker = None
+        self.waiting_dialog = None # Add instance variable for the dialog
 
         self._setup_ui()
         self.load_random_question()
@@ -127,46 +183,56 @@ class QuestionView(QWidget):
         self.answer_input.setStyleSheet("font-size: 14px; border: 1px solid #D1D5DB; border-radius: 6px; padding: 5px;")
         self.main_layout.addWidget(self.answer_input)
 
+        # --- ADDED: Feedback Display Area (Initially Hidden) ---
+        self.feedback_groupbox = QGroupBox("AI Feedback")
+        self.feedback_groupbox.setObjectName("FeedbackGroup")
+        self.feedback_layout = QVBoxLayout(self.feedback_groupbox)
+        self.feedback_layout.setSpacing(8)
+
+        # --- FIX: Assign labels and textedit to self. ---
+        self.mark_label = QLabel("Mark Awarded: N/A") # USE self.
+        self.mark_label.setObjectName("FeedbackLabel")
+        self.rating_label = QLabel("Understanding Rating: N/A") # USE self.
+        self.rating_label.setObjectName("FeedbackLabel")
+
+        mark_rating_layout = QHBoxLayout()
+        mark_rating_layout.addWidget(self.mark_label) # Reference self.
+        mark_rating_layout.addStretch()
+        mark_rating_layout.addWidget(self.rating_label) # Reference self.
+        self.feedback_layout.addLayout(mark_rating_layout)
+
+        # Assign content label to self for consistency, though not strictly required by the error
+        self.feedback_content_label = QLabel("Feedback Details:")
+        self.feedback_content_label.setObjectName("FeedbackLabel")
+        self.feedback_content_label.setStyleSheet("font-weight: bold;")
+        self.feedback_layout.addWidget(self.feedback_content_label) # Reference self.
+
+        # Assign QTextEdit to self
+        self.feedback_text = QTextEdit() # USE self.
+        self.feedback_text.setObjectName("FeedbackContent")
+        self.feedback_text.setReadOnly(True)
+        self.feedback_text.setFixedHeight(150)
+        self.feedback_layout.addWidget(self.feedback_text) # Reference self.
+        # --- END FIX ---
+
+        self.feedback_groupbox.hide()
+        self.main_layout.addWidget(self.feedback_groupbox)
+
         # --- Action Buttons ---
-        button_layout = QHBoxLayout()
-        # TODO: Add "Previous" button if needed
-        next_button = QPushButton("Next Question")
-        next_button.setStyleSheet("""
-            QPushButton {
-                background-color: #F3F4F6;
-                color: #374151;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #E5E7EB;
-            }
-        """)
-        next_button.clicked.connect(self.load_random_question) # Load another question
+        self.button_layout = QHBoxLayout()
+        self.next_button = QPushButton("Next Question")
+        # ... styling ...
+        self.next_button.clicked.connect(self.load_random_question)
+        self.next_button.setEnabled(False)
 
-        submit_button = QPushButton("Submit Answer")
-        submit_button.setStyleSheet("""
-            QPushButton {
-                background-color: #A855F7;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #9333EA;
-            }
-        """)
-        submit_button.clicked.connect(self._submit_answer)
+        self.submit_button = QPushButton("Submit Answer")
+        # ... styling ...
+        self.submit_button.clicked.connect(self._trigger_ai_feedback)
 
-        button_layout.addStretch()
-        # button_layout.addWidget(previous_button)
-        button_layout.addWidget(next_button)
-        button_layout.addWidget(submit_button)
-        self.main_layout.addLayout(button_layout)
+        self.button_layout.addStretch()
+        self.button_layout.addWidget(self.submit_button)
+        self.button_layout.addWidget(self.next_button)
+        self.main_layout.addLayout(self.button_layout)
 
         self.setLayout(self.main_layout)
 
@@ -367,115 +433,105 @@ class QuestionView(QWidget):
         }
         return display_names.get(level_key, level_key.replace('_', ' ').title())
 
-    def _submit_answer(self):
+    # --- Updated _trigger_ai_feedback ---
+    def _trigger_ai_feedback(self):
+        """Starts the AI feedback process and shows the waiting dialog."""
+        if self.feedback_worker and self.feedback_worker.isRunning():
+            self.logger.warning("Feedback process already running.")
+            return
+
         if self.current_question_data:
+            # ... (Keep logic to get user_answer, validate, calculate marks, load correct_answer_data) ...
             user_answer = self.answer_input.toPlainText().strip()
-            
-            # --- Extract necessary info from current question data ---\
-            question_id = self.current_question_data.get('id')
-            subject = self.current_question_data.get('subject')
-            level = self.current_question_data.get('level')
-            year = self.current_question_data.get('year')
-            answer_ref = self.current_question_data.get('answer_ref') # e.g., "1a.json"
-            
-            # Basic validation
-            if not all([question_id, subject, level, year, answer_ref]):
-                self.logger.error("Could not submit answer: Missing critical data in current_question_data (id, subject, level, year, or answer_ref)")
-                # TODO: Show error message to user
-                return
-            
-            if not user_answer:
-                self.logger.warning("User tried to submit an empty answer.")
-                # TODO: Show message to user to enter an answer
-                return
+            # ... validation checks ...
+            marks = self.current_question_data.get('marks') # etc.
+            # ... load correct_answer_data ...
+            correct_answer_data = {} # Placeholder
 
-            # --- Calculate Marks (Keep existing logic) ---\
-            marks = self.current_question_data.get('marks')
-            if marks is None and 'sub_questions' in self.current_question_data:
-                try:
-                    marks = sum(sq.get('marks', 0) or 0 for sq in self.current_question_data['sub_questions'] if isinstance(sq, dict))
-                except TypeError:
-                    marks = None 
-                    self.logger.warning(f"Could not sum marks from sub-questions for question {question_id}")
-            
-            # --- Construct path to the correct answer file ---\
-            # Use CacheManager's base paths if available, otherwise construct relatively
-            base_answer_dir = getattr(self.cache_manager, 'ANSWERS_DIR', os.path.join("src", "data", "cache", "answers"))
-            safe_subject = getattr(self.cache_manager, '_safe_filename', lambda s: s)(subject) # Use safe filename func if possible
-            answer_file_path = os.path.join(base_answer_dir, safe_subject, level, str(year), answer_ref)
-            
-            self.logger.debug(f"Attempting to load correct answer from: {answer_file_path}")
-            
-            correct_answer_data = None
-            try:
-                with open(answer_file_path, 'r', encoding='utf-8') as f:
-                    correct_answer_data = json.load(f)
-                self.logger.info(f"Successfully loaded correct answer for question {question_id}")
-            except FileNotFoundError:
-                self.logger.error(f"Correct answer file not found at: {answer_file_path}")
-                # TODO: Show error to user - "Could not retrieve marking information"
-                return
-            except json.JSONDecodeError:
-                self.logger.error(f"Error decoding JSON from answer file: {answer_file_path}")
-                # TODO: Show error to user
-                return
-            except Exception as e:
-                self.logger.error(f"Unexpected error loading answer file {answer_file_path}: {e}", exc_info=True)
-                # TODO: Show error to user
-                return
-            
-            # --- Now we have: ---\
-            # self.current_question_data (dict)
-            # correct_answer_data (dict)
-            # user_answer (str)
-            # marks (int or None)
+            # --- Show Waiting Dialog & Disable UI ---
+            self.submit_button.setEnabled(False)
+            self.submit_button.setText("Processing...")
+            self.answer_input.setReadOnly(True)
+            self.next_button.setEnabled(False)
 
-            self.logger.info(f"Ready for AI Marking - QID: {question_id}, Marks: {marks}")
-            self.logger.debug(f"User Answer: {user_answer}")
-            # self.logger.debug(f"Correct Answer Data: {correct_answer_data}") # Potentially large, log carefully
+            # Create and show the dialog
+            self.waiting_dialog = WaitingDialog(self)
+            self.waiting_dialog.show()
+            # --- End Show Waiting Dialog ---
 
-            # TODO:
-            # 1. Create src/core/ai/marker.py with get_ai_feedback(question, correct_answer, user_answer, marks)
-            # 2. Import and call get_ai_feedback here
-            # --- Call the AI marker service ---
-            self.logger.info("Calling AI feedback service...")
-            parsed_response = get_ai_feedback(
-                question_data=self.current_question_data,
-                correct_answer_data=correct_answer_data,
-                user_answer=user_answer,
-                marks=marks
+            # --- Start Worker Thread ---
+            self.feedback_worker = AIFeedbackWorker(
+                self.current_question_data,
+                correct_answer_data,
+                user_answer,
+                marks
             )
+            self.feedback_worker.feedback_ready.connect(self._handle_ai_feedback_result)
+            self.feedback_worker.start()
 
-            # Check if the response is valid
-            if parsed_response and "Error" not in parsed_response:
-                self.logger.info("Received and parsed AI feedback/suggestions.")
-                # TODO: Display feedback and suggestions in the UI using parsed_response dict
-                print("--- AI FEEDBACK ---") # Temporary console output
-                for heading, content in parsed_response.items():
-                    print(f"## {heading}:\n{content}\n")
-                # print(f"Feedback: {parsed_response.get('Feedback', 'N/A')}")
-                # print(f"Mark Awarded: {parsed_response.get('Mark Awarded', 'N/A')}")
-                # ... access other sections as needed ...
-                print("-------------------\n")
-                # Maybe disable input/submit here and show feedback, 
-                # then provide a button to go to the next question.
-            else:
-                # Handle cases where model wasn't found, server failed, request failed, or parsing failed
-                error_message = "Failed to get valid feedback from AI service."
-                if isinstance(parsed_response, dict) and "Error" in parsed_response:
-                    error_message = f"AI Service Error: {parsed_response['Error']}"
-                self.logger.error(error_message)
-                # TODO: Show specific error message to user ("Could not get AI feedback: [Reason]")
-
-            # 3. Process the response (feedback, suggestions) and display it
-            # 4. Update UI state (e.g., disable submit, show feedback area)
-
-            # Placeholder action: Clear input and load next question
-            # We might want to change this behavior now - e.g., wait for user to acknowledge feedback
-            self.answer_input.clear()
-            self.load_random_question()
         else:
-            self.logger.warning("Submit button clicked, but no current question data loaded.")
+            # ... (Handle no current question data) ...
+             pass
+
+    # --- UPDATED _handle_ai_feedback_result ---
+    def _handle_ai_feedback_result(self, eval_results: Optional[Dict[str, Optional[str]]]):
+        """Receives the evaluation results dict (or None) from the worker thread."""
+        # Close Dialog
+        if self.waiting_dialog:
+            self.waiting_dialog.accept()
+            self.waiting_dialog = None
+        self.submit_button.setText("Submit Answer") # Reset button
+
+        # Process results
+        if eval_results and isinstance(eval_results, dict):
+            self.logger.info("Received evaluation results from AI.")
+            # Check if mark parsing specifically failed
+            mark_value = eval_results.get("Mark Awarded")
+            if not mark_value or mark_value.startswith("N/A"):
+                 QMessageBox.warning(self, "AI Evaluation Info", "AI could not determine a mark.")
+
+            self._display_feedback(eval_results) # Display mark and justification
+            self.next_button.setEnabled(True)
+        else:
+            # Handle critical errors (None return from run_ai_evaluation)
+            error_message = "Failed to get evaluation from AI service (critical error)."
+            self.logger.error(error_message)
+            QMessageBox.critical(self, "AI Evaluation Error", error_message)
+            # Re-enable UI on critical failure
+            self.submit_button.setEnabled(True)
+            self.answer_input.setReadOnly(False)
+            self.next_button.setEnabled(True)
+
+
+    # --- UPDATED _display_feedback ---
+    def _display_feedback(self, data: Dict[str, Optional[str]]):
+        """Populates the feedback UI elements with mark and justification."""
+        logger.debug(f"Displaying evaluation data: {data}")
+
+        mark_value = data.get('Mark Awarded', 'N/A')
+        justification = data.get('Mark Justification') # Fetch the justification
+
+        self.mark_label.setText(f"Mark Awarded: {mark_value}")
+
+        # --- Display Justification (if available) ---
+        display_text = ""
+        if justification and not justification.startswith("N/A"):
+            display_text = f"**Justification:**\n{justification}\n\n"
+        elif mark_value and not mark_value.startswith("N/A"): # Mark found, but no justification
+             display_text = "(AI did not provide a justification for this mark)\n\n"
+        else: # Neither mark nor justification found
+             display_text = "(AI evaluation failed to produce mark or justification)\n\n"
+
+        # Add placeholder for other feedback types
+        display_text += "(Other feedback sections currently disabled)"
+
+        # Clear or hide other fields
+        self.rating_label.setText("Understanding Rating: -")
+        self.feedback_text.setText(display_text) # Use setText or setMarkdown
+        # --- END DISPLAY Justification ---
+
+        self.feedback_groupbox.setTitle("AI Evaluation")
+        self.feedback_groupbox.show()
 
     def _clear_image_links(self):
         """Removes all widgets from the image links layout."""

@@ -1,0 +1,30 @@
+{
+    "id": "67d50ebecec12312c07d55f9",
+    "subject": "Biology",
+    "level": "o_level",
+    "year": "2022",
+    "question_number_str": "4",
+    "answers": [
+        {
+            "question_number": 4,
+            "answer_text": "Answers related to amino acid absorption and enzyme specificity.",
+            "marking_scheme": {
+                "total_marks": 5
+            },
+            "sub_answers": [
+                {
+                    "sub_number": "a",
+                    "text": "ileum / small intestine ;\nhepatic portal vein ;",
+                    "marks": 2,
+                    "marking_notes": "ileum / small intestine ; (1 mark)\nhepatic portal vein ; (1 mark)"
+                },
+                {
+                    "sub_number": "b",
+                    "text": "lock and key ;\nshape AW + active site / enzyme / amino acids different shapes ;\ncomplementary / fits / matches ;\nbinds AW to a substrate / enzyme-substrate complex / ES complex ;\nwrongly shaped substrates cannot fit + active site ;",
+                    "marks": 3,
+                    "marking_notes": "Any three points required. (1 mark each)"
+                }
+            ]
+        }
+    ]
+}

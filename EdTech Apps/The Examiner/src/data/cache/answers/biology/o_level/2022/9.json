@@ -1,0 +1,30 @@
+{
+    "id": "67d50ebecec12312c07d55f9",
+    "subject": "Biology",
+    "level": "o_level",
+    "year": "2022",
+    "question_number_str": "9",
+    "answers": [
+        {
+            "question_number": 9,
+            "answer_text": "Answers related to nitrogen cycle, fertiliser use, and eutrophication.",
+            "marking_scheme": {
+                "total_marks": 10
+            },
+            "sub_answers": [
+                {
+                    "sub_number": "a",
+                    "text": "ammonium ions / urea / nitrates + in fertiliser / into soil ;\nbacteria + produce nitrates / nitrification ;\nroot hairs + take up / absorb ;\nactive transport ;\ntransported in xylem ;\nproduce amino acids / proteins ;\nhumans ingest / eat + proteins ;",
+                    "marks": 5,
+                    "marking_notes": "Any five points required. (1 mark each)"
+                },
+                {
+                    "sub_number": "b",
+                    "text": "advantages\nreplace nitrogen removed by crops ;\nneeded for improved growth / more yield ;\nto feed increasing human population ;\ndisadvantages\nproduction / transport is energy consuming ;\npromotes monoculture ;\ndegrades soil structure ;\nreduces biodiversity of soil ;\nleaches AW + into rivers / lakes ;\neutrophication / water pollution ;\nstimulates growth of plants / algal bloom ;\ndecomposition / decay / bacteria feed on + algae /plants ;\nlack of oxygen + for water animals / named freshwater animal ;",
+                    "marks": 5,
+                    "marking_notes": "Points can be from advantages or disadvantages. Max points from either section apply implicitly based on total marks. (1 mark per valid point)"
+                }
+            ]
+        }
+    ]
+}

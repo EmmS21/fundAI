@@ -1,0 +1,47 @@
+{
+    "id": "67d42cf3b2ed25f8c739ec59",
+    "subject": "Biology",
+    "level": "o_level",
+    "year": "2022",
+    "question_number_str": "5",
+    "question_text": "A plant species lives in ponds. The diagrams show the whole plant and a section through one of its leaves.",
+    "topic": "Plant Biology & Ecology",
+    "subtopic": "Plant Adaptation & Food Webs",
+    "difficulty": {
+        "level": "Easy",
+        "justification": "Tests understanding of plant adaptations to aquatic environments and basic ecological concepts."
+    },
+    "context_materials": null,
+    "sub_questions": [
+        {
+            "sub_number": "a(i)",
+            "text": "The leaves are adapted to float on the surface of the water.\nSuggest one advantage to the plant of the leaves floating on the surface of water.",
+            "marks": 1
+        },
+        {
+            "sub_number": "a(ii)",
+            "text": "Name the parts of the leaf labelled A and B.",
+            "marks": 2
+        },
+        {
+            "sub_number": "a(iii)",
+            "text": "With reference to parts A and B, describe and explain how the structure of the leaf is adapted to a pond environment.",
+            "marks": 3
+        },
+        {
+            "sub_number": "b",
+            "text": "The plant is part of a food web in a pond.\nState its trophic level.",
+            "marks": 1
+        }
+    ],
+    "tables": null,
+    "marks": 7,
+    "images": [
+        {
+            "description": "Diagram showing the whole plant floating in a pond.",
+            "local_path": "src/data/cache/assets/biology/o_level/2022/q5_img_0.png",
+            "url": "https://ibb.co/zW7Y88NN"
+        }
+    ],
+    "answer_ref": "5.json"
+}

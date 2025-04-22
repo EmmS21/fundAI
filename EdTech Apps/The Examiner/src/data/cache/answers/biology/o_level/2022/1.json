@@ -4,43 +4,39 @@
     "level": "o_level",
     "year": "2022",
     "question_number_str": "1",
-    "answer_details": {
-        "question_number": 1,
-        "question_text": "The diagram shows human skin.",
-        "topic": "Human Biology",
-        "subtopic": "Skin Structure and Temperature Regulation",
-        "difficulty": {
-            "level": "Medium",
-            "justification": "Requires knowledge of skin structure and temperature regulation mechanisms"
-        },
-        "sub_questions": [
-            {
-                "sub_number": "a(i)",
-                "text": "Identify the parts labelled B and C.",
-                "marks": 2
+    "answers": [
+        {
+            "question_number": 1,
+            "answer_text": "Answers related to human skin structure and temperature regulation.",
+            "marking_scheme": {
+                "total_marks": 10
             },
-            {
-                "sub_number": "a(ii)",
-                "text": "Describe how part B is involved in maintaining a constant body temperature when the external temperature drops.",
-                "marks": 3
-            },
-            {
-                "sub_number": "b",
-                "text": "Part A is unevenly distributed in human skin. Name part A and suggest reasons for this uneven distribution.",
-                "marks": 3
-            },
-            {
-                "sub_number": "c",
-                "text": "The thickness of layer D can change over several months. Suggest and explain one reason for a decrease in the thickness.",
-                "marks": 2
-            }
-        ],
-        "images": [
-            {
-                "description": "Diagram of human skin with labeled parts A, B, C, and D",
-                "url": "https://ibb.co/ycNrw2gv"
-            }
-        ],
-        "marks": 10
-    }
+            "sub_answers": [
+                {
+                    "sub_number": "a(i)",
+                    "text": "B = blood vessel / capillary / artery / arteriole\nC = sweat gland",
+                    "marks": 2,
+                    "marking_notes": "B = blood vessel / capillary / artery / arteriole ; (1 mark)\nC = sweat gland ; (1 mark)"
+                },
+                {
+                    "sub_number": "a(ii)",
+                    "text": "Less blood flows in blood vessel / close to skin surface.\nDecrease in radiation / heat loss / AW.\nVasoconstriction OR blood vessels / arterioles / arteries / part B narrow / constrict.",
+                    "marks": 3,
+                    "marking_notes": "Less blood flows in blood vessel / close to skin surface ; (1 mark)\nDecrease in radiation / heat loss / AW ; (1 mark)\nVasoconstriction OR blood vessels / arterioles / arteries / part B narrow / constrict ; (1 mark)"
+                },
+                {
+                    "sub_number": "b",
+                    "text": "A is a receptor / nerve ending.\nTouch / pressure / pain / temperature.\nExamples of uneven distribution e.g. high density in fingers / lips.\nExposed areas need higher sensitivity AW.",
+                    "marks": 3,
+                    "marking_notes": "Any three points required. (1 mark each)"
+                },
+                {
+                    "sub_number": "c",
+                    "text": "Fatty / adipose tissue / cell.\nLess food eaten / less fat in diet / exercise.\nSo fat used by body for respiration / release energy.\nBody using more energy than it is taking in.",
+                    "marks": 2,
+                    "marking_notes": "Any two points required. (1 mark each)"
+                }
+            ]
+        }
+    ]
 }

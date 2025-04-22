@@ -1,0 +1,31 @@
+{
+    "id": "67d42cf3b2ed25f8c739ec59",
+    "subject": "Biology",
+    "level": "o_level",
+    "year": "2022",
+    "question_number_str": "9",
+    "question_text": "The world produces over 100 million tonnes of nitrogen-containing fertiliser annually. Farmers spread this artificial fertiliser over their soil.",
+    "topic": "Ecology & Environment",
+    "subtopic": "Nitrogen Cycle, Agriculture, Human Impact on Ecosystems",
+    "difficulty": {
+        "level": "Medium",
+        "justification": "Requires understanding of the nitrogen cycle in the context of agriculture and evaluation of the environmental impacts of fertiliser use."
+    },
+    "context_materials": null,
+    "sub_questions": [
+        {
+            "sub_number": "a",
+            "text": "Describe how nitrogen from the fertiliser can pass from the soil to eventually become part of the food which humans eat.",
+            "marks": 5
+        },
+        {
+            "sub_number": "b",
+            "text": "Discuss the advantages and disadvantages of the use of artificial nitrogen-containing fertilisers.",
+            "marks": 5
+        }
+    ],
+    "tables": null,
+    "marks": 10,
+    "images": [],
+    "answer_ref": "9.json"
+}

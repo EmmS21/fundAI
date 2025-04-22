@@ -4,34 +4,57 @@
     "level": "o_level",
     "year": "2024",
     "question_number_str": "3",
-    "answer_details": {
-        "question_number": 3,
-        "question_text": "Analysis of a capillary network photomicrograph",
-        "topic": "Biology",
-        "subtopic": "Blood and Circulation",
-        "difficulty": {
-            "level": "Hard",
-            "justification": "Requires analysis of microscope image, calculations, and understanding of disease"
-        },
-        "sub_questions": [
-            {
-                "sub_number": "a",
-                "text": "Questions about red blood cells and blood components",
-                "marks": 8
+    "answers": [
+        {
+            "question_number": 3,
+            "answer_text": "Answers related to blood components, capillaries, tissue fluid, and malaria.",
+            "marking_scheme": {
+                "total_marks": 14
             },
-            {
-                "sub_number": "b",
-                "text": "Questions about malaria and its effects",
-                "marks": 6
-            }
-        ],
-        "images": [
-            {
-                "label": "Fig. 3.1",
-                "description": "Photomicrograph of capillary network",
-                "url": "https://ibb.co/4wP3fKMw"
-            }
-        ],
-        "marks": 14
-    }
+            "sub_answers": [
+                {
+                    "sub_number": "a(i)",
+                    "text": "10 / 1250 or correct equation ;\n0.008 (mm) or 8  10–3 ;\n8 (m) ;",
+                    "marks": 3,
+                    "marking_notes": "1 mark for equation/ratio.\n1 mark for answer in mm.\n1 mark for answer in μm.\n(3 marks for correct final answer in μm)"
+                },
+                {
+                    "sub_number": "a(ii)",
+                    "text": "both same shape AW ;\nW side view / X is a view from above / seen from different angles ;",
+                    "marks": 2,
+                    "marking_notes": "1 mark for shape similarity.\n1 mark for explaining different views."
+                },
+                {
+                    "sub_number": "a(iii)",
+                    "text": "Y = plasma +\nZ = tissue fluid ;\n\nplasma / Y / blood + under pressure / squeezed ;\nplasma / Y passes out of capillaries to form tissue fluid ;",
+                    "marks": 3,
+                    "marking_notes": "1 mark for identifying Y and Z.\n1 mark for pressure explanation.\n1 mark for describing formation of tissue fluid."
+                },
+                {
+                    "sub_number": "b(i)",
+                    "text": "mosquito ;\nvector ;\nsucks up blood from infected woman / sucks up blood containing pathogen ;\ninjects pathogen + into different person ;",
+                    "marks": 3,
+                    "marking_notes": "Max 3 marks. Any three points required."
+                },
+                {
+                    "sub_number": "b(ii)",
+                    "text": "mitosis ;",
+                    "marks": 1,
+                    "marking_notes": "1 mark for mitosis."
+                },
+                {
+                    "sub_number": "b(iii)",
+                    "text": "red blood cells destroyed / reduces the number of red blood cells ;",
+                    "marks": 1,
+                    "marking_notes": "1 mark for correct explanation."
+                },
+                {
+                    "sub_number": "b(iv)",
+                    "text": "iron deficiency / lack of iron /\nheavy loss of blood through injury /\nmenstruation ;",
+                    "marks": 1,
+                    "marking_notes": "1 mark for any valid reason."
+                }
+            ]
+        }
+    ]
 }

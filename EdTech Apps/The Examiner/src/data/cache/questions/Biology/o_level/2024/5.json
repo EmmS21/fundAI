@@ -4,28 +4,58 @@
     "level": "o_level",
     "year": "2024",
     "question_number_str": "5",
-    "question_text": "Study of Bacillus subtilis bacterium and its use in biotechnology",
+    "question_text": "Bacillus subtilis is a species of bacterium that is widely used in biotechnology. It can be used to manufacture the protein lipase for industrial use.",
     "topic": "Biology",
     "subtopic": "Biotechnology and Microorganisms",
     "difficulty": {
         "level": "Hard",
         "justification": "Combines microbiology, biotechnology, and data analysis"
     },
-    "context_materials": null,
+    "context_materials": "Fig. 5.1 is a diagram of B. subtilis.\nFig. 5.2 show how the biomass of B. subtilis increases after small populations of bacteria are added to two containers with different environmental conditions.",
     "sub_questions": [
         {
-            "sub_number": "a",
-            "text": "Questions about bacterial structure and function",
-            "marks": 7
+            "sub_number": "a(i)",
+            "text": "Two of the parts labelled A, B, C and D in Fig. 5.1 are involved in the manufacture of proteins such as lipase.\nIdentify the two parts, name them and explain their role in protein manufacture.",
+            "marks": 4
         },
         {
-            "sub_number": "b",
-            "text": "Questions about bacterial growth",
-            "marks": 7
+            "sub_number": "a(ii)",
+            "text": "Suggest why B. subtilis has flagella.",
+            "marks": 1
+        },
+        {
+            "sub_number": "a(iii)",
+            "text": "Explain why plasmids are useful in biotechnology.",
+            "marks": 2
+        },
+        {
+            "sub_number": "b(i)",
+            "text": "B. subtilis can be grown industrially in large containers.\nGive the name of the large industrial containers used to grow bacteria.",
+            "marks": 1
+        },
+        {
+            "sub_number": "b(ii)",
+            "text": "When B. subtilis is in ideal conditions it can reproduce rapidly, increasing the population size and the biomass of bacteria in the container.\nGraphs E and F in Fig. 5.2 show how the biomass of B. subtilis increases after small populations of bacteria are added to two containers with different environmental conditions.\nIn graph E the biomass increases as shown in Fig. 5.2.\nIndicate using the letter M the part of graph E where bacteria are reproducing most rapidly.",
+            "marks": 1
+        },
+        {
+            "sub_number": "b(iii)",
+            "text": "Calculate the percentage increase in biomass for graph E in the first 6 hours.",
+            "marks": 2
+        },
+        {
+            "sub_number": "b(iv)",
+            "text": "Describe two differences between graph E and graph F.",
+            "marks": 2
+        },
+        {
+            "sub_number": "b(v)",
+            "text": "Suggest one environmental condition which could have caused the differences between graph E and graph F.",
+            "marks": 1
         },
         {
             "sub_number": "c",
-            "text": "Question about lipase function",
+            "text": "Lipase is also produced by the human body.\nExplain why it is produced and how its function is different from the function of bile.",
             "marks": 3
         }
     ],

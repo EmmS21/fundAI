@@ -1,35 +1,42 @@
 {
-    "id": "67d42cf3b2ed25f8c739ec59",
+    "id": "67d50ebecec12312c07d55f9",
     "subject": "Biology",
     "level": "o_level",
     "year": "2022",
     "question_number_str": "3",
-    "answer_details": {
-        "question_number": 3,
-        "question_text": "Guinea pigs are small mammals bred for food and as pets.",
-        "topic": "Genetics",
-        "subtopic": "Inheritance",
-        "difficulty": {
-            "level": "Medium",
-            "justification": "Involves genetic crosses and comparison of mammalian development"
-        },
-        "sub_questions": [
-            {
-                "sub_number": "a",
-                "text": "Questions about genes, alleles and genetic crosses for hair type in guinea pigs",
-                "marks": 6
+    "answers": [
+        {
+            "question_number": 3,
+            "answer_text": "Answers related to plant cuttings, asexual reproduction, xylem function, and selective breeding in dahlias.",
+            "marking_scheme": {
+                "total_marks": 14 
             },
-            {
-                "sub_number": "b",
-                "text": "Compare development of guinea pig and human offspring",
-                "marks": 4
-            }
-        ],
-        "images": [
-            {
-                "description": "Diagram of guinea pig uterus with developing offspring"
-            }
-        ],
-        "marks": 10
-    }
+            "sub_answers": [
+                {
+                    "sub_number": "a(i)",
+                    "text": "removal of leaves:\nreduction + surface area / stomata ;\n\ncovering with transparent bag:\nincrease humidity ;\n\nto reduce transpiration OR evaporation / water loss ;",
+                    "marks": 3,
+                    "marking_notes": "removal of leaves: reduction + surface area / stomata ; (1 mark)\ncovering with transparent bag: increase humidity ; (1 mark)\nto reduce transpiration OR evaporation / water loss ; (1 mark)"
+                },
+                {
+                    "sub_number": "a(ii)",
+                    "text": "production of genetically identical offspring / clones ;\nmitosis ;\nfrom one parent/ AW;",
+                    "marks": 2,
+                    "marking_notes": "Any two points required. (1 mark each)"
+                },
+                {
+                    "sub_number": "b",
+                    "text": "function: xylem vessels transport water and/or minerals ;\nadaptation: long / thin / no end cell walls / hollow tubes / no cytoplasm ;\nfunction: (mechanical) support / keeps stem upright ;\nadaptation: lignified OR woody / strengthened / hard + walls ;",
+                    "marks": 4,
+                    "marking_notes": "function: xylem vessels transport water and/or minerals ; (1 mark)\nadaptation: long / thin / no end cell walls / hollow tubes / no cytoplasm ; (1 mark)\nfunction: (mechanical) support / keeps stem upright ; (1 mark)\nadaptation: lignified OR woody / strengthened / hard + walls ; (1 mark)"
+                },
+                {
+                    "sub_number": "c",
+                    "text": "1 artificial selection / selective breeding ;\n2 transfer pollen / pollination ;\n3 from anther / stamen of one plant + e.g. red petal colour ;\n4 to stigma / carpel /pistil of another ;\n5 fertilisation OR gametes / genetic material + combined AW ;\n6 grow seeds ;\n7 select the ones with best combination of characteristics ;",
+                    "marks": 5,
+                    "marking_notes": "Any five points required. (1 mark each)"
+                }
+            ]
+        }
+    ]
 }

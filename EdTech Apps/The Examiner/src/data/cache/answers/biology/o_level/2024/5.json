@@ -4,44 +4,69 @@
     "level": "o_level",
     "year": "2024",
     "question_number_str": "5",
-    "answer_details": {
-        "question_number": 5,
-        "question_text": "Study of Bacillus subtilis bacterium and its use in biotechnology",
-        "topic": "Biology",
-        "subtopic": "Biotechnology and Microorganisms",
-        "difficulty": {
-            "level": "Hard",
-            "justification": "Combines microbiology, biotechnology, and data analysis"
-        },
-        "sub_questions": [
-            {
-                "sub_number": "a",
-                "text": "Questions about bacterial structure and function",
-                "marks": 7
+    "answers": [
+        {
+            "question_number": 5,
+            "answer_text": "Answers related to bacterial structure, biotechnology, bacterial growth, and enzyme function (lipase).",
+            "marking_scheme": {
+                "total_marks": 17 
             },
-            {
-                "sub_number": "b",
-                "text": "Questions about bacterial growth",
-                "marks": 7
-            },
-            {
-                "sub_number": "c",
-                "text": "Question about lipase function",
-                "marks": 3
-            }
-        ],
-        "images": [
-            {
-                "label": "Fig. 5.1",
-                "description": "Diagram of B. subtilis",
-                "url": "https://ibb.co/bgmMKT56"
-            },
-            {
-                "label": "Fig. 5.2",
-                "description": "Graphs showing bacterial growth",
-                "url": "https://ibb.co/zV11CV1q"
-            }
-        ],
-        "marks": 17
-    }
+            "sub_answers": [
+                {
+                    "sub_number": "a(i)",
+                    "text": "A + DNA / genetic material ;\nD + ribosome ;\nPart A: contains the gene for the protein / lipase / codes for the production of the protein / lipase / mRNA / codes for sequence of amino acids in protein / lipase ;\nPart D: adds amino acids together to build protein ;",
+                    "marks": 4,
+                    "marking_notes": "1 mark for identifying A.\n1 mark for identifying D.\n1 mark for function of A.\n1 mark for function of D."
+                },
+                {
+                    "sub_number": "a(ii)",
+                    "text": "motile / can move ;",
+                    "marks": 1,
+                    "marking_notes": "1 mark for correct term."
+                },
+                {
+                    "sub_number": "a(iii)",
+                    "text": "genes / DNA can be inserted into them ;\ncan pass into a (bacterial) cell / vector / can carry a gene into a (bacterial) cell ;",
+                    "marks": 2,
+                    "marking_notes": "1 mark for gene insertion.\n1 mark for acting as a vector."
+                },
+                {
+                    "sub_number": "b(i)",
+                    "text": "fermenter ;",
+                    "marks": 1,
+                    "marking_notes": "1 mark for correct term."
+                },
+                {
+                    "sub_number": "b(ii)",
+                    "text": "M indicated between 3rd and 4th plots ;",
+                    "marks": 1,
+                    "marking_notes": "1 mark for correctly indicating M on the graph (implied)."
+                },
+                {
+                    "sub_number": "b(iii)",
+                    "text": "0.4 / 0.1  100 ;\n400 (%) ;",
+                    "marks": 2,
+                    "marking_notes": "1 mark for calculation.\n1 mark for correct answer.\n(2 marks for correct answer)"
+                },
+                {
+                    "sub_number": "b(iv)",
+                    "text": "E has higher final biomass / greater increase in biomass (than F)ORA ;\nE reaches max biomass quicker (than F) ORA ;\nE starts at a higher biomass (than F) ORA ;\nE rate of increase of biomass is faster (than F) ORA ;",
+                    "marks": 2,
+                    "marking_notes": "Max 2 marks. Any two valid comparisons. Accept answers that quote figures."
+                },
+                {
+                    "sub_number": "b(v)",
+                    "text": "pH / oxygen / food supply / nutrients / temperature ;",
+                    "marks": 1,
+                    "marking_notes": "1 mark for any valid limiting factor."
+                },
+                {
+                    "sub_number": "c",
+                    "text": "lipase digests / hydrolyses / breaks down + lipids / fats ;\nfatty acids and glycerol produced ;\nbile emulsifies / increases surface area of lipids ;\nbile neutralises acidic food / provides the optimum pH for digestion ;",
+                    "marks": 3,
+                    "marking_notes": "Max 3 marks. 1 mark for lipase action.\n1 mark for products.\n1 mark for bile action (either emulsification or pH)."
+                }
+            ]
+        }
+    ]
 }
