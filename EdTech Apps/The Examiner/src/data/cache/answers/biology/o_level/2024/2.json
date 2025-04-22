@@ -4,49 +4,57 @@
     "level": "o_level",
     "year": "2024",
     "question_number_str": "2",
-    "answer_details": {
-        "question_number": 2,
-        "question_text": "Brown bread, made from the flour of whole wheat grains, contains both starch and fibre.",
-        "topic": "Biology",
-        "subtopic": "Digestion and Nutrition",
-        "difficulty": {
-            "level": "Medium",
-            "justification": "Requires understanding of digestive processes and interpretation of data"
-        },
-        "sub_questions": [
-            {
-                "sub_number": "a(i)",
-                "text": "Describe where and how starch digestion takes place in the digestive system",
-                "marks": 4
+    "answers": [
+        {
+            "question_number": 2,
+            "answer_text": "Answers related to digestion, absorption, blood glucose regulation, and plant breeding.",
+            "marking_scheme": {
+                "total_marks": 17
             },
-            {
-                "sub_number": "a(ii)",
-                "text": "Describe what happens to fibre as it passes through the digestive system",
-                "marks": 2
-            },
-            {
-                "sub_number": "b",
-                "text": "Give two ways in which active transport is different from diffusion",
-                "marks": 2
-            },
-            {
-                "sub_number": "c",
-                "text": "Questions about blood glucose concentration graph",
-                "marks": 5
-            },
-            {
-                "sub_number": "d",
-                "text": "Describe two methods scientists could use to produce wheat with increased fiber content",
-                "marks": 4
-            }
-        ],
-        "images": [
-            {
-                "label": "Fig. 2.1",
-                "description": "Graph showing blood glucose concentration over time for different types of starch",
-                "url": "https://ibb.co/sdH67cWb"
-            }
-        ],
-        "marks": 17
-    }
+            "sub_answers": [
+                {
+                    "sub_number": "a(i)",
+                    "text": "amylase acts on starch / amylase produces maltose ;\namylase + in the mouth / small intestine / duodenum/ileum ;\nmaltase acts on maltose / maltase produces glucose ;\nmaltase + in the small intestine / duodenum / ileum ;",
+                    "marks": 4,
+                    "marking_notes": "1 mark per valid point."
+                },
+                {
+                    "sub_number": "a(ii)",
+                    "text": "not digested / not broken down ;\nis egested / passes out of anus / in faeces ;",
+                    "marks": 2,
+                    "marking_notes": "1 mark per valid point."
+                },
+                {
+                    "sub_number": "b",
+                    "text": "(active transport / it) requires energy / ATP ;\n(active transport / it) moves molecules against / up a concentration gradient ;\n(active transport / it) requires carrier proteins ;",
+                    "marks": 2,
+                    "marking_notes": "Max 2 marks. Any two points required."
+                },
+                {
+                    "sub_number": "c(i)",
+                    "text": "the graph line does not start at the origin / the graph line starts part-way up the y-axis ;",
+                    "marks": 1,
+                    "marking_notes": "1 mark for the correct explanation."
+                },
+                {
+                    "sub_number": "c(ii)",
+                    "text": "glucose being converted to glycogen / insulin released ;\nglucose being used in respiration / glucose is used for energy ;",
+                    "marks": 2,
+                    "marking_notes": "1 mark per valid point."
+                },
+                {
+                    "sub_number": "c(iii)",
+                    "text": "slowly-digested starch\nless variation in blood glucose concentration ORA;\npancreas not having to produce so much insulin ORA ;\nless likely to develop diabetes ORA ;",
+                    "marks": 2,
+                    "marking_notes": "Max 2 marks. Any two points required."
+                },
+                {
+                    "sub_number": "d",
+                    "text": "artificial selection / selective breeding ;\nselect / breed + plants with greatest fibre content;\n\ngenetic modification ;\ntransfer / insert / alter + gene / allele + so plant produces high fibre ;",
+                    "marks": 4,
+                    "marking_notes": "Artificial selection: 1 mark for method, 1 mark for description.\nGenetic modification: 1 mark for method, 1 mark for description."
+                }
+            ]
+        }
+    ]
 }

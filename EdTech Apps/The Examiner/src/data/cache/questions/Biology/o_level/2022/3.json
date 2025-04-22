@@ -4,33 +4,45 @@
     "level": "o_level",
     "year": "2022",
     "question_number_str": "3",
-    "question_text": "Guinea pigs are small mammals bred for food and as pets.",
-    "topic": "Genetics",
-    "subtopic": "Inheritance",
+    "question_text": "A gardener grows a species of dahlia, a flowering plant. Each year the gardener chooses his best plants and takes cuttings to make new plants.",
+    "topic": "Plant Biology",
+    "subtopic": "Transport and Reproduction",
     "difficulty": {
         "level": "Medium",
-        "justification": "Involves genetic crosses and comparison of mammalian development"
+        "justification": "Covers concepts of plant transport, asexual reproduction, and selective breeding."
     },
     "context_materials": null,
     "sub_questions": [
         {
-            "sub_number": "a",
-            "text": "Questions about genes, alleles and genetic crosses for hair type in guinea pigs",
-            "marks": 6
+            "sub_number": "a(i)",
+            "text": "Removing the lower leaves and placing the cuttings in a transparent bag helps prevent them wilting until the roots develop.\n\nSuggest and explain how these two steps help to prevent wilting.",
+            "marks": 3
+        },
+        {
+            "sub_number": "a(ii)",
+            "text": "Taking cuttings is a commercial application of asexual reproduction.\nDefine asexual reproduction.",
+            "marks": 2
         },
         {
             "sub_number": "b",
-            "text": "Compare development of guinea pig and human offspring",
+            "text": "The stems of the dahlia cuttings contain xylem vessels.\nDescribe two functions of xylem vessels in young stems of dahlias.\nFor each function explain one way in which xylem structure is adapted for this function.",
             "marks": 4
+        },
+        {
+            "sub_number": "c",
+            "text": "The gardener's dahlia cuttings grow into full-sized plants with flowers.\nThe gardener decides that he would like to produce a plant that combines the disease-resistant characteristics of one of these plants with the red petal colour of another.\nWith reference to named parts of the flowers, describe how he could achieve this.",
+            "marks": 5
         }
     ],
     "tables": null,
-    "marks": 10,
+    "marks": 14,
     "images": [
         {
-            "description": "Diagram of guinea pig uterus with developing offspring",
-            "local_path": null
+            "description": "Diagram showing the process of taking cuttings from a dahlia plant.",
+            "local_path": "src/data/cache/assets/biology/o_level/2022/q3_img_0.png",
+            "url": "https://ibb.co/B5pxY5Fpnull"
         }
     ],
     "answer_ref": "3.json"
 }
+

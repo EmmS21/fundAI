@@ -4,9 +4,9 @@
     "level": "o_level",
     "year": "2024",
     "question_number_str": "3",
-    "question_text": "Analysis of a capillary network photomicrograph",
+    "question_text": "Fig. 3.1 is a photomicrograph showing part of a capillary network of a woman. The structure labelled X is a red blood cell.",
     "topic": "Biology",
-    "subtopic": "Blood and Circulation",
+    "subtopic": "Blood and Circulation, Disease",
     "difficulty": {
         "level": "Hard",
         "justification": "Requires analysis of microscope image, calculations, and understanding of disease"
@@ -14,14 +14,39 @@
     "context_materials": null,
     "sub_questions": [
         {
-            "sub_number": "a",
-            "text": "Questions about red blood cells and blood components",
-            "marks": 8
+            "sub_number": "a(i)",
+            "text": "The diameter of cell X in the photomicrograph is 10mm.\nCalculate the actual diameter of cell X.\nShow your working and express your answer in micrometres (μm).",
+            "marks": 3
         },
         {
-            "sub_number": "b",
-            "text": "Questions about malaria and its effects",
-            "marks": 6
+            "sub_number": "a(ii)",
+            "text": "W and X are both red blood cells.\nExplain why W and X appear different from each other in Fig. 3.1.",
+            "marks": 2
+        },
+        {
+            "sub_number": "a(iii)",
+            "text": "Y and Z are both liquids.\nName the liquids Y and Z and explain how liquid Z forms from liquid Y.",
+            "marks": 3
+        },
+        {
+            "sub_number": "b(i)",
+            "text": "The woman has malaria and symptoms of anaemia.\nThe malarial pathogens infect red blood cells where they multiply to form many new, genetically identical pathogen cells. These new pathogen cells burst out of the red blood cells.\nDescribe how malarial pathogens can be transmitted from this woman to another person.",
+            "marks": 3
+        },
+        {
+            "sub_number": "b(ii)",
+            "text": "Name the type of nuclear division that results in new pathogen cells.",
+            "marks": 1
+        },
+        {
+            "sub_number": "b(iii)",
+            "text": "Suggest why infection with the malarial pathogen can cause anaemia.",
+            "marks": 1
+        },
+        {
+            "sub_number": "b(iv)",
+            "text": "State one other cause of anaemia.",
+            "marks": 1
         }
     ],
     "tables": null,

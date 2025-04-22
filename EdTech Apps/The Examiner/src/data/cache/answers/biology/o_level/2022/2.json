@@ -4,52 +4,51 @@
     "level": "o_level",
     "year": "2022",
     "question_number_str": "2",
-    "answer_details": {
-        "question_number": 2,
-        "question_text": "A man decides to do some fitness training to improve his ability to provide oxygen to his muscles.",
-        "topic": "Human Biology",
-        "subtopic": "Respiration and Exercise",
-        "difficulty": {
-            "level": "Medium",
-            "justification": "Combines understanding of respiratory system and exercise physiology"
-        },
-        "sub_questions": [
-            {
-                "sub_number": "a(i)",
-                "text": "Describe the route an oxygen molecule takes from the atmosphere to reach the muscles.",
-                "marks": 4
+    "answers": [
+        {
+            "question_number": 2,
+            "answer_text": "Answers related to respiration and exercise.",
+            "marking_scheme": {
+                "total_marks": 14
             },
-            {
-                "sub_number": "a(ii)",
-                "text": "Suggest two body changes that would improve his ability to provide oxygen to his muscles.",
-                "marks": 2
-            },
-            {
-                "sub_number": "b(i)",
-                "text": "State the name of the chemical process that uses oxygen to release energy in the muscles.",
-                "marks": 2
-            },
-            {
-                "sub_number": "b(ii)",
-                "text": "Use the graph to determine the maximum volume of oxygen the man consumes in one minute.",
-                "marks": 1
-            },
-            {
-                "sub_number": "b(iii)",
-                "text": "Explain why he can only increase exercise intensity beyond maximum oxygen consumption for a short period.",
-                "marks": 3
-            },
-            {
-                "sub_number": "b(iv)",
-                "text": "Sketch a line to show the expected results of successful fitness training.",
-                "marks": 2
-            }
-        ],
-        "images": [
-            {
-                "description": "Graph showing oxygen consumption vs exercise intensity"
-            }
-        ],
-        "marks": 14
-    }
+            "sub_answers": [
+                {
+                    "sub_number": "a(i)",
+                    "text": "Lungs:\nEnters via nose / nasal passages into larynx / trachea;\nTravels through bronchus / bronchi / bronchioles;\nTo air sacs / alveoli;\n\nCirculation:\nDiffuses into blood / into capillaries / from blood to muscle;\nRed blood cells / haemoglobin;\nTransported by pulmonary vein;\nPumped by heart;\nThrough arteries / arterioles;",
+                    "marks": 4,
+                    "marking_notes": "Lungs: Any two points (1 mark each). Circulation: Any two points (1 mark each)."
+                },
+                {
+                    "sub_number": "a(ii)",
+                    "text": "A larger lung capacity / stronger intercostal muscles;\nStronger / thicker cardiac / ventricle muscle;\nCardiac muscle able to pump more blood in each cardiac cycle;\nImproved blood supply to heart muscle;\nMore haemoglobin / red blood cells;",
+                    "marks": 2,
+                    "marking_notes": "Any two points required. (1 mark each)"
+                },
+                {
+                    "sub_number": "b(i)",
+                    "text": "aerobic;\nrespiration;",
+                    "marks": 2,
+                    "marking_notes": "aerobic ; (1 mark)\nrespiration ; (1 mark)"
+                },
+                {
+                    "sub_number": "b(ii)",
+                    "text": "3.4 dm³;",
+                    "marks": 1,
+                    "marking_notes": "3.4 dm³ ; (1 mark)"
+                },
+                {
+                    "sub_number": "b(iii)",
+                    "text": "Respire anaerobically;\nWithout oxygen / lack of oxygen;\nRespiration + energy released;\nLactic acid;\nLactic acid builds up in / affects muscles;",
+                    "marks": 3,
+                    "marking_notes": "Any three points required. (1 mark each)"
+                },
+                {
+                    "sub_number": "b(iv)",
+                    "text": "Line starts close to rest point line on y axis + continues upwards on same straight line as before training;\nMaximum oxygen consumption is higher + reached at higher exercise intensity;",
+                    "marks": 2,
+                    "marking_notes": "Line starts close to rest point line on y axis + continues upwards on same straight line as before training ; (1 mark)\nMaximum oxygen consumption is higher + reached at higher exercise intensity ; (1 mark)\nAccept lines that continue in a straight line or plateau."
+                }
+            ]
+        }
+    ]
 }

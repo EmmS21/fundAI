@@ -1,0 +1,31 @@
+{
+    "id": "67d42cf3b2ed25f8c739ec59",
+    "subject": "Biology",
+    "level": "o_level",
+    "year": "2022",
+    "question_number_str": "4",
+    "question_text": "The human liver contains a high concentration of enzymes called transaminases. These enzymes are important in the metabolism of amino acids. Amino acids are absorbed from the alimentary canal and carried to the liver by a blood vessel.",
+    "topic": "Human Biology",
+    "subtopic": "Digestion and Enzymes",
+    "difficulty": {
+        "level": "Easy",
+        "justification": "Focuses on basic knowledge of digestion, absorption, and enzyme action."
+    },
+    "context_materials": null,
+    "sub_questions": [
+        {
+            "sub_number": "a",
+            "text": "Name the part of the alimentary canal where absorption occurs and the blood vessel that carries the amino acids to the liver.",
+            "marks": 2
+        },
+        {
+            "sub_number": "b",
+            "text": "There are different types of transaminase. Each type has a specific active site.\nExplain why this means that each type catalyses a specific reaction.",
+            "marks": 3
+        }
+    ],
+    "tables": null,
+    "marks": 5,
+    "images": [],
+    "answer_ref": "4.json"
+}

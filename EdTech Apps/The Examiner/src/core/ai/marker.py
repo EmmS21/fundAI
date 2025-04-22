@@ -2,12 +2,18 @@ import logging
 import os
 import re # For parsing
 import sys
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List, Any
 from pathlib import Path # For handling home directory
 from llama_cpp import Llama
 
 # --- Import the examples ---
-from .prompt_examples import FEW_SHOT_EXAMPLES
+# Make sure prompt_examples.py is in the same directory (core/ai)
+# If it's elsewhere, adjust the import path accordingly.
+try:
+    from .prompt_examples import FEW_SHOT_EXAMPLES
+except ImportError:
+    logger.error("Could not import FEW_SHOT_EXAMPLES from .prompt_examples. Ensure the file exists.")
+    FEW_SHOT_EXAMPLES = [] # Default to empty list if import fails
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +23,7 @@ BASE_LLAMA_DIR = Path.home() / "Documents" / "models" / "llama" # Base dir
 CONTEXT_SIZE = 2048
 MAX_TOKENS = 1024 # Max tokens for generation
 GPU_LAYERS = -1 # Offload all possible layers to GPU (-1). Set to 0 to disable GPU.
+REPEAT_PENALTY = 1.1 # Keep penalty low/moderate
 # --- End Configuration ---
 
 def find_model_path() -> Optional[str]:
@@ -321,3 +328,190 @@ def get_ai_feedback(
 #     except Exception as e:
 #         logger.error(f"Error calling Deepseek API: {e}")
 #         return None 
+
+# --- Helper: Extract Section from Example Output ---
+def _extract_example_section(full_output: str, start_heading: str, end_heading: Optional[str] = None) -> str:
+    """Extracts text between start_heading and end_heading (or EOF) from example output."""
+    # Find start (case-insensitive)
+    start_pattern = r"##\s*" + re.escape(start_heading)
+    start_match = re.search(start_pattern, full_output, re.IGNORECASE)
+    if not start_match:
+        return f"N/A ({start_heading} not found in example)"
+
+    start_index = start_match.end() # Start after the heading match
+
+    # Find end
+    end_index = len(full_output) # Default to end of string
+    if end_heading:
+        end_pattern = r"##\s*" + re.escape(end_heading)
+        end_match = re.search(end_pattern, full_output[start_index:], re.IGNORECASE)
+        if end_match:
+            # End *before* the next heading starts
+            end_index = start_index + end_match.start()
+
+    return full_output[start_index:end_index].strip()
+
+# --- Helper: Generation Function (Simplified usage) ---
+def _generate_step(llm: Llama, step_prompt: str, max_tokens: int, stop_sequences: List[str]) -> Optional[str]:
+    """Helper to run a single generation step, including repeat_penalty."""
+    try:
+        logger.debug(f"Generating step with max_tokens={max_tokens}, stop={stop_sequences}, repeat_penalty={REPEAT_PENALTY}")
+        logger.debug(f"Step Prompt Snippet:\n{step_prompt[:300]}...\n...{step_prompt[-300:]}")
+        output = llm(
+            step_prompt,
+            max_tokens=max_tokens,
+            stop=stop_sequences,
+            temperature=0.1, # Keep temp very low for factual marking
+            repeat_penalty=REPEAT_PENALTY,
+            echo=False
+        )
+        response_text = output.get("choices", [{}])[0].get("text")
+        if response_text:
+             logger.debug(f"Step Raw Response (from LLM):\n{response_text}")
+             return response_text.strip()
+        else:
+             logger.warning("Step generation produced no text.")
+             logger.debug(f"Full output dict: {output}")
+             return None
+    except Exception as e:
+        logger.error(f"Error during generation step: {e}", exc_info=True)
+        return None
+
+# --- Helper: Parser for Mark AND Justification ---
+def _parse_mark_and_justification(text: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """Extracts both the mark and justification from the text."""
+    if not text: return None, None
+    mark, justification = None, None
+    lines = text.strip().split('\n', 1)
+    if lines:
+        mark_match = re.search(r"(\d+\s*/\s*\d+)", lines[0])
+        if mark_match:
+            mark = mark_match.group(1).strip()
+        if len(lines) > 1:
+            justification = lines[1].strip()
+        elif not mark:
+             justification = lines[0].strip()
+    if not mark:
+         mark_match_fallback = re.search(r"(\d+\s*/\s*\d+)", text)
+         if mark_match_fallback:
+              mark = mark_match_fallback.group(1).strip()
+              if not justification:
+                   justification = text[mark_match_fallback.end():].strip()
+    if justification:
+        justification = re.sub(r"^(Justification|Explanation|Reason)[:\s]*", "", justification, flags=re.IGNORECASE).strip()
+        if len(justification) < 3:
+             justification = None
+    logger.debug(f"Parsed Mark='{mark}', Justification='{str(justification)[:100]}...' from text: '{text[:100]}...'")
+    return mark, justification
+
+# --- UPDATED Orchestrator Function ---
+def run_ai_evaluation(
+    question_data: Dict,
+    correct_answer_data: Dict,
+    user_answer: str,
+    marks: Optional[int]
+) -> Optional[Dict[str, Optional[str]]]: # Return dict with mark and justification
+    """
+    Loads model once. Gets the mark AND a brief justification. Unloads model.
+    """
+    logger.info("Starting AI Evaluation (Mark + Justification).")
+    model_path = find_model_path()
+    if not model_path:
+        logger.error("Cannot run evaluation: Model path not found.")
+        return None
+
+    llm = None
+    results: Dict[str, Optional[str]] = {
+        "Mark Awarded": None,
+        "Mark Justification": None
+    }
+
+    try:
+        logger.info(f"Loading model for evaluation: {model_path}...")
+        llm = Llama(
+            model_path=model_path,
+            n_ctx=CONTEXT_SIZE,
+            n_gpu_layers=GPU_LAYERS,
+            verbose=False
+        )
+        logger.info("Model loaded.")
+
+        # --- Prepare shared context AND LOG INPUTS ---
+        question_text = question_data.get('question_text', 'N/A')
+        sub_questions = question_data.get('sub_questions', 'N/A')
+        max_marks_str = str(marks) if marks is not None else '?'
+        # Use .get() on correct_answer_data itself first
+        correct_answer_inner_details = correct_answer_data.get('answer_details', {}) if correct_answer_data else {}
+        # Then format it for logging/prompting
+        correct_answer_log_str = str(correct_answer_inner_details) if correct_answer_inner_details else 'Marking scheme not available.'
+
+        # --- ADDED: Logging Input Data ---
+        logger.info("-----------------------------------------")
+        logger.info("AI Input Data -> Question: %s", question_text)
+        logger.info("AI Input Data -> Sub-Questions: %s", sub_questions)
+        logger.info("AI Input Data -> Max Marks: %s", max_marks_str)
+        logger.info("AI Input Data -> Student Answer: %s", user_answer)
+        logger.info("AI Input Data -> Correct Answer/Scheme: %s", correct_answer_log_str)
+        logger.info("-----------------------------------------")
+        # --- END ADDED ---
+
+        base_context = f"""
+**Question:** {question_text}
+**Sub-questions (if any):** {sub_questions}
+**Maximum Marks:** {max_marks_str}
+**Marking Scheme / Correct Answer Details:** {correct_answer_log_str}
+**Student's Answer:** {user_answer}
+"""
+        # --- Step 1: Get Mark AND Justification ---
+        logger.info("Evaluation Step 1: Getting Mark and Justification...")
+        prompt1_parts = [
+            f"**ROLE:** Strict Cambridge Examiner AI.",
+            f"**TASK:** Evaluate the Student's Answer strictly against the Marking Scheme.",
+            f"**Marking Process:**",
+            f"  - Compare the Student's Answer point-by-point to the Marking Scheme details.",
+            f"  - Award marks ONLY for points explicitly stated or clearly implied in the Student's Answer that match the scheme.",
+            f"  - Adhere strictly to the Maximum Marks ({max_marks_str}). Award 0 if no points match.",
+            f"**OUTPUT FORMAT:**",
+            f"  1. FIRST line: ONLY the final numerical mark awarded in the format 'X / {max_marks_str}'.",
+            f"  2. SECOND line: ONLY a brief (1-sentence maximum) justification for the awarded mark, explaining the key reason based on the Marking Scheme comparison.",
+            f"**INPUT DATA:**",
+            base_context,
+            f"**Output:**" # Signal for response
+        ]
+        prompt = "\n".join(prompt1_parts)
+        logger.debug(f"Full Prompt for Step 1:\n{prompt}") # Log full prompt for debugging
+
+        # Generate Mark & Justification
+        mark_just_text = _generate_step(llm, prompt, max_tokens=80, stop_sequences=["<|endoftext|>"])
+
+        # Log Raw Output
+        logger.info(f"Raw text for Mark/Justification:\n---------------------\n{mark_just_text}\n---------------------")
+
+        # Parse Mark & Justification
+        parsed_mark, parsed_justification = _parse_mark_and_justification(mark_just_text)
+        results["Mark Awarded"] = parsed_mark if parsed_mark else "N/A (Parsing Failed)"
+        results["Mark Justification"] = parsed_justification
+        logger.info(f"Evaluation Result: Mark='{results['Mark Awarded']}', Justification captured={bool(results['Mark Justification'])}")
+
+        logger.info("AI evaluation completed.")
+
+    except Exception as e:
+        logger.error(f"Error during AI evaluation: {e}", exc_info=True)
+        if results["Mark Awarded"] is None: results["Mark Awarded"] = "N/A (Error Occurred)"
+        if results["Mark Justification"] is None: results["Mark Justification"] = "N/A (Error Occurred)"
+        return results
+    finally:
+        if llm is not None:
+            logger.info("Unloading AI model...")
+            del llm
+            logger.info("AI model unloaded.")
+
+    # Ensure placeholders if parsing failed but no exception occurred
+    if results["Mark Awarded"] is None:
+        results["Mark Awarded"] = "N/A (Unknown Error)"
+    if results["Mark Justification"] is None:
+         if results["Mark Awarded"].startswith("N/A"):
+             results["Mark Justification"] = "N/A (Generation/Parsing Failed)"
+
+    logger.debug(f"Final evaluation results: {results}")
+    return results 

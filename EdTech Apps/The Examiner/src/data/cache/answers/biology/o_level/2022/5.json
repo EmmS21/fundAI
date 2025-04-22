@@ -1,0 +1,42 @@
+{
+    "id": "67d50ebecec12312c07d55f9",
+    "subject": "Biology",
+    "level": "o_level",
+    "year": "2022",
+    "question_number_str": "5",
+    "answers": [
+        {
+            "question_number": 5,
+            "answer_text": "Answers related to plant adaptations for aquatic life and trophic levels.",
+            "marking_scheme": {
+                "total_marks": 7
+            },
+            "sub_answers": [
+                {
+                    "sub_number": "a(i)",
+                    "text": "light /carbon dioxide from air + for photosynthesis OR\nmore AW + light / carbon dioxide ;",
+                    "marks": 1,
+                    "marking_notes": "light /carbon dioxide from air + for photosynthesis OR more AW + light / carbon dioxide ; (1 mark)"
+                },
+                {
+                    "sub_number": "a(ii)",
+                    "text": "A = stoma ;\nB = air/ intercellular + space ;",
+                    "marks": 2,
+                    "marking_notes": "A = stoma ; (1 mark)\nB = air/ intercellular + space ; (1 mark)"
+                },
+                {
+                    "sub_number": "a(iii)",
+                    "text": "stomata + on upper surface AW ;\ngaseous exchange / air enters / air leaves ;\ncarbon dioxide + for photosynthesis ;\nlarge + air spaces ;\nair space + leaf buoyancy / float / less dense ;",
+                    "marks": 3,
+                    "marking_notes": "Any three points required. (1 mark each)"
+                },
+                {
+                    "sub_number": "b",
+                    "text": "producer / first trophic level ;",
+                    "marks": 1,
+                    "marking_notes": "producer / first trophic level ; (1 mark)"
+                }
+            ]
+        }
+    ]
+}

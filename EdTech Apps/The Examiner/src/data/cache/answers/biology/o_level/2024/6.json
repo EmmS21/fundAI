@@ -4,27 +4,27 @@
     "level": "o_level",
     "year": "2024",
     "question_number_str": "6",
-    "answer_details": {
-        "question_number": 6,
-        "question_text": "Comparison of human and plant responses to light",
-        "topic": "Biology",
-        "subtopic": "Coordination and Response",
-        "difficulty": {
-            "level": "Medium",
-            "justification": "Requires understanding of both human and plant responses to stimuli"
-        },
-        "sub_questions": [
-            {
-                "sub_number": "a",
-                "text": "Describe how humans and plants coordinate responses to light",
-                "marks": 6
+    "answers": [
+        {
+            "question_number": 6,
+            "answer_text": "Answers comparing human and plant responses to light and describing synapse function.",
+            "marking_scheme": {
+                "total_marks": 10 
             },
-            {
-                "sub_number": "b",
-                "text": "Describe the role of synapses in a reflex arc",
-                "marks": 4
-            }
-        ],
-        "marks": 10
-    }
+            "sub_answers": [
+                {
+                    "sub_number": "a",
+                    "text": "Human:\ndetected by retina / light receptors;\ninvolves neurones / nervous system / electrical impulses;\nresponse is muscular contractions (in iris) ;\ncausing constriction / reduction in size of the pupil ;\nPlants:\ndetected by stem tip ;\ninvolves hormones / auxin ;\nmore moves / diffuses to the side away from light ;\ncausing more growth / elongation + on the shaded side ;\npositive phototropism / plant stem grows/bends + towards the light ;",
+                    "marks": 6,
+                    "marking_notes": "Max 6 marks. Points can describe either human or plant responses or compare them implicitly/explicitly."
+                },
+                {
+                    "sub_number": "b",
+                    "text": "transmission of impulse between neurones ;\nin one direction ;\nneurotransmitter ;\nreleased (from vesicles) into (synaptic) gap ;\ndiffusion + across gap ;\nbinds with receptor (proteins) ;",
+                    "marks": 4,
+                    "marking_notes": "Max 4 marks. Any four points required."
+                }
+            ]
+        }
+    ]
 }

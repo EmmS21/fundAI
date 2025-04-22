@@ -1,0 +1,36 @@
+{
+    "id": "67d50ebecec12312c07d55f9",
+    "subject": "Biology",
+    "level": "o_level",
+    "year": "2022",
+    "question_number_str": "7",
+    "answers": [
+        {
+            "question_number": 7,
+            "answer_text": "Answers related to molar tooth function, tissue fluid formation, and dental decay.",
+            "marking_scheme": {
+                "total_marks": 10
+            },
+            "sub_answers": [
+                {
+                    "sub_number": "a(i)",
+                    "text": "crushing /grinding / chewing / increasing surface area of food ;",
+                    "marks": 1,
+                    "marking_notes": "crushing /grinding / chewing / increasing surface area of food ; (1 mark)"
+                },
+                {
+                    "sub_number": "a(ii)",
+                    "text": "blood under pressure ;\ncapillary + thin wall /one cell thick ;\nsoluble materials / plasma + squeezed / leaks out ;\noxygen / glucose + from capillary / to cells ;\ncarbon dioxide / urea + from cells / to capillary / blood ;\ndiffusion ;\nacross cell membrane / partially permeable + membrane ;\nadditional named soluble substance e.g. amino acids + direction of movement ;",
+                    "marks": 4,
+                    "marking_notes": "Any four points required. (1 mark each)"
+                },
+                {
+                    "sub_number": "b",
+                    "text": "Cause of decay:\nbacteria ;\nbacteria + feed on + sugar / food ;\nproduce acid ;\nacid + corrodes / destroys AW + enamel / dentine ;\n\nPrevention:\nbrushing / cleaning / toothpaste ;\nflossing / mouthwash ;\nfluoride ;\navoid sugar AW ;\nvisit dentist ;",
+                    "marks": 5,
+                    "marking_notes": "Cause of decay: Any three points required. (1 mark each)\nPrevention: Any two points required. (1 mark each)"
+                }
+            ]
+        }
+    ]
+}

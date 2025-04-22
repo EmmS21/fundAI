@@ -1,0 +1,36 @@
+{
+    "id": "67d50ebecec12312c07d55f9",
+    "subject": "Biology",
+    "level": "o_level",
+    "year": "2022",
+    "question_number_str": "6",
+    "answers": [
+        {
+            "question_number": 6,
+            "answer_text": "Answers related to virus structure, HIV transmission, and data interpretation.",
+            "marking_scheme": {
+                "total_marks": 10
+            },
+            "sub_answers": [
+                {
+                    "sub_number": "a",
+                    "text": "virus is smaller ORA ;\nboth contain genetic material ;\nanimal cell always DNA + virus DNA or RNA ;\nanimal cell has (cell surface) membrane ORA ;\nvirus has a protein coat / capsid ORA ;\nanimal cell has a nucleus / nuclear membrane ORA ;\nanimal cell contains cytoplasm / organelles / named organelle ORA ;",
+                    "marks": 4,
+                    "marking_notes": "Any four points required. (1 mark each)"
+                },
+                {
+                    "sub_number": "b(i)",
+                    "text": "sexually transmitted ;\nblood transfer / blood transfusion AW ;\nsharing AW + needles / razors ;\nfrom mother to baby + across placenta / during pregnancy / during birth / breastfeeding ;",
+                    "marks": 3,
+                    "marking_notes": "Any three points required. (1 mark each)"
+                },
+                {
+                    "sub_number": "b(ii)",
+                    "text": "number infected increasing / more people infected in 2018 than 2000 ;\nrate of infection decreasing / slowing down ;\ncorrect data manipulation + data quoted to illustrate either point ;\nnumber treated for HIV increasing / more people treated in 2018 than 2000 ;\na much bigger proportion of those infected being treated ;\ncorrect data manipulation + quoted to illustrate the point e.g. in 2000 less than 5% treated in 2000 and in 2018 over 60% treated ;",
+                    "marks": 3,
+                    "marking_notes": "Any three points required. (1 mark each)"
+                }
+            ]
+        }
+    ]
+}

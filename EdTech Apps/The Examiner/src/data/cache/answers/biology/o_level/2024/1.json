@@ -4,44 +4,33 @@
     "level": "o_level",
     "year": "2024",
     "question_number_str": "1",
-    "answer_details": {
-        "question_number": 1,
-        "question_text": "The lungs are part of the human gas exchange system. Breathing moves air into and out of the lungs.",
-        "topic": "Human Biology",
-        "subtopic": "Gas Exchange System",
-        "difficulty": {
-            "level": "Medium",
-            "justification": "Requires understanding of respiratory system components and their functions"
-        },
-        "sub_questions": [
-            {
-                "sub_number": "a(i)",
-                "text": "Match parts of the gas exchange system to their functions using Fig. 1.1",
-                "marks": 4
+    "answers": [
+        {
+            "question_number": 1,
+            "answer_text": "Answers related to the human gas exchange system.",
+            "marking_scheme": {
+                "total_marks": 10 
             },
-            {
-                "sub_number": "a(ii)",
-                "text": "State two features of alveoli that make them suitable for gas exchange",
-                "marks": 2
-            },
-            {
-                "sub_number": "b",
-                "text": "Complete the pie chart titles and key showing gas percentages in the lungs during breathing",
-                "marks": 4
-            }
-        ],
-        "images": [
-            {
-                "label": "Fig. 1.1",
-                "description": "Diagram showing parts of gas exchange system and their functions",
-                "url": "https://ibb.co/q3pDcvfh"
-            },
-            {
-                "label": "Fig. 1.2",
-                "description": "Pie charts showing gas percentages in lungs",
-                "url": "https://ibb.co/fVJrC03t"
-            }
-        ],
-        "marks": 10
-    }
+            "sub_answers": [
+                {
+                    "sub_number": "a(i)",
+                    "text": "intercostal muscle - changes volume of thorax\ngoblet cell - release mucus\nalveoli - exchange of gases\ncilia - remove pathogens\ntrachea - carry air to bronchi",
+                    "marks": 4,
+                    "marking_notes": "four correct = 4 marks\nthree correct = 3 marks\ntwo correct = 2 marks\none correct = 1 mark"
+                },
+                {
+                    "sub_number": "a(ii)",
+                    "text": "large surface area ;\nthin/flattened + cells / walls ;\nlayer of water AW ;\nclose to capillaries ;",
+                    "marks": 2,
+                    "marking_notes": "Max 2 marks"
+                },
+                {
+                    "sub_number": "b",
+                    "text": "inspired/inhaled air + expired/exhaled air in correct order ;\nnitrogen ;\noxygen ;\ncarbon dioxide ;",
+                    "marks": 4,
+                    "marking_notes": "1 mark for correct order of titles.\n1 mark each for nitrogen, oxygen, carbon dioxide keys."
+                }
+            ]
+        }
+    ]
 }

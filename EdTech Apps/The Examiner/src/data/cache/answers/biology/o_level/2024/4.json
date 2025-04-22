@@ -4,39 +4,39 @@
     "level": "o_level",
     "year": "2024",
     "question_number_str": "4",
-    "answer_details": {
-        "question_number": 4,
-        "question_text": "Study of Selaginella lepidophylla plant adaptation to extreme dehydration",
-        "topic": "Biology",
-        "subtopic": "Plant Adaptation",
-        "difficulty": {
-            "level": "Medium",
-            "justification": "Combines plant biology concepts with scientific naming conventions"
-        },
-        "sub_questions": [
-            {
-                "sub_number": "a",
-                "text": "Questions about plant adaptation to water availability",
-                "marks": 8
+    "answers": [
+        {
+            "question_number": 4,
+            "answer_text": "Answers related to plant adaptation to dehydration, photosynthesis, plasmolysis, species definition, and binomial nomenclature.",
+            "marking_scheme": {
+                "total_marks": 12 
             },
-            {
-                "sub_number": "b",
-                "text": "Questions about species classification and naming",
-                "marks": 4
-            }
-        ],
-        "images": [
-            {
-                "label": "Fig. 4.1",
-                "description": "Images of S. lepidophylla before and after rainfall",
-                "url": "https://ibb.co/5gHMwj55"
-            },
-            {
-                "label": "Fig. 4.2",
-                "description": "Diagram of plant cell after dehydration",
-                "url": "https://ibb.co/Z7sXhdx"
-            }
-        ],
-        "marks": 12
-    }
+            "sub_answers": [
+                {
+                    "sub_number": "a(i)",
+                    "text": "Chlorophyll/chloroplasts ;\nlarger surface area (after rainfall) ;\nphotosynthesis ;\ncarbohydrates / glucose / starch produced ;\nabsorption / trap + light (energy) ;",
+                    "marks": 4,
+                    "marking_notes": "Max 4 marks. Any four points required."
+                },
+                {
+                    "sub_number": "a(ii)",
+                    "text": "loss of water molecules + osmosis / diffusion / evaporation ;\ncytoplasm shrinks ;\nsap vacuole shrinks ;\ncell membrane pulls away from cell wall ;\nlack of turgor pressure ;\nplasmolysis ;",
+                    "marks": 4,
+                    "marking_notes": "Max 4 marks. Any four points required. Accept marks from a labelled diagram."
+                },
+                {
+                    "sub_number": "b(i)",
+                    "text": "(a group of organisms that) can reproduce / breed / mate ;\nproduce offspring that are fertile ;",
+                    "marks": 2,
+                    "marking_notes": "1 mark for reproduction.\n1 mark for fertile offspring."
+                },
+                {
+                    "sub_number": "b(ii)",
+                    "text": "name: binomial ;\n\nadvantage: relevant advantage given\nsame name in all parts of the world / international name /\ncommon names can differ in different parts of the world /\ngenus name helps identify closely related species ;",
+                    "marks": 2,
+                    "marking_notes": "1 mark for 'binomial'.\n1 mark for any valid advantage."
+                }
+            ]
+        }
+    ]
 }
