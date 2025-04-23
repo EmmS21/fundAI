@@ -7,7 +7,7 @@ import os
 import sys
 import json
 from src.core.ai.marker import run_ai_evaluation # Use the updated orchestrator name
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,34 @@ MARKS_BUTTON_STYLE = """
     }}
 """
 
+# --- Added: Style for Sub-Question GroupBox ---
+SUB_QUESTION_STYLE = """
+    QGroupBox.SubQuestionGroup {{
+        border: 1px solid #D1D5DB; /* Light gray border */
+        border-radius: 8px;
+        margin-top: 10px; /* Space between sub-questions */
+        padding-top: 15px; /* Space for the title */
+        background-color: #F9FAFB; /* Very light gray background */
+    }}
+    QGroupBox.SubQuestionGroup::title {{
+        subcontrol-origin: margin;
+        subcontrol-position: top left;
+        padding: 0 5px 0 5px;
+        left: 10px; /* Position title from left edge */
+        color: #374151; /* Darker gray title */
+        font-weight: bold;
+    }}
+    /* Style for QTextEdit within the sub-question group */
+    QGroupBox.SubQuestionGroup QTextEdit {{
+        font-size: 14px;
+        border: 1px solid #E5E7EB;
+        border-radius: 4px;
+        padding: 4px;
+        background-color: white; /* White background for input */
+        min-height: 60px; /* Minimum height */
+    }}
+"""
+
 # --- ADDED: Simple Waiting Dialog ---
 class WaitingDialog(QDialog):
     def __init__(self, parent=None):
@@ -80,28 +108,31 @@ class WaitingDialog(QDialog):
 
 # --- Worker Thread for AI Feedback ---
 class AIFeedbackWorker(QThread):
-    # Signal emits the results dictionary
+    # Signal emits the results dictionary or potentially a more complex structure later
     feedback_ready = Signal(object)
 
-    def __init__(self, question_data, correct_answer_data, user_answer, marks):
+    # --- MODIFY: Accept dictionary for user_answer ---
+    def __init__(self, question_data: Dict, correct_answer_data: Dict, user_answer: Dict[str, str], marks: Optional[int]):
         super().__init__()
         self.question_data = question_data
         self.correct_answer_data = correct_answer_data
-        self.user_answer = user_answer
+        self.user_answer = user_answer # Now expects a dict
         self.marks = marks
 
     def run(self):
         """Runs the AI evaluation function in a separate thread."""
-        logger.info("AIFeedbackWorker started (Mark + Justification).")
-        # --- FIX: Call the updated function ---
+        logger.info("AIFeedbackWorker started.")
+        # --- NOTE: run_ai_evaluation needs to be updated to handle the user_answer dict ---
+        # For now, it might fail or only process part of the answer depending on its implementation
+        # We will update run_ai_evaluation and the backend API in the next step.
         evaluation_results = run_ai_evaluation(
             self.question_data,
             self.correct_answer_data,
-            self.user_answer,
+            self.user_answer, # Pass the dictionary
             self.marks
         )
         self.feedback_ready.emit(evaluation_results)
-        logger.info("AIFeedbackWorker finished (Mark + Justification).")
+        logger.info("AIFeedbackWorker finished.")
 
 class QuestionView(QWidget):
     """Widget to display a single question and handle user interaction."""
@@ -118,6 +149,9 @@ class QuestionView(QWidget):
         self.logger = logging.getLogger(__name__)
         self.feedback_worker = None
         self.waiting_dialog = None # Add instance variable for the dialog
+        # --- ADDED: Dictionary to hold sub-question input fields ---
+        self.sub_answer_fields: Dict[str, QTextEdit] = {}
+        # ----------------------------------------------------------
 
         self._setup_ui()
         self.load_random_question()
@@ -127,7 +161,7 @@ class QuestionView(QWidget):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(15)
-        self.setStyleSheet(PAPER_STYLE + MARKS_BUTTON_STYLE) # Apply styles
+        self.setStyleSheet(PAPER_STYLE + MARKS_BUTTON_STYLE + SUB_QUESTION_STYLE) # Apply styles
 
         # --- Header ---
         header_layout = QHBoxLayout()
@@ -164,8 +198,7 @@ class QuestionView(QWidget):
         # self.question_text_label.setStyleSheet("font-size: 16px; padding: 10px; background-color: white; color: black;") # Replaced by QSS
         self.question_layout.addWidget(self.question_text_label)
 
-        # --- Placeholder for dynamically added elements (like marks buttons) ---
-        # This layout will hold sub-questions and their marks buttons
+        # --- Area for Sub-Questions (labels, inputs) and Diagrams ---
         self.sub_elements_layout = QVBoxLayout()
         self.sub_elements_layout.setSpacing(8)
         self.question_layout.addLayout(self.sub_elements_layout)
@@ -175,13 +208,6 @@ class QuestionView(QWidget):
 
         scroll_area.setWidget(self.question_content_widget) # Set the container as the scroll area's widget
         self.main_layout.addWidget(scroll_area, 1)
-
-        # --- Answer Input Area ---
-        self.answer_input = QTextEdit()
-        self.answer_input.setPlaceholderText("Enter your answer here...")
-        self.answer_input.setFixedHeight(100) # Adjust height as needed
-        self.answer_input.setStyleSheet("font-size: 14px; border: 1px solid #D1D5DB; border-radius: 6px; padding: 5px;")
-        self.main_layout.addWidget(self.answer_input)
 
         # --- ADDED: Feedback Display Area (Initially Hidden) ---
         self.feedback_groupbox = QGroupBox("AI Feedback")
@@ -255,23 +281,31 @@ class QuestionView(QWidget):
         self.logger.info(f"Loading random question for {self.subject_name} - {self.level_key}")
 
         # --- Clear previous dynamic content ---
-        # Clear widgets from the sub-elements layout BEFORE loading new data
+        # Clear previous answer fields dictionary
+        self.sub_answer_fields.clear()
+
+        # Clear widgets from the sub-elements layout
         while self.sub_elements_layout.count():
             item = self.sub_elements_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
-            else: # If it's a layout, clear it recursively (optional, depends on structure)
-                 layout = item.layout()
-                 if layout is not None:
-                      # Basic recursive clear (can be enhanced)
-                      while layout.count():
-                           sub_item = layout.takeAt(0)
-                           sub_widget = sub_item.widget()
-                           if sub_widget: sub_widget.deleteLater()
+            else: # Clear layout items if necessary
+                layout_item = item.layout()
+                if layout_item is not None:
+                    # Basic recursive clear (adapt if more complex layouts are nested)
+                    while layout_item.count():
+                        sub_item = layout_item.takeAt(0)
+                        sub_widget = sub_item.widget()
+                        if sub_widget: sub_widget.deleteLater()
 
+        # --- Hide feedback from previous question ---
+        self.feedback_groupbox.hide()
+        self.submit_button.setEnabled(True) # Re-enable submit
+        self.next_button.setEnabled(False) # Disable next until submitted
 
         try:
+            # CacheManager.get_random_question now includes 'correct_answer_data'
             question_data = self.cache_manager.get_random_question(self.subject_name, self.level_key)
             self.logger.debug(f"Raw question data received: {question_data}")
 
@@ -283,47 +317,58 @@ class QuestionView(QWidget):
                 # 1. Display Main Question Text (if any)
                 main_text = question_data.get('text') or question_data.get('question_text', '')
                 self.question_text_label.setText(main_text.strip())
-                self.question_text_label.setVisible(bool(main_text.strip())) # Show/hide if empty
+                self.question_text_label.setVisible(bool(main_text.strip()))
 
-                # 2. Process Sub-Questions (Create separate widgets)
+                # 2. Process Sub-Questions (Create GroupBoxes with Inputs)
                 sub_questions = question_data.get('sub_questions', [])
-                if sub_questions and isinstance(sub_questions, list):
-                     # Optional: Add a label like "Sub Questions:"
-                     # sub_q_header = QLabel("<b>Sub Questions:</b>")
-                     # self.sub_elements_layout.addWidget(sub_q_header)
+                has_sub_questions = bool(sub_questions and isinstance(sub_questions, list))
 
-                     for sq_index, sq in enumerate(sub_questions):
-                         if isinstance(sq, dict):
-                             marks_val = sq.get('marks')
-                             sub_num_str = sq.get('sub_number', f'({sq_index+1})') # Fallback numbering
-                             sub_text_str = sq.get('text', '').strip()
+                if has_sub_questions:
+                    for sq_index, sq in enumerate(sub_questions):
+                        if isinstance(sq, dict):
+                            marks_val = sq.get('marks')
+                            # Ensure sub_number is a string and suitable as a dict key
+                            sub_num_str = str(sq.get('sub_number', f'part_{sq_index+1}'))
+                            sub_text_str = sq.get('text', '').strip()
 
-                             # Layout for a single sub-question row (text + marks)
-                             sub_q_row_layout = QHBoxLayout()
-                             sub_q_row_layout.setSpacing(10)
+                            # Create GroupBox for the sub-question
+                            sub_q_group = QGroupBox()
+                            sub_q_group.setProperty("class", "SubQuestionGroup") # For styling
+                            # Use sub-question text and marks in the title
+                            group_title = f"{sub_num_str}) {sub_text_str}"
+                            if marks_val is not None:
+                                group_title += f" [{marks_val} marks]"
+                            sub_q_group.setTitle(group_title)
 
-                             # Sub-question Text Label
-                             sub_q_text = f"<b>{sub_num_str}</b>) {sub_text_str}"
-                             sub_q_label = QLabel(sub_q_text)
-                             sub_q_label.setWordWrap(True)
-                             sub_q_label.setStyleSheet("background-color: transparent;") # Ensure transparency
-                             sub_q_row_layout.addWidget(sub_q_label, 1) # Give text stretchy space
+                            group_layout = QVBoxLayout(sub_q_group)
+                            group_layout.setContentsMargins(10, 10, 10, 10) # Padding inside group
+                            group_layout.setSpacing(5)
 
-                             # Marks Button (if marks exist)
-                             if marks_val is not None:
-                                 marks_button = QPushButton(f"{marks_val} marks")
-                                 marks_button.setProperty("class", "MarksButton") # For QSS styling
-                                 # marks_button.setToolTip("Click to highlight relevant section?") # Optional tooltip
-                                 # Connect signal if needed: marks_button.clicked.connect(lambda m=marks_val: self._handle_marks_click(m))
-                                 sub_q_row_layout.addWidget(marks_button) # Add button to row
-                             else:
-                                 sub_q_row_layout.addStretch(0) # Add stretch if no button to align items
+                            # Answer Input Field for this sub-question
+                            sub_answer_input = QTextEdit()
+                            sub_answer_input.setPlaceholderText(f"Enter answer for {sub_num_str}...")
+                            # sub_answer_input.setFixedHeight(80) # Example fixed height
+                            sub_answer_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding) # Allow vertical expansion
 
-                             # Add the row layout to the main sub-elements layout
-                             self.sub_elements_layout.addLayout(sub_q_row_layout)
+                            group_layout.addWidget(sub_answer_input) # Add input to group layout
 
-                         else:
-                             self.logger.warning(f"Skipping invalid sub_question item (not a dict): {sq}")
+                            # Store the input field, keyed by sub-question number
+                            self.sub_answer_fields[sub_num_str] = sub_answer_input
+
+                            # Add the group box to the main sub-elements layout
+                            self.sub_elements_layout.addWidget(sub_q_group)
+
+                        else:
+                            self.logger.warning(f"Skipping invalid sub_question item (not a dict): {sq}")
+                # --- If NO sub-questions, add a single input field ---
+                else:
+                    self.logger.info("No sub-questions found, adding a single main answer input.")
+                    main_answer_input = QTextEdit()
+                    main_answer_input.setPlaceholderText("Enter your answer here...")
+                    main_answer_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding) # Allow vertical expansion
+                    # Use a default key like "main" to store this field
+                    self.sub_answer_fields["main"] = main_answer_input
+                    self.sub_elements_layout.addWidget(main_answer_input)
 
 
                 # 3. Add Diagram Descriptions (as simple labels for now)
@@ -343,8 +388,8 @@ class QuestionView(QWidget):
                              self.sub_elements_layout.addWidget(desc_label) # Add description to layout
 
 
-                self.answer_input.clear()
-                self.answer_input.setEnabled(True)
+                # --- Enable relevant controls ---
+                self.submit_button.setEnabled(True)
 
 
                 # --- Populate Image Links --- (Keep existing logic)
@@ -414,13 +459,14 @@ class QuestionView(QWidget):
                 logger.warning(error_msg)
                 self.question_text_label.setText(error_msg)
                 self.question_text_label.setVisible(True)
-                self.answer_input.setEnabled(False)
+                self.submit_button.setEnabled(False)
                 self._clear_image_links() # Clear images if no question loaded
 
         except Exception as e:
             logger.error(f"Error loading question: {e}", exc_info=True)
             self.question_text_label.setText(f"Error loading question: {str(e)}")
             self.question_text_label.setVisible(True)
+            self.submit_button.setEnabled(False)
             self._clear_image_links()
 
     # Placeholder - adapt key->name mapping as needed
@@ -435,75 +481,112 @@ class QuestionView(QWidget):
 
     # --- Updated _trigger_ai_feedback ---
     def _trigger_ai_feedback(self):
-        """Starts the AI feedback process and shows the waiting dialog."""
+        """Starts the AI feedback process, collecting answers from sub-question fields."""
         if self.feedback_worker and self.feedback_worker.isRunning():
             self.logger.warning("Feedback process already running.")
             return
 
-        if self.current_question_data:
-            # ... (Keep logic to get user_answer, validate, calculate marks, load correct_answer_data) ...
-            user_answer = self.answer_input.toPlainText().strip()
-            # ... validation checks ...
-            marks = self.current_question_data.get('marks') # etc.
-            # ... load correct_answer_data ...
-            correct_answer_data = {} # Placeholder
+        if not self.current_question_data:
+            self.logger.error("Cannot trigger AI feedback: No current question data loaded.")
+            QMessageBox.warning(self, "Error", "No question is currently loaded.")
+            return
 
-            # --- Show Waiting Dialog & Disable UI ---
-            self.submit_button.setEnabled(False)
-            self.submit_button.setText("Processing...")
-            self.answer_input.setReadOnly(True)
-            self.next_button.setEnabled(False)
+        # --- Get User Answers from Sub-Fields ---
+        user_answers_dict: Dict[str, str] = {}
+        all_empty = True
+        if not self.sub_answer_fields:
+             self.logger.error("Cannot submit: No answer fields found!")
+             QMessageBox.critical(self, "Internal Error", "Could not find answer input fields.")
+             return
 
-            # Create and show the dialog
-            self.waiting_dialog = WaitingDialog(self)
-            self.waiting_dialog.show()
-            # --- End Show Waiting Dialog ---
+        for sub_num, text_edit in self.sub_answer_fields.items():
+            answer_text = text_edit.toPlainText().strip()
+            user_answers_dict[sub_num] = answer_text
+            if answer_text: # Check if at least one field has content
+                all_empty = False
 
-            # --- Start Worker Thread ---
-            self.feedback_worker = AIFeedbackWorker(
-                self.current_question_data,
-                correct_answer_data,
-                user_answer,
-                marks
-            )
-            self.feedback_worker.feedback_ready.connect(self._handle_ai_feedback_result)
-            self.feedback_worker.start()
+        if all_empty:
+            QMessageBox.warning(self, "Input Needed", "Please enter an answer for at least one part before submitting.")
+            return
+        # ------------------------------------------
 
-        else:
-            # ... (Handle no current question data) ...
-             pass
+        # --- Get Question Data (unchanged) ---
+        question_data_for_ai = self.current_question_data
 
-    # --- UPDATED _handle_ai_feedback_result ---
+        # --- Get Correct Answer Data (unchanged) ---
+        correct_answer_data = self.current_question_data.get('correct_answer_data')
+        if correct_answer_data is None:
+            self.logger.error("Cannot trigger AI feedback: Correct answer data is missing from loaded question data.")
+            # Decide how to handle this - show error? Proceed without answer?
+            # For now, let's show an error and stop.
+            QMessageBox.critical(self, "Internal Error", "Could not find the correct answer data for this question. Cannot proceed with evaluation.")
+            return
+        # Optionally log the structure if debugging
+        # self.logger.debug(f"Correct answer data: {correct_answer_data}") # Optional Debug
+
+        # --- Get Marks (unchanged) ---
+        marks = self.current_question_data.get('marks')
+        if marks is None:
+            self.logger.warning("Total marks not found in question data. AI evaluation might be affected.")
+            # Decide if marks are mandatory. Setting to 0 or None if missing?
+            marks = 0 # Example: Default to 0 if missing
+
+        # --- Show Waiting Dialog & Disable UI ---
+        self.submit_button.setEnabled(False)
+        self.submit_button.setText("Processing...")
+        # Disable all sub-answer fields
+        for text_edit in self.sub_answer_fields.values():
+            text_edit.setReadOnly(True)
+        self.next_button.setEnabled(False)
+
+        # Create and show the dialog
+        self.waiting_dialog = WaitingDialog(self)
+        self.waiting_dialog.show()
+        QApplication.processEvents() # Ensure dialog displays immediately
+
+        # --- Start Worker Thread (Pass the answers dict) ---
+        self.logger.info("Starting AIFeedbackWorker thread with structured answers...")
+        self.feedback_worker = AIFeedbackWorker(
+            question_data_for_ai,
+            correct_answer_data,
+            user_answers_dict, # Pass the dictionary of answers
+            marks
+        )
+        self.feedback_worker.feedback_ready.connect(self._handle_ai_feedback_result)
+        # Connect error/finished signals if needed for better cleanup/state management
+        # self.feedback_worker.finished.connect(self._on_worker_finished)
+        self.feedback_worker.start()
+
+    # --- Updated _handle_ai_feedback_result ---
+    # NOTE: This function now receives results potentially based on the dictionary input.
+    # The structure of eval_results might need changes based on how run_ai_evaluation is updated.
+    # For now, assume it returns a similar dictionary for overall feedback.
     def _handle_ai_feedback_result(self, eval_results: Optional[Dict[str, Optional[str]]]):
         """Receives the evaluation results dict (or None) from the worker thread."""
         # Close Dialog
         if self.waiting_dialog:
             self.waiting_dialog.accept()
             self.waiting_dialog = None
-        self.submit_button.setText("Submit Answer") # Reset button
+        self.submit_button.setText("Submit Answer") # Reset button text
 
-        # Process results
         if eval_results and isinstance(eval_results, dict):
             self.logger.info("Received evaluation results from AI.")
-            # Check if mark parsing specifically failed
-            mark_value = eval_results.get("Mark Awarded")
-            if not mark_value or mark_value.startswith("N/A"):
-                 QMessageBox.warning(self, "AI Evaluation Info", "AI could not determine a mark.")
-
-            self._display_feedback(eval_results) # Display mark and justification
-            self.next_button.setEnabled(True)
+            # Display overall feedback for now
+            self._display_feedback(eval_results)
+            self.next_button.setEnabled(True) # Enable next question
+             # Keep answer fields read-only after successful submission/feedback
         else:
-            # Handle critical errors (None return from run_ai_evaluation)
-            error_message = "Failed to get evaluation from AI service (critical error)."
+            error_message = "Failed to get evaluation from AI service."
             self.logger.error(error_message)
             QMessageBox.critical(self, "AI Evaluation Error", error_message)
             # Re-enable UI on critical failure
             self.submit_button.setEnabled(True)
-            self.answer_input.setReadOnly(False)
-            self.next_button.setEnabled(True)
+            for text_edit in self.sub_answer_fields.values(): # Re-enable input fields
+                text_edit.setReadOnly(False)
+            self.next_button.setEnabled(True) # Allow moving on even if feedback failed
 
 
-    # --- UPDATED _display_feedback ---
+    # --- Updated _display_feedback ---
     def _display_feedback(self, data: Dict[str, Optional[str]]):
         """Populates the feedback UI elements with mark and justification."""
         logger.debug(f"Displaying evaluation data: {data}")
@@ -626,3 +709,22 @@ class QuestionView(QWidget):
 
         except Exception as e:
             self.logger.error(f"Unexpected error creating image popup for {image_path}: {e}", exc_info=True)
+
+# Example Usage (if run standalone)
+if __name__ == '__main__':
+    from PySide6.QtWidgets import QApplication
+    import sys
+
+    # --- Basic Logging Setup ---
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+    app = QApplication(sys.argv)
+    # You need to initialize CacheManager and potentially other services if running standalone
+    # cache_mgr = CacheManager()
+    # cache_mgr.start() # Ensure it's initialized and potentially running
+
+    # Example: Assuming 'Biology' and 'o_level' exist in cache
+    # You might need to ensure data is cached first if running standalone
+    view = QuestionView('Biology', 'o_level')
+    view.show()
+    sys.exit(app.exec())

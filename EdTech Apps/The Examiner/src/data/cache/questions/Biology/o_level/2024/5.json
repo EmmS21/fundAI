@@ -41,6 +41,19 @@
     ],
     "tables": null,
     "marks": 15,
-    "images": [],
+    "images": [
+        {
+            "label": "Fig. 5.1",
+            "description": "Diagram of a pineapple plant",
+            "url": "https://ibb.co/9kyd2cP9",
+            "local_path": "src/data/cache/assets/biology/o_level/2024/q5_fig_51.png"
+        },
+        {
+            "label": "Fig. 5.2",
+            "description": "Graph showing enzyme activity vs pH",
+            "url": "https://ibb.co/Df05qBsW",
+            "local_path": "src/data/cache/assets/biology/o_level/2024/q5_fig_52.png"
+        }
+    ],
     "answer_ref": "5.json"
 }

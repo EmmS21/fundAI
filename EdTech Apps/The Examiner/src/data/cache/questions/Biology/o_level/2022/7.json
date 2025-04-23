@@ -31,6 +31,13 @@
     ],
     "tables": null,
     "marks": 10,
-    "images": [],
+    "images": [
+        {
+            "label": null,
+            "description": "Diagram showing a section through a human molar tooth, labelling enamel, dentine, and pulp.",
+            "url": "https://ibb.co/FqkZwjhM",
+            "local_path": "src/data/cache/assets/biology/o_level/2022/q7_img_0.png"
+        }
+    ],
     "answer_ref": "7.json"
 }

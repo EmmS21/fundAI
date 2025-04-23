@@ -46,6 +46,13 @@
     ],
     "tables": null,
     "marks": 14,
-    "images": [],
+    "images": [
+        {
+            "label": null,
+            "description": "Graph showing oxygen consumption vs exercise intensity",
+            "url": "https://ibb.co/spNDtCW0",
+            "local_path": "src/data/cache/assets/biology/o_level/2022/q2_img_0.png"
+        }
+    ],
     "answer_ref": "2.json"
 }

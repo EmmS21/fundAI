@@ -36,6 +36,13 @@
     ],
     "tables": null,
     "marks": 10,
-    "images": [],
+    "images": [
+        {
+            "label": null,
+            "description": "Diagram of human skin with labeled parts A, B, C, and D",
+            "url": "https://ibb.co/9H2PtG9F",
+            "local_path": "src/data/cache/assets/biology/o_level/2022/q1_img_0.png"
+        }
+    ],
     "answer_ref": "1.json"
 }

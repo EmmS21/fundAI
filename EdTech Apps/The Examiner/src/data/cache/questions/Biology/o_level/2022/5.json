@@ -36,6 +36,13 @@
     ],
     "tables": null,
     "marks": 7,
-    "images": [],
+    "images": [
+        {
+            "label": null,
+            "description": "Diagram showing the whole plant floating in a pond.",
+            "url": "https://ibb.co/zW7Y88NN",
+            "local_path": "src/data/cache/assets/biology/o_level/2022/q5_img_0.png"
+        }
+    ],
     "answer_ref": "5.json"
 }

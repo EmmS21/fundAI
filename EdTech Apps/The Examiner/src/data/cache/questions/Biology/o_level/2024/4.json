@@ -73,6 +73,13 @@
         }
     ],
     "marks": 14,
-    "images": [],
+    "images": [
+        {
+            "label": "Fig. 4.1",
+            "description": "Simplified diagram of a nephron",
+            "url": "https://ibb.co/spZCccMT",
+            "local_path": "src/data/cache/assets/biology/o_level/2024/q4_fig_41.png"
+        }
+    ],
     "answer_ref": "4.json"
 }
