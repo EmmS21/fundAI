@@ -23,6 +23,7 @@ from src.data.database.models import QuestionResponse, User, ExamResult
 from bs4 import BeautifulSoup
 import mimetypes
 from bson import ObjectId # Make sure this import exists at the top
+import pprint # Import pprint for prettier dictionary logging
 
 
 logger = logging.getLogger(__name__)
@@ -1850,31 +1851,41 @@ class CacheManager:
             Dictionary containing question data and correct answer data, or None if not found.
         """
         self.logger.debug(f"Attempting to get random question for {subject_name}/{level_key}")
-        # Check subscription status but don't block access to already cached content
-        is_active = self.is_subscribed() # Assuming this checks if user can access content
+        is_active = self.is_subscribed()
 
         try:
-            # --- Find all available question files for the subject/level ---
+            # --- Find all available question files ---
+            # --- START: Restore file finding logic ---
             safe_subject = self._safe_filename(subject_name)
             level_path = os.path.join(self.QUESTIONS_DIR, safe_subject, level_key)
+            self.logger.debug(f"Constructed level path for questions: {level_path}")
+
+            all_question_files = [] # Initialize the list HERE
 
             if not os.path.isdir(level_path):
                 self.logger.warning(f"Questions directory not found for {subject_name}/{level_key} at {level_path}")
-                return None
+                # No need to return yet, check if all_question_files is empty later
+            else:
+                 # Walk through year subdirectories
+                 self.logger.debug(f"Searching for year subdirectories in: {level_path}")
+                 for year_dir_name in os.listdir(level_path):
+                     year_path = os.path.join(level_path, year_dir_name)
+                     self.logger.debug(f"Checking path: {year_path}")
+                     if os.path.isdir(year_path):
+                         self.logger.debug(f"Found year directory: {year_path}. Searching for JSON files...")
+                         for filename in os.listdir(year_path):
+                             if filename.endswith('.json'):
+                                 full_path = os.path.join(year_path, filename)
+                                 self.logger.debug(f"Found question file: {full_path}")
+                                 all_question_files.append(full_path)
+                     else:
+                          self.logger.debug(f"Skipping item (not a directory): {year_path}")
+            # --- END: Restore file finding logic ---
 
-            all_question_files = []
-            # Walk through year subdirectories
-            for year_dir in os.listdir(level_path):
-                year_path = os.path.join(level_path, year_dir)
-                if os.path.isdir(year_path):
-                    for filename in os.listdir(year_path):
-                        if filename.endswith('.json'):
-                            full_path = os.path.join(year_path, filename)
-                            all_question_files.append(full_path)
-
+            # --- Now the check makes sense ---
             if not all_question_files:
                 self.logger.warning(f"No cached question JSON files found in {level_path} or its subdirectories.")
-                return None
+                return None # Return None if no files were found
 
             self.logger.debug(f"Found {len(all_question_files)} potential question files for {subject_name}/{level_key}.")
 
@@ -1887,70 +1898,106 @@ class CacheManager:
             try:
                 with open(selected_question_file, 'r', encoding='utf-8') as f:
                     question_data = json.load(f)
+                self.logger.debug(f"Successfully loaded question data from {selected_question_file}:\n{pprint.pformat(question_data)}")
             except json.JSONDecodeError as e:
                 self.logger.error(f"Error decoding JSON from question file {selected_question_file}: {e}")
-                return None # Cannot proceed without question data
+                return None
             except IOError as e:
                  self.logger.error(f"Error reading question file {selected_question_file}: {e}")
                  return None
 
-            if not question_data: # Should not happen if exceptions are caught, but good practice
+            if not question_data:
                  self.logger.error(f"Failed to load question data from {selected_question_file} despite no exception.")
                  return None
 
-            # --- Resolve asset paths (modify question_data in place) ---
-            # Assuming _resolve_asset_paths modifies the 'images' part of question_data
+            # --- Resolve asset paths ---
             self._resolve_asset_paths(question_data)
 
-            # --- ADDED: Load corresponding answer data ---
+            # --- Load corresponding answer data ---
             correct_answer_data = None
             answer_ref = question_data.get('answer_ref')
-            if answer_ref and isinstance(answer_ref, str):
-                self.logger.debug(f"Found answer_ref: {answer_ref}")
-                try:
-                    # Construct answer file path relative to the question file's directory structure
-                    question_dir = os.path.dirname(selected_question_file)
-                    # Navigate up from year dir -> level dir -> subject dir -> questions dir
-                    base_questions_dir = os.path.dirname(os.path.dirname(question_dir))
-                    # Construct path into the parallel 'answers' directory
-                    answer_file_path = os.path.join(
-                        base_questions_dir.replace(self.QUESTIONS_DIR, os.path.join(self.CACHE_DIR, "answers"), 1), # Replace base 'questions' path with 'answers' path
-                        os.path.basename(question_dir), # year
-                        answer_ref # The answer filename (e.g., "1.json")
-                    )
+            self.logger.debug(f"Extracted answer_ref from question data: '{answer_ref}' (Type: {type(answer_ref)})")
 
-                    self.logger.info(f"Attempting to load answer file from: {answer_file_path}")
-                    if os.path.exists(answer_file_path):
-                        with open(answer_file_path, 'r', encoding='utf-8') as f_ans:
-                            correct_answer_data = json.load(f_ans)
-                        self.logger.info(f"Successfully loaded answer data for {answer_ref}")
+            if answer_ref and isinstance(answer_ref, str):
+                self.logger.debug(f"Found valid answer_ref: {answer_ref}. Proceeding to find answer file.")
+                try:
+                    # Construct answer file path
+                    question_dir = os.path.dirname(selected_question_file)
+                    self.logger.debug(f"Calculated question_dir: {question_dir}")
+                    # Navigate up: year -> level -> subject -> questions_base
+                    # CORRECTED LOGIC: Need to go up TWICE from question_dir (which is inside 'year')
+                    # to get to the 'level' directory containing year folders.
+                    base_level_dir = os.path.dirname(question_dir) # e.g., src/data/cache/questions/biology/o_level
+                    self.logger.debug(f"Calculated base_level_dir (containing year folders): {base_level_dir}")
+
+                    # Construct path into the parallel 'answers' directory
+                    answers_base_dir_candidate = base_level_dir.replace(self.QUESTIONS_DIR, os.path.join(self.CACHE_DIR, "answers"), 1)
+                    self.logger.debug(f"Candidate answers_base_dir (after replace): {answers_base_dir_candidate}")
+
+                    # Check if replacement worked, otherwise construct manually (safer)
+                    if self.QUESTIONS_DIR not in base_level_dir:
+                         self.logger.warning("QUESTIONS_DIR not found in base_level_dir, path replacement might be incorrect. Constructing manually.")
+                         # Example manual construction (adjust if base structure differs)
+                         parts = base_level_dir.split(os.sep)
+                         if len(parts) >= 5 and parts[-4] == 'data' and parts[-3] == 'cache' and parts[-2] == 'questions':
+                              answers_base_dir_candidate = os.path.join(os.sep.join(parts[:-2]), 'answers', parts[-1]) # Combine parts, swap 'questions' for 'answers'
+                              self.logger.debug(f"Manually constructed answers_base_dir: {answers_base_dir_candidate}")
+                         else:
+                              self.logger.error("Cannot reliably construct parallel answers directory path.")
+                              answers_base_dir_candidate = None # Signal error
+
+                    if answers_base_dir_candidate:
+                         answer_file_path = os.path.join(
+                            answers_base_dir_candidate, # Path like src/data/cache/answers/biology/o_level
+                            os.path.basename(question_dir), # year subdir name (e.g., 2024)
+                            answer_ref # The answer filename (e.g., "1.json")
+                         )
+                         self.logger.info(f"Constructed potential answer file path: {answer_file_path}")
+
+                         answer_file_exists = os.path.exists(answer_file_path)
+                         self.logger.info(f"Checking existence of answer file at '{answer_file_path}': {answer_file_exists}")
+
+                         if answer_file_exists:
+                            self.logger.debug(f"Attempting to open and load JSON from: {answer_file_path}")
+                            with open(answer_file_path, 'r', encoding='utf-8') as f_ans:
+                                self.logger.debug(f"Opened answer file. Attempting json.load...")
+                                correct_answer_data = json.load(f_ans)
+                                self.logger.debug(f"Successfully loaded JSON from answer file. Type: {type(correct_answer_data)}")
+                            self.logger.info(f"Successfully loaded answer data for {answer_ref}")
+                         else:
+                            self.logger.warning(f"Answer file referenced by {answer_ref} was NOT FOUND at the calculated path: {answer_file_path}")
                     else:
-                        self.logger.warning(f"Answer file referenced by {answer_ref} not found at {answer_file_path}")
+                         # Handle case where answers_base_dir_candidate could not be determined
+                         self.logger.error("Could not construct path to answers directory.")
+
+
                 except json.JSONDecodeError as e:
-                    self.logger.error(f"Error decoding JSON from answer file {answer_file_path}: {e}")
-                    # Continue without answer data, maybe log severity
+                    self.logger.error(f"JSONDecodeError while reading answer file {answer_file_path}: {e}")
+                    correct_answer_data = None
                 except IOError as e:
-                    self.logger.error(f"Error reading answer file {answer_file_path}: {e}")
+                    self.logger.error(f"IOError reading answer file {answer_file_path}: {e}")
+                    correct_answer_data = None
+                except NameError: # Catch if answer_file_path wasn't defined
+                    self.logger.error("Could not attempt to read answer file because its path was not determined.")
+                    correct_answer_data = None
                 except Exception as e:
                     self.logger.error(f"Unexpected error loading answer file for {answer_ref}: {e}", exc_info=True)
+                    correct_answer_data = None
             else:
-                self.logger.warning(f"No valid 'answer_ref' found in question data from {selected_question_file}")
+                self.logger.warning(f"No valid 'answer_ref' string found in question data from {selected_question_file}. Cannot load answer.")
 
-            # Add the loaded answer data (or None) to the result
+            self.logger.debug(f"Value of correct_answer_data before assigning to question_data: {correct_answer_data is not None} (Type: {type(correct_answer_data)})")
             question_data['correct_answer_data'] = correct_answer_data
-            # --- END ADDED ---
 
-            # If we found content but subscription is expired, add warning
             if not is_active:
                 question_data['subscription_expired'] = True
                 self.logger.warning(f"Subscription is not active, adding warning flag to returned data for {selected_question_file}")
 
-            self.logger.debug(f"Returning combined question and answer data for {selected_question_file}")
-            return question_data # Return the dictionary containing question and potentially answer data
+            self.logger.debug(f"Final combined question_data dictionary being returned for {selected_question_file}:\n{pprint.pformat(question_data)}")
+            return question_data
 
         except Exception as e:
-            # Catch-all for unexpected errors during file finding/selection
-            self.logger.error(f"Error getting random question for {subject_name}/{level_key}: {e}", exc_info=True)
+            self.logger.error(f"Error during get_random_question for {subject_name}/{level_key}: {e}", exc_info=True)
             return None
 
     def _handle_network_change(self, status: NetworkStatus):
