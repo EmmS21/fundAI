@@ -46,6 +46,13 @@
     ],
     "tables": null,
     "marks": 13,
-    "images": [],
+    "images": [
+        {
+            "label": "Fig. 2.1",
+            "description": "Diagram of a swordfish showing the sword extension",
+            "url": "https://ibb.co/8gNNMwMr",
+            "local_path": "src/data/cache/assets/biology/o_level/2024/q2_fig_21.png"
+        }
+    ],
     "answer_ref": "2.json"
 }

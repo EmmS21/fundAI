@@ -36,6 +36,13 @@
     ],
     "tables": null,
     "marks": 14,
-    "images": [],
+    "images": [
+        {
+            "label": null,
+            "description": "Diagram showing the process of taking cuttings from a dahlia plant.",
+            "url": "https://ibb.co/B5pxY5Fpnull",
+            "local_path": null
+        }
+    ],
     "answer_ref": "3.json"
 }

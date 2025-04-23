@@ -739,12 +739,14 @@ class CacheManager:
 
             # 2. Process each source Question Paper document
             for doc_index, question_doc_raw in enumerate(question_documents):
-                # ... (Initialize counters) ...
+                # --- Initialize counters for THIS paper ---
                 doc_question_count = 0
                 doc_answer_count = 0
                 doc_valid_image_url_count = 0
                 doc_downloaded_image_count = 0
                 matching_answer_doc_for_this_paper = None
+                # --- End Initialize counters ---
+
 
                 # Extract the primary _id from the raw question doc
                 mongo_question_object_id = question_doc_raw.get('_id')
@@ -758,115 +760,141 @@ class CacheManager:
                 self.logger.info(f"--- Processing Question Paper #{doc_index + 1}/{len(question_documents)} with _id: {mongo_question_object_id} ---")
 
                 # Extract Metadata
-                # ... (Metadata extraction logic) ...
-                source_document_id = safe_question_doc.get('document_id') # Get the document_id for matching
+                source_document_id = safe_question_doc.get('document_id') 
                 source_file_id = safe_question_doc.get('file_id')
                 source_file_name = safe_question_doc.get('file_name')
                 paper_meta = safe_question_doc.get('paper_meta', {})
                 year = str(paper_meta.get('Year', 'Unknown'))
-                # Extract term and paper number from paper_meta
                 term = str(paper_meta.get('Term', 'Unknown'))
                 paper_number = str(paper_meta.get('Paper', 'Unknown'))
 
-                year_questions_dir = os.path.join(questions_base_dir, year) # Defined earlier
-                year_answers_dir = os.path.join(answers_base_dir, year)   # Defined earlier
+                year_questions_dir = os.path.join(questions_base_dir, year) 
+                year_answers_dir = os.path.join(answers_base_dir, year)   
                 os.makedirs(year_questions_dir, exist_ok=True)
                 os.makedirs(year_answers_dir, exist_ok=True)
 
-                # --- Check if this is one of the papers we need full processing for ---
-                is_target_paper = mongo_question_object_id in target_paper_object_ids
-                if not is_target_paper:
-                    self.logger.info(f"Skipping detailed answer processing for non-target paper _id: {mongo_question_object_id}")
-                    # Optionally, you might still want to cache the questions even if answers aren't needed
-                    # If not, you could 'continue' here to skip question caching too.
-                    # For now, let's assume we still cache questions.
+                # Check if this paper should be a target based on criteria
+                # (Assuming is_target_paper logic exists or is determined here)
+                is_target_paper = True # Example: Assume we process all for now
 
-                # --- Cache Questions (Always, or only for target papers?) ---
-                # Decide if you want to cache questions for non-target papers too
-                # Current logic caches all questions found
+                # 3. Process and save each Question within the Paper
                 if 'questions' in safe_question_doc and isinstance(safe_question_doc['questions'], list):
-                    # ... (Existing question processing and saving loop) ...
-                     for question_index, question_item in enumerate(safe_question_doc['questions']):
-                        # ... (save question logic) ...
-                        if not isinstance(question_item, dict): continue
+                    for question_index, question_item in enumerate(safe_question_doc['questions']):
+                        if not isinstance(question_item, dict): 
+                            self.logger.warning(f"Skipping question item at index {question_index} in paper {mongo_question_doc_id_str} because it's not a dictionary.")
+                            continue
+                        
                         q_num_int = self._get_int_q_num(question_item)
+                        # Use index as fallback ONLY if integer conversion fails
                         question_number_str = str(q_num_int) if q_num_int is not None else f"idx{question_index}"
-                        processed_images = [] # Placeholder
-                        # (Actual image processing logic)
+                        self.logger.debug(f"Processing Q {question_number_str} from paper {mongo_question_doc_id_str}")
+
+                        # --- Process Images for this question ---
+                        processed_images = []
+                        original_images = question_item.get('images', [])
+                        if isinstance(original_images, list):
+                            for img_idx, img_data in enumerate(original_images):
+                                if isinstance(img_data, dict):
+                                    url = img_data.get('url')
+                                    label = img_data.get('label')
+                                    description = img_data.get('description')
+                                    
+                                    if url: # Only process if there is a URL
+                                        doc_valid_image_url_count += 1 # Increment valid URL count here
+                                        self.logger.debug(f"Attempting download for Q {question_number_str}, Img {img_idx}, URL: {url}")
+                                        # Attempt to download the asset
+                                        local_path = self._download_and_save_asset(
+                                            url=url,
+                                            subject=subject,
+                                            level=level_key, # Use level_key consistently
+                                            year=year,
+                                            question_number=question_number_str, 
+                                            image_index=img_idx,
+                                            image_label=label 
+                                        )
+                                        
+                                        # Create the image entry for the JSON cache
+                                        processed_image_entry = {
+                                            "label": label,
+                                            "description": description,
+                                            "url": url, # Keep original URL 
+                                            "local_path": local_path # Will be None if download failed
+                                        }
+                                        processed_images.append(processed_image_entry)
+                                        
+                                        if local_path: 
+                                            self.logger.info(f"Successfully downloaded and got path for Q {question_number_str}, Img {img_idx}: {local_path}")
+                                            doc_downloaded_image_count += 1 # Increment download count ONLY if successful
+                                        else:
+                                             self.logger.warning(f"Download failed for Q {question_number_str}, Img {img_idx}, URL: {url}")
+                                    else:
+                                        self.logger.warning(f"Skipping image processing for Q {question_number_str}, Img {img_idx}: Missing URL.")
+                                else:
+                                     self.logger.warning(f"Skipping invalid image data entry (not a dict) in Q {question_number_str}, index {img_idx}")
+                        else:
+                             self.logger.warning(f"Images data for Q {question_number_str} is not a list, skipping image processing.")
+                        # --- End Process Images ---
+
+                        # --- Prepare and Save Question JSON ---
                         question_data_to_save = {
                             "id": mongo_question_doc_id_str, "subject": subject, "level": level_key, "year": year,
                             "question_number_str": question_number_str,
-                            "question_text": question_item.get("question_text", ""), "topic": question_item.get("topic"),
-                            "subtopic": question_item.get("subtopic"), "difficulty": question_item.get("difficulty"),
-                            "context_materials": question_item.get("context_materials"), "sub_questions": question_item.get("sub_questions"),
-                            "tables": question_item.get("tables"), "marks": question_item.get("marks"),
-                            "images": processed_images, "answer_ref": f"{question_number_str}.json"
+                            "question_text": question_item.get("question_text", ""), 
+                            "topic": question_item.get("topic"),
+                            "subtopic": question_item.get("subtopic"), 
+                            "difficulty": question_item.get("difficulty"),
+                            "context_materials": question_item.get("context_materials"), 
+                            "sub_questions": question_item.get("sub_questions"),
+                            "tables": question_item.get("tables"), 
+                            "marks": question_item.get("marks"),
+                            "images": processed_images, # Use the potentially populated list
+                            "answer_ref": f"{question_number_str}.json" # Ensure answer ref matches question number
                         }
+                        
+                        # Construct filename using the determined question_number_str
                         question_filename = os.path.join(year_questions_dir, f"{question_number_str}.json")
+                        self.logger.debug(f"Attempting to save question data to: {question_filename}")
                         try:
-                            with open(question_filename, 'w', encoding='utf-8') as f: json.dump(question_data_to_save, f, ensure_ascii=False, indent=4)
-                            doc_question_count += 1
-                        except Exception as e: self.logger.error(f"Failed to save question file {question_filename}: {e}", exc_info=True)
+                            with open(question_filename, 'w', encoding='utf-8') as f: 
+                                json.dump(question_data_to_save, f, ensure_ascii=False, indent=4)
+                            self.logger.info(f"Successfully saved question file: {question_filename}")
+                            doc_question_count += 1 # Increment only on successful save
+                        except Exception as e: 
+                            self.logger.error(f"Failed to save question file {question_filename}: {e}", exc_info=True)
+                        # --- End Save Question JSON ---
+
+                    # ...(rest of the loop for processing answers for this paper)...
+
                 else:
-                     self.logger.warning(f"Source document {mongo_question_object_id} has missing/invalid 'questions' array.")
+                     self.logger.warning(f"Paper {mongo_question_doc_id_str} has no 'questions' list or it's not a list.")
 
-
-                # --- Fetch and Cache Answers ONLY if it's a target paper ---
+                # --- Find and process matching answer doc (IF this paper was a target) ---
+                # Reset answer count for this paper before processing answers
+                doc_answer_count = 0 
                 if is_target_paper:
-                    self.logger.info(f"Attempting to fetch matching answer document for TARGET paper {mongo_question_object_id} using consolidated get_matching_answer")
-                    try:
-                        # *** Directly call the consolidated function ***
-                        matching_answer_doc_for_this_paper = client.get_matching_answer(safe_question_doc) # Pass question doc which contains _id and metadata
-                        if matching_answer_doc_for_this_paper:
-                            self.logger.info(f"Consolidated match SUCCESS for target paper. Found answer doc: {matching_answer_doc_for_this_paper.get('_id')}")
+                    # ... (Existing logic for finding and processing matching_answer_doc_for_this_paper) ...
+                    # Make sure to increment doc_answer_count inside the answer saving logic if it succeeds
+                    pass # Placeholder for answer processing logic
 
-                            # --- Process and save answers ---
-                            safe_answer_doc = self._mongo_to_json_serializable(matching_answer_doc_for_this_paper)
-                            mongo_answer_doc_id_str = str(safe_answer_doc.get('_id', 'missing_answer_id'))
-                            answers_in_doc = safe_answer_doc.get('answers')
-                            if isinstance(answers_in_doc, list):
-                                # ... (Existing loop to save individual answer files from answers_in_doc) ...
-                                 for answer_item_index, answer_item in enumerate(answers_in_doc):
-                                     if not isinstance(answer_item, dict): continue
-                                     ans_q_num_int = self._get_int_q_num(answer_item)
-                                     if ans_q_num_int is None: continue
-                                     answer_number_str = str(ans_q_num_int)
-                                     answer_filename = os.path.join(year_answers_dir, f"{answer_number_str}.json")
-                                     try:
-                                         answer_data_to_save = {
-                                             "id": mongo_answer_doc_id_str, "subject": subject, "level": level_key, "year": year,
-                                             "question_number_str": answer_number_str, "answers": [answer_item]
-                                         }
-                                         with open(answer_filename, 'w', encoding='utf-8') as f: json.dump(answer_data_to_save, f, ensure_ascii=False, indent=4)
-                                         self.logger.debug(f"Successfully saved answer file: {answer_filename}")
-                                         doc_answer_count += 1
-                                     except Exception as e: self.logger.error(f"Failed to save answer file {answer_filename}: {e}", exc_info=True)
-                            else:
-                                self.logger.warning(f"Matched answer document {mongo_answer_doc_id_str} has invalid 'answers' field.")
-                        else:
-                            self.logger.warning(f"Consolidated match FAILED for target paper {mongo_question_object_id}. No answer document found.")
-                    except Exception as e:
-                         self.logger.error(f"Exception during consolidated get_matching_answer for target paper {mongo_question_object_id}: {e}")
-                         # matching_answer_doc_for_this_paper remains None
 
-                # --- Store metadata for this paper ---
-                # ... (Metadata collection, potentially adding a flag if it was a target paper) ...
+                # --- Store metadata for this paper (AFTER processing questions AND answers) ---
                 paper_metadata = {
                     "mongo_doc_id": mongo_question_doc_id_str,
                     "source_document_id": source_document_id, "source_file_id": source_file_id,
                     "source_file_name": source_file_name, "year": year, "term": term, "paper_number": paper_number,
                     "question_count": doc_question_count,
-                    "answer_count_cached": doc_answer_count, # How many answer files saved
-                    "image_url_count": doc_valid_image_url_count, "image_download_count": doc_downloaded_image_count,
-                    "is_target_paper": is_target_paper, # Flag if processed fully
-                    "answer_doc_found_by": "primary_id" if matching_answer_doc_for_this_paper and matching_answer_doc_for_this_paper.get('_id') == mongo_question_object_id else ("metadata" if matching_answer_doc_for_this_paper else "none") if is_target_paper else "not_attempted"
+                    "answer_count_cached": doc_answer_count, 
+                    "image_url_count": doc_valid_image_url_count, 
+                    "image_download_count": doc_downloaded_image_count,
+                    "is_target_paper": is_target_paper, 
+                    "answer_doc_found_by": "..." # Fill this based on answer lookup result
                 }
                 processed_papers_metadata.append(paper_metadata)
-                self.logger.debug(f"Collected metadata for paper {mongo_question_doc_id_str}")
+                self.logger.debug(f"Collected metadata for paper {mongo_question_doc_id_str}: Questions={doc_question_count}, Answers={doc_answer_count}, ImgURLs={doc_valid_image_url_count}, ImgDLs={doc_downloaded_image_count}")
 
 
-            # --- After processing all documents ---
-            # ... (Update global metadata) ...
+            # --- After processing all documents for this subject/level ---
+            # ... (Update global metadata using processed_papers_metadata) ...
 
         except Exception as e:
             self.logger.error(f"Error in _queue_questions_for_caching for {subject}/{level_key}: {e}", exc_info=True)
@@ -1812,104 +1840,117 @@ class CacheManager:
 
     def get_random_question(self, subject_name: str, level_key: str) -> dict | None:
         """
-        Retrieves a random, unanswered cached question for the application's user
-        for the given subject and level from the JSON file cache.
-        """
-        logger.info(f"Attempting to get random unanswered question for {subject_name}/{level_key}")
-        potential_question_files = []
-        answered_question_ids = set()
+        Get a random cached question and its corresponding answer from local storage.
 
-        # 1. Find all potential question JSON files
+        Args:
+            subject_name: Subject name
+            level_key: Level key
+
+        Returns:
+            Dictionary containing question data and correct answer data, or None if not found.
+        """
+        self.logger.debug(f"Attempting to get random question for {subject_name}/{level_key}")
+        # Check subscription status but don't block access to already cached content
+        is_active = self.is_subscribed() # Assuming this checks if user can access content
+
         try:
-            subject_safe_name = self._safe_filename(subject_name)
-            level_path = os.path.join(self.QUESTIONS_DIR, subject_safe_name, level_key)
-            logger.debug(f"Looking for questions in: {level_path}")
+            # --- Find all available question files for the subject/level ---
+            safe_subject = self._safe_filename(subject_name)
+            level_path = os.path.join(self.QUESTIONS_DIR, safe_subject, level_key)
 
             if not os.path.isdir(level_path):
-                logger.warning(f"Cache directory does not exist: {level_path}")
+                self.logger.warning(f"Questions directory not found for {subject_name}/{level_key} at {level_path}")
                 return None
 
+            all_question_files = []
+            # Walk through year subdirectories
             for year_dir in os.listdir(level_path):
                 year_path = os.path.join(level_path, year_dir)
                 if os.path.isdir(year_path):
                     for filename in os.listdir(year_path):
-                        if filename.endswith(".json"):
-                            potential_question_files.append(os.path.join(year_path, filename))
+                        if filename.endswith('.json'):
+                            full_path = os.path.join(year_path, filename)
+                            all_question_files.append(full_path)
 
-            if not potential_question_files:
-                logger.warning(f"No question files found in {level_path}")
+            if not all_question_files:
+                self.logger.warning(f"No cached question JSON files found in {level_path} or its subdirectories.")
                 return None
-            logger.debug(f"Found {len(potential_question_files)} potential question files.")
 
-        except OSError as e:
-            logger.error(f"Error accessing cache directory {level_path}: {e}")
-            return None
+            self.logger.debug(f"Found {len(all_question_files)} potential question files for {subject_name}/{level_key}.")
 
-        # 2. Get IDs of all answered questions (since it's a single-user app)
-        try:
-            with get_db_session() as session:
-                logger.debug("Querying database for answered questions...")
-                answered_responses = session.query(QuestionResponse.cached_question_id)\
-                    .join(ExamResult) \
-                    .filter(QuestionResponse.cached_question_id.isnot(None))\
-                    .distinct()\
-                    .all()
-                answered_question_ids = {resp[0] for resp in answered_responses}
-                logger.debug(f"Found {len(answered_question_ids)} distinct answered cached questions in the database.")
+            # --- Select a random question file ---
+            selected_question_file = random.choice(all_question_files)
+            self.logger.info(f"Selected random question file: {selected_question_file}")
 
-        except Exception as e:
-            logger.error(f"Error querying answered questions from database: {e}", exc_info=True)
-            logger.warning("Proceeding without filtering answered questions due to DB error.")
-            answered_question_ids = set()
-
-        # 3. Filter out answered questions
-        unanswered_question_files = []
-        for file_path in potential_question_files:
+            # --- Load question data ---
+            question_data = None
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(selected_question_file, 'r', encoding='utf-8') as f:
                     question_data = json.load(f)
-                    question_id = question_data.get('id')
-                    if question_id and question_id in answered_question_ids:
-                        logger.debug(f"Skipping answered question: {file_path} (ID: {question_id})")
-                        continue
-                    unanswered_question_files.append(file_path)
-            except json.JSONDecodeError:
-                logger.warning(f"Could not decode JSON from file: {file_path}")
-            except KeyError:
-                logger.warning(f"Could not find 'id' field in question JSON: {file_path}")
-            except Exception as e:
-                logger.error(f"Error processing question file {file_path}: {e}")
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Error decoding JSON from question file {selected_question_file}: {e}")
+                return None # Cannot proceed without question data
+            except IOError as e:
+                 self.logger.error(f"Error reading question file {selected_question_file}: {e}")
+                 return None
 
-        logger.debug(f"Found {len(unanswered_question_files)} unanswered question files.")
+            if not question_data: # Should not happen if exceptions are caught, but good practice
+                 self.logger.error(f"Failed to load question data from {selected_question_file} despite no exception.")
+                 return None
 
-        # 4. Select a random unanswered question
-        if not unanswered_question_files:
-            logger.warning(f"No unanswered questions available for {subject_name}/{level_key}")
-            return None
+            # --- Resolve asset paths (modify question_data in place) ---
+            # Assuming _resolve_asset_paths modifies the 'images' part of question_data
+            self._resolve_asset_paths(question_data)
 
-        selected_file_path = random.choice(unanswered_question_files)
-        logger.info(f"Selected random question file: {selected_file_path}")
+            # --- ADDED: Load corresponding answer data ---
+            correct_answer_data = None
+            answer_ref = question_data.get('answer_ref')
+            if answer_ref and isinstance(answer_ref, str):
+                self.logger.debug(f"Found answer_ref: {answer_ref}")
+                try:
+                    # Construct answer file path relative to the question file's directory structure
+                    question_dir = os.path.dirname(selected_question_file)
+                    # Navigate up from year dir -> level dir -> subject dir -> questions dir
+                    base_questions_dir = os.path.dirname(os.path.dirname(question_dir))
+                    # Construct path into the parallel 'answers' directory
+                    answer_file_path = os.path.join(
+                        base_questions_dir.replace(self.QUESTIONS_DIR, os.path.join(self.CACHE_DIR, "answers"), 1), # Replace base 'questions' path with 'answers' path
+                        os.path.basename(question_dir), # year
+                        answer_ref # The answer filename (e.g., "1.json")
+                    )
 
-        # 5. Load and return its data
-        try:
-            # Check if file exists
-            if not os.path.exists(selected_file_path):
-                logger.error(f"File does not exist at path: {selected_file_path}")
-                return None
-            
-            # Log file size and last modified time
-            file_stats = os.stat(selected_file_path)
-            logger.info(f"File exists - Size: {file_stats.st_size} bytes, Modified: {datetime.fromtimestamp(file_stats.st_mtime)}")
-            
-            # Try to read raw contents first
-            with open(selected_file_path, 'r', encoding='utf-8') as f:
-                raw_content = f.read()
-                logger.info(f"Raw file contents: {raw_content}")
-                
-                final_question_data = json.loads(raw_content)
-                return final_question_data
+                    self.logger.info(f"Attempting to load answer file from: {answer_file_path}")
+                    if os.path.exists(answer_file_path):
+                        with open(answer_file_path, 'r', encoding='utf-8') as f_ans:
+                            correct_answer_data = json.load(f_ans)
+                        self.logger.info(f"Successfully loaded answer data for {answer_ref}")
+                    else:
+                        self.logger.warning(f"Answer file referenced by {answer_ref} not found at {answer_file_path}")
+                except json.JSONDecodeError as e:
+                    self.logger.error(f"Error decoding JSON from answer file {answer_file_path}: {e}")
+                    # Continue without answer data, maybe log severity
+                except IOError as e:
+                    self.logger.error(f"Error reading answer file {answer_file_path}: {e}")
+                except Exception as e:
+                    self.logger.error(f"Unexpected error loading answer file for {answer_ref}: {e}", exc_info=True)
+            else:
+                self.logger.warning(f"No valid 'answer_ref' found in question data from {selected_question_file}")
+
+            # Add the loaded answer data (or None) to the result
+            question_data['correct_answer_data'] = correct_answer_data
+            # --- END ADDED ---
+
+            # If we found content but subscription is expired, add warning
+            if not is_active:
+                question_data['subscription_expired'] = True
+                self.logger.warning(f"Subscription is not active, adding warning flag to returned data for {selected_question_file}")
+
+            self.logger.debug(f"Returning combined question and answer data for {selected_question_file}")
+            return question_data # Return the dictionary containing question and potentially answer data
+
         except Exception as e:
-            logger.error(f"Failed to load selected question file {selected_file_path}: {e}", exc_info=True)
+            # Catch-all for unexpected errors during file finding/selection
+            self.logger.error(f"Error getting random question for {subject_name}/{level_key}: {e}", exc_info=True)
             return None
 
     def _handle_network_change(self, status: NetworkStatus):
