@@ -1,7 +1,7 @@
 import logging
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QScrollArea, QSizePolicy, QDialog, QFrame, QMessageBox, QGroupBox)
 from PySide6.QtGui import QPixmap, QImage, QFont, QGuiApplication, QMovie
-from PySide6.QtCore import Qt, Signal, QUrl, QThread
+from PySide6.QtCore import Qt, Signal, QUrl, QThread, QStandardPaths
 from src.data.cache.cache_manager import CacheManager
 import os
 import sys
@@ -392,60 +392,87 @@ class QuestionView(QWidget):
                 self.submit_button.setEnabled(True)
 
 
-                # --- Populate Image Links --- (Keep existing logic)
+                # --- Populate Image Links ---
                 self._clear_image_links()
-                images = question_data.get('images', []) # Get images again for links
+                images = question_data.get('images', [])
 
                 if images and isinstance(images, list):
                     valid_images_found = False
                     self.image_section_label.show()
-
                     self.logger.debug(f"Processing {len(images)} image entries for question.")
+
+                    # --- Get Project Root (assuming 'src' is directly under it) ---
+                    # This assumes the script is running from somewhere within the project structure
+                    # A more robust method might be needed if deployment structure changes significantly
+                    try:
+                         # Go up from current file until 'src' is found, then one more level up
+                         current_dir = os.path.dirname(os.path.abspath(__file__)) # /path/to/src/ui/views
+                         src_dir = current_dir
+                         while os.path.basename(src_dir) != 'src' and src_dir != os.path.dirname(src_dir):
+                              src_dir = os.path.dirname(src_dir)
+                         if os.path.basename(src_dir) == 'src':
+                              project_root = os.path.dirname(src_dir)
+                              self.logger.info(f"Determined project root: {project_root}")
+                         else:
+                              # Fallback: Use current working directory if src isn't found above
+                              project_root = os.getcwd()
+                              self.logger.warning(f"Could not reliably determine project root based on 'src' dir. Falling back to CWD: {project_root}")
+                    except Exception as path_e:
+                         project_root = os.getcwd()
+                         self.logger.error(f"Error determining project root, falling back to CWD {project_root}: {path_e}")
+                    # -----------------------------------------------------------------
+
+
                     for i, img_data in enumerate(images):
                         if not isinstance(img_data, dict):
                             self.logger.warning(f"Skipping invalid image entry #{i} (not a dict): {img_data}")
                             continue
 
                         label = img_data.get('label')
-                        local_path = img_data.get('local_path')
+                        local_path = img_data.get('local_path') # Path like 'src/data/cache/assets/...'
                         description = img_data.get('description', '')
 
-                        # --- Add Detailed Logging Here ---
                         self.logger.debug(f"Image #{i}: Label='{label}', LocalPath='{local_path}', Type={type(local_path)}")
+
                         path_exists = False
-                        abs_path = None # Initialize abs_path
+                        abs_path = None
                         if local_path and isinstance(local_path, str):
                             try:
-                                 abs_path = os.path.abspath(local_path)
+                                 # --- MODIFIED: Construct absolute path relative to determined project root ---
+                                 abs_path = os.path.join(project_root, local_path)
+                                 # Normalize the path (handles slashes, .., etc.)
+                                 abs_path = os.path.normpath(abs_path)
+                                 # -------------------------------------------------------------------------
+                                 self.logger.debug(f"Image #{i}: Constructed absolute path: '{abs_path}'")
                                  path_exists = os.path.exists(abs_path)
-                                 self.logger.debug(f"Image #{i}: Checking absolute path '{abs_path}' -> Exists: {path_exists}")
+                                 self.logger.debug(f"Image #{i}: Checking existence of constructed path -> Exists: {path_exists}")
                             except Exception as e:
-                                 self.logger.error(f"Image #{i}: Error checking path '{local_path}': {e}")
-                        # --- End Detailed Logging ---
+                                 self.logger.error(f"Image #{i}: Error constructing/checking path from '{local_path}': {e}")
+                        else:
+                             self.logger.warning(f"Image #{i}: Invalid local_path provided: {local_path}")
 
-                        # Check conditions for creating the link
-                        if label and local_path and isinstance(local_path, str) and path_exists:
+
+                        # Check conditions for creating the link (using abs_path for the check)
+                        if label and local_path and isinstance(local_path, str) and abs_path and path_exists: # Check abs_path exists
                             self.logger.info(f"Image #{i}: Conditions met. Creating link for '{label}'.")
+                            # --- Use abs_path for the popup function ---
+                            self.logger.info(f"Image #{i}: Using absolute path '{abs_path}' for link href and lambda.")
 
-                            # --- ADD THIS LOG LINE ---
-                            self.logger.info(f"Image #{i}: Using local_path '{local_path}' for link href and lambda.")
-                            # --- END ADDED LOG LINE ---
-
-                            # Create the clickable label
-                            link_label = QLabel(f"<a href='{local_path}'>{label}</a>")
+                            # Create the clickable label (href content doesn't really matter as we pass path to lambda)
+                            link_label = QLabel(f"<a href='{abs_path}'>{label}</a>") # Use abs_path in href
                             link_label.setToolTip(description or label)
                             link_label.linkActivated.connect(
-                                lambda path=local_path, desc=description, lbl=label: self._show_image_popup(path, desc, lbl)
+                                lambda path=abs_path, desc=description, lbl=label: self._show_image_popup(path, desc, lbl)
                             )
+                            # -----------------------------------------
                             self.image_links_layout.addWidget(link_label)
                             valid_images_found = True
                         else:
                             # Log why the condition failed
-                            self.logger.warning(f"Image #{i}: Skipping link creation for Label='{label}'. Reason: label={bool(label)}, local_path={bool(local_path)}, is_str={isinstance(local_path, str)}, path_exists={path_exists}.")
-                            # Optionally add the greyed-out label even if skipped
+                            self.logger.warning(f"Image #{i}: Skipping link creation for Label='{label}'. Reason: label={bool(label)}, local_path={bool(local_path)}, is_str={isinstance(local_path, str)}, abs_path_valid={bool(abs_path)}, path_exists={path_exists}.")
                             if label:
-                                 missing_label = QLabel(f"{label} (Image not available)")
-                                 missing_label.setStyleSheet("color: gray;") 
+                                 missing_label = QLabel(f"{label} (Image not found)")
+                                 missing_label.setStyleSheet("color: gray;")
                                  self.image_links_layout.addWidget(missing_label)
 
                     if not valid_images_found:
@@ -542,7 +569,7 @@ class QuestionView(QWidget):
         # Create and show the dialog
         self.waiting_dialog = WaitingDialog(self)
         self.waiting_dialog.show()
-        QApplication.processEvents() # Ensure dialog displays immediately
+        QGuiApplication.processEvents() # Ensure dialog displays immediately
 
         # --- Start Worker Thread (Pass the answers dict) ---
         self.logger.info("Starting AIFeedbackWorker thread with structured answers...")
@@ -640,31 +667,38 @@ class QuestionView(QWidget):
     # --- NEW METHOD: Show Image Pop-up ---
     def _show_image_popup(self, image_path, description, label):
         """Creates and shows a pop-up dialog for the selected image."""
-        self.logger.info(f"Popup triggered for '{label}'. Received image_path: '{image_path}' (Type: {type(image_path)})")
+        # Now receives absolute path
+        self.logger.info(f"Popup triggered for '{label}'. Received absolute image_path: '{image_path}'")
 
+        # Check if path is valid before proceeding
         if not image_path or not isinstance(image_path, str) or not os.path.exists(image_path):
+            # This check might be redundant if called only when path_exists is true, but safe to keep
             self.logger.error(f"Cannot show popup: Image path does not exist or is invalid: {image_path}")
-            return 
+            QMessageBox.warning(self, "Image Error", f"Could not find the image file for '{label}' at the expected location:\n{image_path}")
+            return
 
         try:
-            dialog = QDialog(self) 
+            dialog = QDialog(self)
             dialog.setWindowTitle(f"Image Viewer - {label}")
-            dialog_layout = QVBoxLayout(dialog) # Set layout parent immediately
+            dialog_layout = QVBoxLayout(dialog)
 
             img_label = QLabel()
-            img_label.setAlignment(Qt.AlignCenter) # Center image/text in the label
+            img_label.setAlignment(Qt.AlignCenter)
 
-            self.logger.debug(f"Loading QPixmap from: {image_path}")
+            self.logger.debug(f"Loading QPixmap from absolute path: {image_path}")
             pixmap = QPixmap(image_path)
-            
+
             if pixmap.isNull():
-                 self.logger.error(f"QPixmap failed to load image from path: {image_path}")
-                 error_text = f"Error: Could not load image '{label}'.\nFile might be missing, corrupted, or in an unsupported format."
+                 # --- ADDED: More detailed error logging ---
+                 img = QImage(image_path) # Try loading as QImage to get error string
+                 error_string = img.text("load_error") if not img.isNull() else "QPixmap returned null, QImage also failed or wasn't attempted."
+                 self.logger.error(f"QPixmap failed to load image from path: {image_path}. Error hint: {error_string}")
+                 error_text = f"Error: Could not load image '{label}'.\nFile might be missing, corrupted, or in an unsupported format.\nPath: {image_path}\nDetails: {error_string}"
+                 # --- END ADDED ---
                  img_label.setText(error_text)
-                 img_label.setStyleSheet("color: red;") 
-                 img_label.setWordWrap(True) # Ensure error text wraps
+                 img_label.setStyleSheet("color: red;")
+                 img_label.setWordWrap(True)
             else:
-                 self.logger.debug(f"QPixmap loaded successfully. Original size: {pixmap.width()}x{pixmap.height()}")
                  # Scale pixmap to fit screen reasonably
                  screen = QGuiApplication.primaryScreen()
                  if screen: 
@@ -709,6 +743,7 @@ class QuestionView(QWidget):
 
         except Exception as e:
             self.logger.error(f"Unexpected error creating image popup for {image_path}: {e}", exc_info=True)
+            QMessageBox.critical(self, "Popup Error", f"An unexpected error occurred while trying to display the image:\n{e}")
 
 # Example Usage (if run standalone)
 if __name__ == '__main__':
