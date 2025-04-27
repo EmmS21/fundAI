@@ -5,6 +5,7 @@ import sys
 from typing import Dict, Optional, Tuple, List, Any
 from pathlib import Path # For handling home directory
 from llama_cpp import Llama
+import pprint # Ensure pprint is imported if not already
 
 # --- Import the examples ---
 # Make sure prompt_examples.py is in the same directory (core/ai)
@@ -440,21 +441,54 @@ def run_ai_evaluation(
         question_text = question_data.get('question_text', 'N/A')
         sub_questions = question_data.get('sub_questions', 'N/A')
         max_marks_str = str(marks) if marks is not None else '?'
-        # Use .get() on correct_answer_data itself first
-        correct_answer_inner_details = correct_answer_data.get('answer_details', {}) if correct_answer_data else {}
-        # Then format it for logging/prompting
-        correct_answer_log_str = str(correct_answer_inner_details) if correct_answer_inner_details else 'Marking scheme not available.'
 
-        # --- ADDED: Logging Input Data ---
+        # <<< --- Existing logging for received correct_answer_data --- >>>
+        # ... (debug/info logs showing received structure) ...
+
+        # --- MODIFIED: Extract details from the ACTUAL structure ---
+        correct_answer_log_str = 'Marking scheme not available.' # Default
+        if isinstance(correct_answer_data, dict):
+            answers_list = correct_answer_data.get('answers')
+            if isinstance(answers_list, list) and len(answers_list) > 0:
+                first_answer = answers_list[0]
+                if isinstance(first_answer, dict):
+                    sub_answers = first_answer.get('sub_answers')
+                    if isinstance(sub_answers, list):
+                        # Format the sub_answers into a string for the AI
+                        scheme_parts = []
+                        for sub_answer in sub_answers:
+                             if isinstance(sub_answer, dict):
+                                 part_num = sub_answer.get('sub_number', '?')
+                                 part_marks = sub_answer.get('marks', '?')
+                                 part_text = sub_answer.get('text', 'N/A')
+                                 part_notes = sub_answer.get('marking_notes', '')
+                                 scheme_parts.append(f" - Part {part_num} ({part_marks} marks): {part_text}")
+                                 if part_notes:
+                                     scheme_parts.append(f"   Notes: {part_notes}")
+                        if scheme_parts:
+                             correct_answer_log_str = "\n".join(scheme_parts)
+                        else:
+                             logger.warning("Could not format sub_answers into a string.")
+                    else:
+                         logger.warning("Key 'sub_answers' is not a list in the first answer.")
+                else:
+                     logger.warning("First item in 'answers' list is not a dictionary.")
+            else:
+                logger.warning("Key 'answers' is not a non-empty list.")
+        # --- END MODIFIED ---
+
+        # --- Existing Logging Input Data ---
         logger.info("-----------------------------------------")
         logger.info("AI Input Data -> Question: %s", question_text)
         logger.info("AI Input Data -> Sub-Questions: %s", sub_questions)
         logger.info("AI Input Data -> Max Marks: %s", max_marks_str)
         logger.info("AI Input Data -> Student Answer: %s", user_answer)
+        # This log now reflects the extracted scheme or the default message
         logger.info("AI Input Data -> Correct Answer/Scheme: %s", correct_answer_log_str)
         logger.info("-----------------------------------------")
-        # --- END ADDED ---
+        # --- END Logging ---
 
+        # --- Ensure base_context uses the potentially updated correct_answer_log_str ---
         base_context = f"""
 **Question:** {question_text}
 **Sub-questions (if any):** {sub_questions}
