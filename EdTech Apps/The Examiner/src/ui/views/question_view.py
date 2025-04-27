@@ -541,13 +541,12 @@ class QuestionView(QWidget):
                      # Extract the number part from the title like "a) Text [marks]"
                      title = parent_group.title()
                      if title and ')' in title:
-                          display_num = title.split(')', 1)[0].strip() # Get "a" from "a) ..."
+                          display_num = title.split(')', 1)[0].strip() 
 
                 missing_answers.append(display_num) 
 
-        # If any answers are missing, show a warning and stop
         if missing_answers:
-            missing_str = ", ".join(sorted(missing_answers)) # Sort for consistent order
+            missing_str = ", ".join(sorted(missing_answers)) 
             QMessageBox.warning(self, 
                                 "Input Needed", 
                                 f"Please provide an answer for all parts before submitting.\n\nMissing answers for: {missing_str}")

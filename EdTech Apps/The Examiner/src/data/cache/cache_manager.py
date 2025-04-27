@@ -1898,7 +1898,7 @@ class CacheManager:
             try:
                 with open(selected_question_file, 'r', encoding='utf-8') as f:
                     question_data = json.load(f)
-                self.logger.debug(f"Successfully loaded question data from {selected_question_file}:\n{pprint.pformat(question_data)}")
+                self.logger.debug(f"Successfully loaded question data from {selected_question_file}:\n{pprint.pformat(question_data)}") # Added pretty print
             except json.JSONDecodeError as e:
                 self.logger.error(f"Error decoding JSON from question file {selected_question_file}: {e}")
                 return None
@@ -1923,16 +1923,16 @@ class CacheManager:
                 try:
                     # Construct answer file path
                     question_dir = os.path.dirname(selected_question_file)
-                    self.logger.debug(f"Calculated question_dir: {question_dir}")
+                    self.logger.debug(f"Calculated question_dir: {question_dir}") # Log question dir
                     # Navigate up: year -> level -> subject -> questions_base
                     # CORRECTED LOGIC: Need to go up TWICE from question_dir (which is inside 'year')
                     # to get to the 'level' directory containing year folders.
                     base_level_dir = os.path.dirname(question_dir) # e.g., src/data/cache/questions/biology/o_level
-                    self.logger.debug(f"Calculated base_level_dir (containing year folders): {base_level_dir}")
+                    self.logger.debug(f"Calculated base_level_dir (containing year folders): {base_level_dir}") # Log base level dir
 
                     # Construct path into the parallel 'answers' directory
                     answers_base_dir_candidate = base_level_dir.replace(self.QUESTIONS_DIR, os.path.join(self.CACHE_DIR, "answers"), 1)
-                    self.logger.debug(f"Candidate answers_base_dir (after replace): {answers_base_dir_candidate}")
+                    self.logger.debug(f"Candidate answers_base_dir (after replace): {answers_base_dir_candidate}") # Log candidate answer base
 
                     # Check if replacement worked, otherwise construct manually (safer)
                     if self.QUESTIONS_DIR not in base_level_dir:
@@ -1941,7 +1941,7 @@ class CacheManager:
                          parts = base_level_dir.split(os.sep)
                          if len(parts) >= 5 and parts[-4] == 'data' and parts[-3] == 'cache' and parts[-2] == 'questions':
                               answers_base_dir_candidate = os.path.join(os.sep.join(parts[:-2]), 'answers', parts[-1]) # Combine parts, swap 'questions' for 'answers'
-                              self.logger.debug(f"Manually constructed answers_base_dir: {answers_base_dir_candidate}")
+                              self.logger.debug(f"Manually constructed answers_base_dir: {answers_base_dir_candidate}") # Log manually constructed path
                          else:
                               self.logger.error("Cannot reliably construct parallel answers directory path.")
                               answers_base_dir_candidate = None # Signal error
@@ -1962,26 +1962,31 @@ class CacheManager:
                             with open(answer_file_path, 'r', encoding='utf-8') as f_ans:
                                 self.logger.debug(f"Opened answer file. Attempting json.load...")
                                 correct_answer_data = json.load(f_ans)
+                                # <<< --- LOGGING ADDED: Raw Answer Object from File --- >>>
+                                self.logger.debug(f"Successfully loaded RAW answer object from file ({answer_file_path}):\n{pprint.pformat(correct_answer_data)}")
+                                # <<< --- END LOGGING ADDED --- >>>
                                 self.logger.debug(f"Successfully loaded JSON from answer file. Type: {type(correct_answer_data)}")
                             self.logger.info(f"Successfully loaded answer data for {answer_ref}")
                          else:
                             self.logger.warning(f"Answer file referenced by {answer_ref} was NOT FOUND at the calculated path: {answer_file_path}")
                     else:
-                         # Handle case where answers_base_dir_candidate could not be determined
                          self.logger.error("Could not construct path to answers directory.")
 
-
                 except json.JSONDecodeError as e:
-                    self.logger.error(f"JSONDecodeError while reading answer file {answer_file_path}: {e}")
+                    # Use answer_file_path if defined, otherwise indicate it wasn't
+                    log_path = answer_file_path if 'answer_file_path' in locals() else "UNKNOWN PATH"
+                    self.logger.error(f"JSONDecodeError while reading answer file {log_path}: {e}") # Log JSON errors
                     correct_answer_data = None
                 except IOError as e:
-                    self.logger.error(f"IOError reading answer file {answer_file_path}: {e}")
+                    # Use answer_file_path if defined, otherwise indicate it wasn't
+                    log_path = answer_file_path if 'answer_file_path' in locals() else "UNKNOWN PATH"
+                    self.logger.error(f"IOError reading answer file {log_path}: {e}") # Log IO errors
                     correct_answer_data = None
                 except NameError: # Catch if answer_file_path wasn't defined
-                    self.logger.error("Could not attempt to read answer file because its path was not determined.")
+                    self.logger.error("Could not attempt to read answer file because its path was not determined.") # Log NameError
                     correct_answer_data = None
                 except Exception as e:
-                    self.logger.error(f"Unexpected error loading answer file for {answer_ref}: {e}", exc_info=True)
+                    self.logger.error(f"Unexpected error loading answer file for {answer_ref}: {e}", exc_info=True) # Log other exceptions
                     correct_answer_data = None
             else:
                 self.logger.warning(f"No valid 'answer_ref' string found in question data from {selected_question_file}. Cannot load answer.")
@@ -1993,7 +1998,9 @@ class CacheManager:
                 question_data['subscription_expired'] = True
                 self.logger.warning(f"Subscription is not active, adding warning flag to returned data for {selected_question_file}")
 
-            self.logger.debug(f"Final combined question_data dictionary being returned for {selected_question_file}:\n{pprint.pformat(question_data)}")
+            # --- CHANGE TO INFO ---
+            self.logger.info(f"Final combined question_data dictionary being returned for {selected_question_file}:\n{pprint.pformat(question_data)}")
+            # --- END CHANGE ---
             return question_data
 
         except Exception as e:
