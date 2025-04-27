@@ -496,56 +496,79 @@ def run_ai_evaluation(
 **Marking Scheme / Correct Answer Details:** {correct_answer_log_str}
 **Student's Answer:** {user_answer}
 """
-        # --- Step 1: Get Mark AND Justification ---
-        logger.info("Evaluation Step 1: Getting Mark and Justification...")
+        # --- Step 1: Get Mark AND Justification using Explicit CoT Reasoning ---
+        logger.info("Evaluation Step 1: Getting Mark and Justification (Explicit CoT)...")
         prompt1_parts = [
-            f"**ROLE:** Strict Cambridge Examiner AI.",
-            f"**TASK:** Evaluate the Student's Answer strictly against the Marking Scheme.",
-            f"**Marking Process:**",
-            f"  - Compare the Student's Answer point-by-point to the Marking Scheme details.",
-            f"  - Award marks ONLY for points explicitly stated or clearly implied in the Student's Answer that match the scheme.",
-            f"  - Adhere strictly to the Maximum Marks ({max_marks_str}). Award 0 if no points match.",
-            f"**OUTPUT FORMAT:**",
-            f"  1. FIRST line: ONLY the final numerical mark awarded in the format 'X / {max_marks_str}'.",
-            f"  2. SECOND line: ONLY a brief (1-sentence maximum) justification for the awarded mark, explaining the key reason based on the Marking Scheme comparison.",
+            f"**ROLE:** AI Examiner simulating a teacher's step-by-step marking.",
+            f"**TASK:** Carefully evaluate the Student's Answer against the Marking Scheme below. Determine the mark by assessing demonstrated understanding for each part. You MUST show your reasoning step-by-step FIRST, then provide the final summary.",
+
+            f"**REASONING STEPS (Show your work!):**",
+            f"  1. **Initial Score:** Start calculation with `Score = 0 / {max_marks_str}`.",
+            f"  2. **Analyze Part-by-Part:** For each part (e.g., 'a(i)', 'b'):",
+            f"     a. State the `Student Answer (Part X): [student's answer for this part]`.",
+            f"     b. State the `Scheme Requirements (Part X): [key points from scheme for this part]`.",
+            f"     c. **Compare & Assess Understanding:** Write a brief analysis comparing the student's answer meaning/intent for this part to the scheme requirements. Does it show relevant understanding? Is it nonsensical/irrelevant?",
+            f"     d. **Award Marks (Part X):** Based *only* on the understanding demonstrated in step 2c and its alignment with the scheme, state `Marks Awarded (Part X): Y marks`. Award 0 marks if irrelevant or showing no understanding.",
+            f"     e. **Update Running Total:** State the `New Running Total: Z / {max_marks_str}`.",
+            f"  3. **Final Calculation:** After analyzing all parts, state the `Final Calculated Mark: F / {max_marks_str}`.",
+            f"  4. **Brief Justification:** Write a single sentence summarizing the primary reason for the final mark: `Justification: [Your one-sentence summary]`.",
+
+            f"**FINAL OUTPUT (Required Format):**",
+            f"  *AFTER* you have written out all the reasoning steps above (1-4), you MUST end your entire response with *exactly* the following two lines, using the values from your Step 3 (Final Calculated Mark) and Step 4 (Justification):",
+            f"  ```", # Using backticks to help isolate the final block
+            f"  [Final Calculated Mark from Step 3]", # Placeholder, e.g., 0 / 10
+            f"  [Justification sentence from Step 4]", # Placeholder
+            f"  ```",
+
             f"**INPUT DATA:**",
-            base_context,
-            f"**Output:**" # Signal for response
+            base_context, # Contains Question, Student Ans Dict, Formatted Scheme, Max Marks
+            f"**REASONING STEPS START BELOW:**" # Signal for AI to start its reasoning output
         ]
         prompt = "\n".join(prompt1_parts)
-        logger.debug(f"Full Prompt for Step 1:\n{prompt}") # Log full prompt for debugging
+        logger.debug(f"Full Prompt for Step 1 (Explicit CoT):\n{prompt}")
 
-        # Generate Mark & Justification
-        mark_just_text = _generate_step(llm, prompt, max_tokens=80, stop_sequences=["<|endoftext|>"])
+        # --- Generate the FULL response including reasoning ---
+        # --- INCREASE max_tokens ---
+        full_response_text = _generate_step(llm, prompt, max_tokens=768, stop_sequences=["<|endoftext|>"]) # Increased tokens from 350 to 768
+        # --- END INCREASE ---
 
-        # Log Raw Output
-        logger.info(f"Raw text for Mark/Justification:\n---------------------\n{mark_just_text}\n---------------------")
+        # Log the FULL Raw Output including reasoning
+        logger.info(f"Raw FULL text from AI (including reasoning):\n---------------------\n{full_response_text}\n---------------------")
 
-        # Parse Mark & Justification
-        parsed_mark, parsed_justification = _parse_mark_and_justification(mark_just_text)
-        results["Mark Awarded"] = parsed_mark if parsed_mark else "N/A (Parsing Failed)"
-        results["Mark Justification"] = parsed_justification
-        logger.info(f"Evaluation Result: Mark='{results['Mark Awarded']}', Justification captured={bool(results['Mark Justification'])}")
+        # --- MODIFICATION: Skip extraction and parsing for now ---
+        # Instead, return the full response text for direct analysis
+        results = {
+            "Mark Awarded": "See Full Response",
+            "Mark Justification": "See Full Response",
+            "full_response": full_response_text if full_response_text else "N/A (No response generated)"
+        }
+        logger.info("Skipping parsing, returning full AI response text.")
+        # --- END MODIFICATION ---
 
         logger.info("AI evaluation completed.")
 
     except Exception as e:
         logger.error(f"Error during AI evaluation: {e}", exc_info=True)
-        if results["Mark Awarded"] is None: results["Mark Awarded"] = "N/A (Error Occurred)"
-        if results["Mark Justification"] is None: results["Mark Justification"] = "N/A (Error Occurred)"
-        return results
+        # Return error state with full response if available
+        results = {
+            "Mark Awarded": "Error",
+            "Mark Justification": "Error during generation",
+            "full_response": full_response_text if full_response_text else f"N/A (Error Occurred: {e})"
+        }
+        return results # Return error results immediately
     finally:
         if llm is not None:
             logger.info("Unloading AI model...")
             del llm
             logger.info("AI model unloaded.")
 
-    # Ensure placeholders if parsing failed but no exception occurred
-    if results["Mark Awarded"] is None:
-        results["Mark Awarded"] = "N/A (Unknown Error)"
-    if results["Mark Justification"] is None:
-         if results["Mark Awarded"].startswith("N/A"):
-             results["Mark Justification"] = "N/A (Generation/Parsing Failed)"
+    # --- Ensure placeholders if parsing was skipped ---
+    # This block is less relevant now but kept for structure
+    # if results["Mark Awarded"] is None: # Should be "See Full Response" now
+    #     results["Mark Awarded"] = "N/A (Unknown Error)"
+    # if results["Mark Justification"] is None: # Should be "See Full Response" now
+    #      if results["Mark Awarded"].startswith("N/A"):
+    #          results["Mark Justification"] = "N/A (Generation/Parsing Failed)"
 
-    logger.debug(f"Final evaluation results: {results}")
-    return results 
+    logger.debug(f"Final evaluation results (with full response): {results}")
+    return results # Return the dictionary containing the full response 

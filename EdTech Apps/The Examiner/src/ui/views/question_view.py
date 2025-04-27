@@ -610,24 +610,29 @@ class QuestionView(QWidget):
         if self.waiting_dialog:
             self.waiting_dialog.accept()
             self.waiting_dialog = None
-        self.submit_button.setText("Submit Answer") # Reset button text
 
-        if eval_results and isinstance(eval_results, dict):
-            self.logger.info("Received evaluation results from AI.")
-            # Display overall feedback for now
-            self._display_feedback(eval_results)
-            self.next_button.setEnabled(True) # Enable next question
-             # Keep answer fields read-only after successful submission/feedback
+        # Re-enable Submit button, change text back
+        self.submit_button.setEnabled(True)
+        self.submit_button.setText("Submit Answer")
+        # Re-enable Next button
+        self.next_button.setEnabled(True)
+        # Re-enable answer fields (make them editable again)
+        for text_edit in self.sub_answer_fields.values():
+             text_edit.setReadOnly(False)
+
+
+        if eval_results:
+            self.logger.info(f"Displaying feedback results: {eval_results}")
+            # --- MODIFICATION: Display full response ---
+            self.mark_label.setText(f"Mark Awarded: {eval_results.get('Mark Awarded', 'N/A')}") # Will show "See Full Response"
+            self.rating_label.setText(f"Understanding Rating: N/A") # Rating isn't generated in this mode
+            self.feedback_text.setText(eval_results.get('full_response', 'No response content available.')) # Display the full text
+            # --- END MODIFICATION ---
+            self.feedback_groupbox.show()
         else:
-            error_message = "Failed to get evaluation from AI service."
-            self.logger.error(error_message)
-            QMessageBox.critical(self, "AI Evaluation Error", error_message)
-            # Re-enable UI on critical failure
-            self.submit_button.setEnabled(True)
-            for text_edit in self.sub_answer_fields.values(): # Re-enable input fields
-                text_edit.setReadOnly(False)
-            self.next_button.setEnabled(True) # Allow moving on even if feedback failed
-
+            self.logger.error("AI feedback process returned None.")
+            QMessageBox.critical(self, "Error", "Failed to get feedback from the AI.")
+            self.feedback_groupbox.hide()
 
     # --- Updated _display_feedback ---
     def _display_feedback(self, data: Dict[str, Optional[str]]):
