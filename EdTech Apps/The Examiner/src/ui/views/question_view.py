@@ -520,7 +520,7 @@ class QuestionView(QWidget):
 
         # --- Get User Answers from Sub-Fields ---
         user_answers_dict: Dict[str, str] = {}
-        all_empty = True
+        missing_answers = []
         if not self.sub_answer_fields:
              self.logger.error("Cannot submit: No answer fields found!")
              QMessageBox.critical(self, "Internal Error", "Could not find answer input fields.")
@@ -529,11 +529,28 @@ class QuestionView(QWidget):
         for sub_num, text_edit in self.sub_answer_fields.items():
             answer_text = text_edit.toPlainText().strip()
             user_answers_dict[sub_num] = answer_text
-            if answer_text: # Check if at least one field has content
-                all_empty = False
+            # Check if this field is empty
+            if not answer_text: 
+                # Try to get a more descriptive label if it's a sub-question group
+                parent_group = text_edit.parentWidget()
+                while parent_group and not isinstance(parent_group, QGroupBox):
+                     parent_group = parent_group.parentWidget()
+                
+                display_num = sub_num # Default to the key
+                if isinstance(parent_group, QGroupBox) and parent_group.property("class") == "SubQuestionGroup":
+                     # Extract the number part from the title like "a) Text [marks]"
+                     title = parent_group.title()
+                     if title and ')' in title:
+                          display_num = title.split(')', 1)[0].strip() # Get "a" from "a) ..."
 
-        if all_empty:
-            QMessageBox.warning(self, "Input Needed", "Please enter an answer for at least one part before submitting.")
+                missing_answers.append(display_num) 
+
+        # If any answers are missing, show a warning and stop
+        if missing_answers:
+            missing_str = ", ".join(sorted(missing_answers)) # Sort for consistent order
+            QMessageBox.warning(self, 
+                                "Input Needed", 
+                                f"Please provide an answer for all parts before submitting.\n\nMissing answers for: {missing_str}")
             return
         # ------------------------------------------
 
