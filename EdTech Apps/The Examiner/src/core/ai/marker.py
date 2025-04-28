@@ -25,6 +25,8 @@ CONTEXT_SIZE = 2048
 MAX_TOKENS = 1024 # Max tokens for generation
 GPU_LAYERS = -1 # Offload all possible layers to GPU (-1). Set to 0 to disable GPU.
 REPEAT_PENALTY = 1.1 # Keep penalty low/moderate
+# Increase tokens slightly to allow for CoT + final summary without grammar constraint
+GENERATION_MAX_TOKENS = 768 # Reverted to a higher value
 # --- End Configuration ---
 
 def find_model_path() -> Optional[str]:
@@ -352,24 +354,36 @@ def _extract_example_section(full_output: str, start_heading: str, end_heading: 
 
     return full_output[start_index:end_index].strip()
 
-# --- Helper: Generation Function (Simplified usage) ---
-def _generate_step(llm: Llama, step_prompt: str, max_tokens: int, stop_sequences: List[str]) -> Optional[str]:
-    """Helper to run a single generation step, including repeat_penalty."""
+# --- Helper: Generation Function (No Grammar) ---
+# Simplified helper function name
+def _generate_step(
+    llm: Llama,
+    step_prompt: str,
+    # grammar parameter removed
+    max_tokens: int,
+    stop_sequences: List[str]
+) -> Optional[str]:
+    """Helper to run a single generation step without grammar."""
     try:
-        logger.debug(f"Generating step with max_tokens={max_tokens}, stop={stop_sequences}, repeat_penalty={REPEAT_PENALTY}")
+        logger.debug(f"Generating step (No Grammar), max_tokens={max_tokens}, stop={stop_sequences}, repeat_penalty={REPEAT_PENALTY}")
         logger.debug(f"Step Prompt Snippet:\n{step_prompt[:300]}...\n...{step_prompt[-300:]}")
+
+        # <<< --- Call LLM without grammar parameter --- >>>
         output = llm(
             step_prompt,
             max_tokens=max_tokens,
             stop=stop_sequences,
-            temperature=0.1, # Keep temp very low for factual marking
+            temperature=0.1,
             repeat_penalty=REPEAT_PENALTY,
+            # grammar=None, # Ensure it's not passed
             echo=False
         )
+        # <<< --- End LLM Call --- >>>
+
         response_text = output.get("choices", [{}])[0].get("text")
         if response_text:
-             logger.debug(f"Step Raw Response (from LLM):\n{response_text}")
-             return response_text.strip()
+             logger.debug(f"Step Raw Response (from LLM, No Grammar):\n{response_text}")
+             return response_text # Return the raw text
         else:
              logger.warning("Step generation produced no text.")
              logger.debug(f"Full output dict: {output}")
@@ -378,117 +392,49 @@ def _generate_step(llm: Llama, step_prompt: str, max_tokens: int, stop_sequences
         logger.error(f"Error during generation step: {e}", exc_info=True)
         return None
 
-# --- Helper: Parser for Mark AND Justification ---
-def _parse_mark_and_justification(text: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
-    """Extracts both the mark and justification from the text."""
-    if not text: return None, None
-    mark, justification = None, None
-    lines = text.strip().split('\n', 1)
-    if lines:
-        mark_match = re.search(r"(\d+\s*/\s*\d+)", lines[0])
-        if mark_match:
-            mark = mark_match.group(1).strip()
-        if len(lines) > 1:
-            justification = lines[1].strip()
-        elif not mark:
-             justification = lines[0].strip()
-    if not mark:
-         mark_match_fallback = re.search(r"(\d+\s*/\s*\d+)", text)
-         if mark_match_fallback:
-              mark = mark_match_fallback.group(1).strip()
-              if not justification:
-                   justification = text[mark_match_fallback.end():].strip()
-    if justification:
-        justification = re.sub(r"^(Justification|Explanation|Reason)[:\s]*", "", justification, flags=re.IGNORECASE).strip()
-        if len(justification) < 3:
-             justification = None
-    logger.debug(f"Parsed Mark='{mark}', Justification='{str(justification)[:100]}...' from text: '{text[:100]}...'")
-    return mark, justification
-
-# --- UPDATED Orchestrator Function ---
+# --- Orchestrator Function ---
 def run_ai_evaluation(
     question_data: Dict,
     correct_answer_data: Dict,
     user_answer: str,
     marks: Optional[int]
-) -> Optional[Dict[str, Optional[str]]]: # Return dict with mark and justification
+) -> Optional[Dict[str, Optional[str]]]:
     """
-    Loads model once. Gets the mark AND a brief justification. Unloads model.
+    Loads model once. Uses explicit CoT prompt to guide reasoning and asks
+    for a specific 3-line output format. Parses the potentially messy output.
     """
-    logger.info("Starting AI Evaluation (Mark + Justification).")
+    logger.info("Starting AI Evaluation (Explicit CoT + Robust Parsing).")
     model_path = find_model_path()
-    if not model_path:
-        logger.error("Cannot run evaluation: Model path not found.")
-        return None
+    if not model_path: logger.error("Cannot run evaluation: Model path not found."); return None
+    # Grammar check removed
 
     llm = None
-    results: Dict[str, Optional[str]] = {
-        "Mark Awarded": None,
-        "Mark Justification": None
-    }
+    results: Dict[str, Optional[str]] = { "Grade": None, "Rationale": None, "Study Topics": None }
 
     try:
+        # --- Load Model ---
         logger.info(f"Loading model for evaluation: {model_path}...")
-        llm = Llama(
-            model_path=model_path,
-            n_ctx=CONTEXT_SIZE,
-            n_gpu_layers=GPU_LAYERS,
-            verbose=False
-        )
+        llm = Llama( model_path=model_path, n_ctx=CONTEXT_SIZE, n_gpu_layers=GPU_LAYERS, verbose=False )
         logger.info("Model loaded.")
 
-        # --- Prepare shared context AND LOG INPUTS ---
-        question_text = question_data.get('question_text', 'N/A')
-        sub_questions = question_data.get('sub_questions', 'N/A')
-        max_marks_str = str(marks) if marks is not None else '?'
-
-        # <<< --- Existing logging for received correct_answer_data --- >>>
-        # ... (debug/info logs showing received structure) ...
-
-        # --- MODIFIED: Extract details from the ACTUAL structure ---
-        correct_answer_log_str = 'Marking scheme not available.' # Default
-        if isinstance(correct_answer_data, dict):
-            answers_list = correct_answer_data.get('answers')
-            if isinstance(answers_list, list) and len(answers_list) > 0:
-                first_answer = answers_list[0]
-                if isinstance(first_answer, dict):
-                    sub_answers = first_answer.get('sub_answers')
-                    if isinstance(sub_answers, list):
-                        # Format the sub_answers into a string for the AI
-                        scheme_parts = []
+        # --- Prepare context (remains the same) ---
+        question_text=question_data.get('question_text','N/A'); sub_questions=question_data.get('sub_questions','N/A')
+        max_marks_str=str(marks) if marks is not None else '?'; correct_answer_log_str='Marking scheme not available.'
+        if isinstance(correct_answer_data,dict): # Extract scheme correctly
+            answers_list=correct_answer_data.get('answers');
+            if isinstance(answers_list,list) and len(answers_list)>0:
+                first_answer=answers_list[0]; scheme_parts=[]
+                if isinstance(first_answer,dict):
+                    sub_answers=first_answer.get('sub_answers')
+                    if isinstance(sub_answers,list):
                         for sub_answer in sub_answers:
-                             if isinstance(sub_answer, dict):
-                                 part_num = sub_answer.get('sub_number', '?')
-                                 part_marks = sub_answer.get('marks', '?')
-                                 part_text = sub_answer.get('text', 'N/A')
-                                 part_notes = sub_answer.get('marking_notes', '')
-                                 scheme_parts.append(f" - Part {part_num} ({part_marks} marks): {part_text}")
-                                 if part_notes:
-                                     scheme_parts.append(f"   Notes: {part_notes}")
-                        if scheme_parts:
-                             correct_answer_log_str = "\n".join(scheme_parts)
-                        else:
-                             logger.warning("Could not format sub_answers into a string.")
-                    else:
-                         logger.warning("Key 'sub_answers' is not a list in the first answer.")
-                else:
-                     logger.warning("First item in 'answers' list is not a dictionary.")
-            else:
-                logger.warning("Key 'answers' is not a non-empty list.")
-        # --- END MODIFIED ---
-
-        # --- Existing Logging Input Data ---
-        logger.info("-----------------------------------------")
-        logger.info("AI Input Data -> Question: %s", question_text)
-        logger.info("AI Input Data -> Sub-Questions: %s", sub_questions)
-        logger.info("AI Input Data -> Max Marks: %s", max_marks_str)
-        logger.info("AI Input Data -> Student Answer: %s", user_answer)
-        # This log now reflects the extracted scheme or the default message
-        logger.info("AI Input Data -> Correct Answer/Scheme: %s", correct_answer_log_str)
-        logger.info("-----------------------------------------")
-        # --- END Logging ---
-
-        # --- Ensure base_context uses the potentially updated correct_answer_log_str ---
+                            if isinstance(sub_answer,dict):
+                                part_num=sub_answer.get('sub_number','?');part_marks=sub_answer.get('marks','?');part_text=sub_answer.get('text','N/A');part_notes=sub_answer.get('marking_notes','')
+                                scheme_parts.append(f" - Part {part_num} ({part_marks} marks): {part_text}")
+                                if part_notes: scheme_parts.append(f"   Notes: {part_notes}")
+                        if scheme_parts: correct_answer_log_str="\n".join(scheme_parts)
+        # Logging inputs...
+        logger.info("-----------------------------------------"); logger.info("AI Input Data -> Question: %s", question_text); logger.info("AI Input Data -> Sub-Questions: %s", sub_questions); logger.info("AI Input Data -> Max Marks: %s", max_marks_str); logger.info("AI Input Data -> Student Answer: %s", user_answer); logger.info("AI Input Data -> Correct Answer/Scheme: %s", correct_answer_log_str); logger.info("-----------------------------------------")
         base_context = f"""
 **Question:** {question_text}
 **Sub-questions (if any):** {sub_questions}
@@ -496,79 +442,78 @@ def run_ai_evaluation(
 **Marking Scheme / Correct Answer Details:** {correct_answer_log_str}
 **Student's Answer:** {user_answer}
 """
-        # --- Step 1: Get Mark AND Justification using Explicit CoT Reasoning ---
-        logger.info("Evaluation Step 1: Getting Mark and Justification (Explicit CoT)...")
+        # --- Define the Explicit CoT Prompt (Describe output format clearly) ---
         prompt1_parts = [
             f"**ROLE:** AI Examiner simulating a teacher's step-by-step marking.",
-            f"**TASK:** Carefully evaluate the Student's Answer against the Marking Scheme below. Determine the mark by assessing demonstrated understanding for each part. You MUST show your reasoning step-by-step FIRST, then provide the final summary.",
-
-            f"**REASONING STEPS (Show your work!):**",
-            f"  1. **Initial Score:** Start calculation with `Score = 0 / {max_marks_str}`.",
-            f"  2. **Analyze Part-by-Part:** For each part (e.g., 'a(i)', 'b'):",
-            f"     a. State the `Student Answer (Part X): [student's answer for this part]`.",
-            f"     b. State the `Scheme Requirements (Part X): [key points from scheme for this part]`.",
-            f"     c. **Compare & Assess Understanding:** Write a brief analysis comparing the student's answer meaning/intent for this part to the scheme requirements. Does it show relevant understanding? Is it nonsensical/irrelevant?",
-            f"     d. **Award Marks (Part X):** Based *only* on the understanding demonstrated in step 2c and its alignment with the scheme, state `Marks Awarded (Part X): Y marks`. Award 0 marks if irrelevant or showing no understanding.",
-            f"     e. **Update Running Total:** State the `New Running Total: Z / {max_marks_str}`.",
-            f"  3. **Final Calculation:** After analyzing all parts, state the `Final Calculated Mark: F / {max_marks_str}`.",
-            f"  4. **Brief Justification:** Write a single sentence summarizing the primary reason for the final mark: `Justification: [Your one-sentence summary]`.",
-
-            f"**FINAL OUTPUT (Required Format):**",
-            f"  *AFTER* you have written out all the reasoning steps above (1-4), you MUST end your entire response with *exactly* the following two lines, using the values from your Step 3 (Final Calculated Mark) and Step 4 (Justification):",
-            f"  ```", # Using backticks to help isolate the final block
-            f"  [Final Calculated Mark from Step 3]", # Placeholder, e.g., 0 / 10
-            f"  [Justification sentence from Step 4]", # Placeholder
-            f"  ```",
-
+            f"**TASK:** Carefully evaluate the Student's Answer against the Marking Scheme below. Determine the mark by assessing demonstrated understanding for each part. Follow the reasoning steps internally, then provide ONLY the final output strictly following the REQUIRED OUTPUT FORMAT described below.",
+            f"**Internal Reasoning Steps to Follow:**",
+             # ... (Keep the detailed 5 CoT steps: Initialize, Analyze Part-by-Part, Compare, Award, Sum, Final Calc, Rationale, Study Topics) ...
+            f"  1. Initialize Score: 0 / {max_marks_str}.",
+            f"  2. Analyze Part-by-Part: For each part:",
+            f"     a. Compare student answer meaning/intent for this part to the scheme requirements.",
+            f"     b. Assess understanding. Is it relevant? Correct?",
+            f"     c. Award whole marks for this part based ONLY on alignment with scheme. Award 0 if irrelevant/wrong.",
+            f"     d. Add marks to running total.",
+            f"  3. Final Calculation: Determine the `Final Calculated Mark: F / {max_marks_str}`.",
+            f"  4. Rationale: Formulate a single sentence explaining the primary reason for the final mark (`Rationale: [Sentence]`).",
+            f"  5. Study Topics: Identify key topics the student needs to revise (`Study Topics: [Topics]`).",
+            f"**REQUIRED OUTPUT FORMAT:**", # Removed "Grammar Enforced"
+            f"  After performing the internal reasoning, your entire output MUST consist of ONLY the following three lines:",
+            f"  Line 1: Start with 'Grade: ' followed by the Final Calculated Mark from Step 3 (e.g., Grade: 0 / {max_marks_str}).",
+            f"  Line 2: Start with 'Rationale: ' followed by the Rationale sentence from Step 4.",
+            f"  Line 3: Start with 'Study Topics: ' followed by the Study topics from Step 5.",
+            f"  Do NOT include your internal reasoning steps or any other text in the final output.",
             f"**INPUT DATA:**",
-            base_context, # Contains Question, Student Ans Dict, Formatted Scheme, Max Marks
-            f"**REASONING STEPS START BELOW:**" # Signal for AI to start its reasoning output
+            base_context,
+            f"**Output:**"
         ]
         prompt = "\n".join(prompt1_parts)
-        logger.debug(f"Full Prompt for Step 1 (Explicit CoT):\n{prompt}")
+        logger.debug(f"Full Prompt for Generation (No Grammar):\n{prompt}")
 
-        # --- Generate the FULL response including reasoning ---
-        # --- INCREASE max_tokens ---
-        full_response_text = _generate_step(llm, prompt, max_tokens=768, stop_sequences=["<|endoftext|>"]) # Increased tokens from 350 to 768
-        # --- END INCREASE ---
+        # --- Generate Response WITHOUT Grammar ---
+        # <<< --- CALLING HELPER WITHOUT GRAMMAR --- >>>
+        raw_response_text = _generate_step( # Use the simplified helper name
+            llm,
+            prompt,
+            # grammar=None, # Ensure grammar is NOT passed
+            max_tokens=GENERATION_MAX_TOKENS,
+            stop_sequences=["<|endoftext|>"]
+        )
+        # <<< --- END HELPER CALL --- >>>
 
-        # Log the FULL Raw Output including reasoning
-        logger.info(f"Raw FULL text from AI (including reasoning):\n---------------------\n{full_response_text}\n---------------------")
+        # Log the Raw Output
+        logger.info(f"Raw FULL text from AI (No Grammar Applied):\n---------------------\n{raw_response_text}\n---------------------")
 
-        # --- MODIFICATION: Skip extraction and parsing for now ---
-        # Instead, return the full response text for direct analysis
-        results = {
-            "Mark Awarded": "See Full Response",
-            "Mark Justification": "See Full Response",
-            "full_response": full_response_text if full_response_text else "N/A (No response generated)"
-        }
-        logger.info("Skipping parsing, returning full AI response text.")
-        # --- END MODIFICATION ---
+        # --- NEW Parsing Logic (Using Regex) ---
+        if raw_response_text:
+            # Use regex to find lines starting with the specific prefixes
+            # re.MULTILINE treats ^ as start of line, $ as end of line
+            # re.DOTALL makes . match newlines if needed, though unlikely here
+            # Capture the content after the prefix until the end of the line
+            grade_match = re.search(r"^Grade:(.*)$", raw_response_text, re.MULTILINE)
+            rationale_match = re.search(r"^Rationale:(.*)$", raw_response_text, re.MULTILINE)
+            topics_match = re.search(r"^Study Topics:(.*)$", raw_response_text, re.MULTILINE)
+
+            results["Grade"] = grade_match.group(1).strip() if grade_match else "N/A (Not Found)"
+            results["Rationale"] = rationale_match.group(1).strip() if rationale_match else "N/A (Not Found)"
+            results["Study Topics"] = topics_match.group(1).strip() if topics_match else "N/A (Not Found)"
+
+            if grade_match and rationale_match and topics_match:
+                logger.info(f"Successfully parsed output using Regex.")
+            else:
+                logger.warning(f"Could not find all required lines using Regex in raw output. Grade found: {bool(grade_match)}, Rationale found: {bool(rationale_match)}, Topics found: {bool(topics_match)}")
+        else:
+            logger.error("Generation failed to produce output.")
+            results = {k: "N/A (Generation Error)" for k in results}
+        # --- END NEW Parsing Logic ---
 
         logger.info("AI evaluation completed.")
 
-    except Exception as e:
-        logger.error(f"Error during AI evaluation: {e}", exc_info=True)
-        # Return error state with full response if available
-        results = {
-            "Mark Awarded": "Error",
-            "Mark Justification": "Error during generation",
-            "full_response": full_response_text if full_response_text else f"N/A (Error Occurred: {e})"
-        }
-        return results # Return error results immediately
+    except Exception as e: logger.error(f"Error during AI evaluation: {e}", exc_info=True); results = {k: f"N/A (Exception: {e})" for k in results}; return results
     finally:
-        if llm is not None:
-            logger.info("Unloading AI model...")
-            del llm
-            logger.info("AI model unloaded.")
+        if llm is not None: logger.info("Unloading AI model..."); del llm; logger.info("AI model unloaded.")
 
-    # --- Ensure placeholders if parsing was skipped ---
-    # This block is less relevant now but kept for structure
-    # if results["Mark Awarded"] is None: # Should be "See Full Response" now
-    #     results["Mark Awarded"] = "N/A (Unknown Error)"
-    # if results["Mark Justification"] is None: # Should be "See Full Response" now
-    #      if results["Mark Awarded"].startswith("N/A"):
-    #          results["Mark Justification"] = "N/A (Generation/Parsing Failed)"
+    logger.debug(f"Final evaluation results: {results}")
+    return results
 
-    logger.debug(f"Final evaluation results (with full response): {results}")
-    return results # Return the dictionary containing the full response 
+# --- (Ensure UI code in question_view.py handles Grade, Rationale, Study Topics) --- 
