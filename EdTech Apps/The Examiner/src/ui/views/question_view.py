@@ -624,9 +624,15 @@ class QuestionView(QWidget):
         if eval_results:
             self.logger.info(f"Displaying feedback results: {eval_results}")
             # --- MODIFICATION: Display full response ---
-            self.mark_label.setText(f"Mark Awarded: {eval_results.get('Mark Awarded', 'N/A')}") # Will show "See Full Response"
-            self.rating_label.setText(f"Understanding Rating: N/A") # Rating isn't generated in this mode
-            self.feedback_text.setText(eval_results.get('full_response', 'No response content available.')) # Display the full text
+            grade = eval_results.get('Grade', 'N/A')
+            rationale = eval_results.get('Rationale', 'N/A')
+            study_topics = eval_results.get('Study Topics', 'N/A')
+
+            self.mark_label.setText(f"Grade: {grade}")
+            self.rating_label.hide()
+
+            feedback_display_text = f"Rationale:\n{rationale}\n\nStudy Topics:\n{study_topics}"
+            self.feedback_text.setText(feedback_display_text)
             # --- END MODIFICATION ---
             self.feedback_groupbox.show()
         else:
