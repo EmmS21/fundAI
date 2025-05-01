@@ -8,6 +8,7 @@ import sys
 import json
 from src.core.ai.marker import run_ai_evaluation # Use the updated orchestrator name
 from typing import Dict, Optional, Any
+from src.core import services # <-- ADD THIS IMPORT
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,81 @@ SUB_QUESTION_STYLE = """
         padding: 4px;
         background-color: white; /* White background for input */
         min-height: 60px; /* Minimum height */
+    }}
+"""
+
+# --- ADDED: Style for Feedback Area ---
+FEEDBACK_STYLE = """
+    QGroupBox#FeedbackGroup {{
+        background-color: #E0F2FE; /* Light blue */
+        border: 1px solid #BAE6FD; /* Lighter blue border */
+        border-radius: 8px;
+        margin-top: 10px;
+        padding: 5px 10px 10px 10px; /* Adjusted padding top for hide button */
+    }}
+    QGroupBox#FeedbackGroup::title {{
+        subcontrol-origin: margin;
+        subcontrol-position: top left;
+        padding: 0 5px 0 5px; /* Keep existing title style or adjust */
+        margin-top: 5px; /* Move title down slightly */
+        left: 10px;
+        color: #0C4A6E; /* Darker blue title */
+        font-weight: bold;
+    }}
+    QLabel#FeedbackLabel {{ /* Style for labels inside feedback box */
+        background-color: transparent;
+        color: #1F2937; /* Dark gray text */
+    }}
+    QTextEdit#FeedbackContent {{ /* Style for text edit inside feedback box */
+        font-size: 14px;
+        border: 1px solid #D1D5DB; /* Standard border */
+        border-radius: 4px;
+        padding: 4px;
+        background-color: white;
+    }}
+    QPushButton#HideFeedbackButton {{
+        background-color: transparent;
+        border: none;
+        color: #9CA3AF; /* Gray */
+        font-weight: bold;
+        font-size: 14px;
+        padding: 0px;
+        /* max-width: 20px; Make it small */
+        /* max-height: 20px; */
+        margin: 0px; /* Remove extra margins */
+    }}
+    QPushButton#HideFeedbackButton:hover {{
+        color: #374151; /* Darker gray on hover */
+    }}
+    QLabel#PreliminaryLabel {{
+        background-color: transparent;
+        color: #4B5563; /* Medium gray */
+        font-size: 11px;
+        font-style: italic;
+        padding-top: 5px;
+    }}
+    QPushButton#ShowFeedbackButton {{
+         /* Optional: Style the show button if needed */
+        font-size: 12px;
+        padding: 4px 8px;
+    }}
+    QLabel#FeedbackSubHeading {{
+        font-weight: bold;
+        margin-top: 8px; /* Add space above subheadings */
+        background-color: transparent; /* Ensure transparency */
+        color: #1F2937; 
+    }}
+    QTextEdit#FeedbackDetails {{ /* Style for the detailed text areas */
+        font-size: 13px; /* Slightly smaller */
+        border: 1px solid #D1D5DB; 
+        border-radius: 4px;
+        padding: 4px;
+        background-color: #FAFAFA; /* Very light gray background */
+        margin-bottom: 5px; /* Space below text areas */
+        min-height: 50px; /* Min height */
+        /* --- REMOVED: max-height constraint --- */
+        /* max-height: 150px; */ 
+        /* ------------------------------------- */
     }}
 """
 
@@ -151,7 +227,7 @@ class QuestionView(QWidget):
         self.waiting_dialog = None # Add instance variable for the dialog
         # --- ADDED: Dictionary to hold sub-question input fields ---
         self.sub_answer_fields: Dict[str, QTextEdit] = {}
-        # ----------------------------------------------------------
+        self.last_submitted_answers = None #
 
         self._setup_ui()
         self.load_random_question()
@@ -161,7 +237,7 @@ class QuestionView(QWidget):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(15)
-        self.setStyleSheet(PAPER_STYLE + MARKS_BUTTON_STYLE + SUB_QUESTION_STYLE) # Apply styles
+        self.setStyleSheet(PAPER_STYLE + MARKS_BUTTON_STYLE + SUB_QUESTION_STYLE + FEEDBACK_STYLE) # Apply styles
 
         # --- Header ---
         header_layout = QHBoxLayout()
@@ -212,14 +288,36 @@ class QuestionView(QWidget):
         # --- ADDED: Feedback Display Area (Initially Hidden) ---
         self.feedback_groupbox = QGroupBox("AI Feedback")
         self.feedback_groupbox.setObjectName("FeedbackGroup")
+        # --- ADDED: Explicitly enable background filling ---
+        self.feedback_groupbox.setAutoFillBackground(True) 
+        # ---------------------------------------------------
         self.feedback_layout = QVBoxLayout(self.feedback_groupbox)
         self.feedback_layout.setSpacing(8)
+        # Reduce top margin to accommodate hide button positioning
+        self.feedback_layout.setContentsMargins(5, 0, 5, 5) # L, T, R, B
+
+        # --- ADDED: Hide Button (Top Right) ---
+        self.hide_feedback_button = QPushButton("✕") # Unicode multiplication sign
+        self.hide_feedback_button.setObjectName("HideFeedbackButton")
+        self.hide_feedback_button.setToolTip("Hide Feedback")
+        self.hide_feedback_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.hide_feedback_button.setFixedSize(20, 20) # Keep it small
+        self.hide_feedback_button.clicked.connect(self._hide_feedback) # Connect signal
+
+        feedback_top_layout = QHBoxLayout()
+        feedback_top_layout.addStretch() # Push button to the right
+        feedback_top_layout.addWidget(self.hide_feedback_button)
+        # Add this layout at the very top of the feedback groupbox layout
+        self.feedback_layout.addLayout(feedback_top_layout) 
+        # --------------------------------------
 
         # --- FIX: Assign labels and textedit to self. ---
         self.mark_label = QLabel("Mark Awarded: N/A") # USE self.
         self.mark_label.setObjectName("FeedbackLabel")
         self.rating_label = QLabel("Understanding Rating: N/A") # USE self.
         self.rating_label.setObjectName("FeedbackLabel")
+        # Hide rating label for now as per previous logic
+        self.rating_label.hide() 
 
         mark_rating_layout = QHBoxLayout()
         mark_rating_layout.addWidget(self.mark_label) # Reference self.
@@ -241,11 +339,30 @@ class QuestionView(QWidget):
         self.feedback_layout.addWidget(self.feedback_text) # Reference self.
         # --- END FIX ---
 
-        self.feedback_groupbox.hide()
+        # --- ADDED: Preliminary Feedback Label ---
+        self.preliminary_feedback_label = QLabel(
+            "Note: This is preliminary feedback. A more detailed analysis may be available online."
+        )
+        self.preliminary_feedback_label.setObjectName("PreliminaryLabel") # For styling
+        self.preliminary_feedback_label.setWordWrap(True)
+        self.feedback_layout.addWidget(self.preliminary_feedback_label)
+        # -----------------------------------------
+
+        self.feedback_groupbox.hide() # Start hidden
         self.main_layout.addWidget(self.feedback_groupbox)
 
         # --- Action Buttons ---
         self.button_layout = QHBoxLayout()
+
+        # --- ADDED: Show Feedback Button (Initially Hidden) ---
+        self.show_feedback_button = QPushButton("Show AI Feedback")
+        self.show_feedback_button.setObjectName("ShowFeedbackButton") # For potential styling
+        self.show_feedback_button.setToolTip("Show Hidden AI Feedback")
+        self.show_feedback_button.hide() # Start hidden
+        self.show_feedback_button.clicked.connect(self._show_feedback) # Connect signal
+        self.button_layout.addWidget(self.show_feedback_button) # Add it to the layout
+        # --------------------------------------------------
+
         self.next_button = QPushButton("Next Question")
         # ... styling ...
         self.next_button.clicked.connect(self.load_random_question)
@@ -255,7 +372,7 @@ class QuestionView(QWidget):
         # ... styling ...
         self.submit_button.clicked.connect(self._trigger_ai_feedback)
 
-        self.button_layout.addStretch()
+        self.button_layout.addStretch() # Push Submit/Next to the right
         self.button_layout.addWidget(self.submit_button)
         self.button_layout.addWidget(self.next_button)
         self.main_layout.addLayout(self.button_layout)
@@ -299,8 +416,9 @@ class QuestionView(QWidget):
                         sub_widget = sub_item.widget()
                         if sub_widget: sub_widget.deleteLater()
 
-        # --- Hide feedback from previous question ---
+        # --- Hide feedback from previous question and reset visibility state ---
         self.feedback_groupbox.hide()
+        self.show_feedback_button.hide() # Ensure show button is hidden too
         self.submit_button.setEnabled(True) # Re-enable submit
         self.next_button.setEnabled(False) # Disable next until submitted
 
@@ -551,7 +669,8 @@ class QuestionView(QWidget):
                                 "Input Needed", 
                                 f"Please provide an answer for all parts before submitting.\n\nMissing answers for: {missing_str}")
             return
-        # ------------------------------------------
+
+        self.last_submitted_answers = user_answers_dict
 
         # --- Get Question Data (unchanged) ---
         question_data_for_ai = self.current_question_data
@@ -623,52 +742,114 @@ class QuestionView(QWidget):
 
         if eval_results:
             self.logger.info(f"Displaying feedback results: {eval_results}")
+
+            # --- ADD A PRINT HERE to inspect the services module ---
+            self.logger.debug(f"--- In _handle_ai_feedback_result ---")
+            try:
+                # Print the module itself and specifically the attribute we need
+                self.logger.debug(f"Services module object: {services}")
+                self.logger.debug(f"Value of services.user_history_manager BEFORE access: {getattr(services, 'user_history_manager', 'AttributeNotFound')}")
+            except Exception as inspect_err:
+                self.logger.error(f"Error inspecting services module: {inspect_err}")
+            # ------------------------------------------------------
+
+            # --- Store results to history database --- #
+            try:
+                history_manager = services.user_history_manager # Get the manager
+                # --- Log prerequisite checks ---
+                self.logger.debug(f"Attempting history storage. History Manager valid: {history_manager is not None}")
+                self.logger.debug(f"Current Question Data valid: {self.current_question_data is not None}")
+                self.logger.debug(f"Last Submitted Answers valid: {self.last_submitted_answers is not None}")
+                # --- End Log ---
+
+                if history_manager and self.current_question_data and self.last_submitted_answers:
+                    # --- Use Default User ID for single-user app ---
+                    current_user_id = 1 # Assuming user ID 1
+                    # -----------------------------------------------
+
+                    # --- Use the correct key 'id' from the loaded question data ---
+                    cached_question_id = self.current_question_data.get('id')
+                    # -------------------------------------------------------------
+                    self.logger.debug(f"Extracted cached_question_id using key 'id': {cached_question_id}") # Updated log
+
+                    if cached_question_id:
+                         exam_id = self.current_question_data.get('exam_result_id', None)
+                         feedback_dict = eval_results if isinstance(eval_results, dict) else {}
+
+                         # --- Log before calling add_history_entry ---
+                         self.logger.info("Calling add_history_entry with:")
+                         self.logger.info(f"  user_id: {current_user_id}")
+                         self.logger.info(f"  cached_question_id: {cached_question_id}")
+                         self.logger.info(f"  user_answer_dict: {self.last_submitted_answers}")
+                         self.logger.info(f"  local_ai_feedback_dict: {feedback_dict}")
+                         self.logger.info(f"  exam_result_id: {exam_id}")
+                         # --- End Log ---
+
+                         history_id = history_manager.add_history_entry(
+                             user_id=current_user_id,
+                             cached_question_id=cached_question_id,
+                             user_answer_dict=self.last_submitted_answers,
+                             local_ai_feedback_dict=feedback_dict,
+                             exam_result_id=exam_id
+                         )
+                         # Log result of the call
+                         if history_id:
+                              self.logger.info(f"add_history_entry call SUCCEEDED. Returned history_id: {history_id}")
+                         else:
+                              self.logger.error("add_history_entry call FAILED (returned None or 0).")
+                    else:
+                         # Log reason for not calling
+                         self.logger.error("Skipping history storage: Could not extract 'question_id' from current_question_data.")
+                else:
+                     # Log which prerequisite failed
+                    missing = []
+                    if not history_manager: missing.append("History Manager")
+                    if not self.current_question_data: missing.append("Current Question Data")
+                    if not self.last_submitted_answers: missing.append("Last Submitted Answers")
+                    self.logger.error(f"Skipping history storage: Prerequisites not met - Missing: {', '.join(missing)}")
+
+
+            except Exception as e:
+                self.logger.error(f"CRITICAL ERROR during history storage attempt: {e}", exc_info=True)
+            # --- END: Store results ---
+
+
             # --- MODIFICATION: Display full response ---
             grade = eval_results.get('Grade', 'N/A')
             rationale = eval_results.get('Rationale', 'N/A')
             study_topics = eval_results.get('Study Topics', 'N/A')
 
             self.mark_label.setText(f"Grade: {grade}")
-            self.rating_label.hide()
+            # self.rating_label.hide() # Already hidden in setup
 
             feedback_display_text = f"Rationale:\n{rationale}\n\nStudy Topics:\n{study_topics}"
             self.feedback_text.setText(feedback_display_text)
             # --- END MODIFICATION ---
-            self.feedback_groupbox.show()
+
+            # --- Show feedback box and ensure show button is hidden ---
+            self._show_feedback() # Use the method to manage visibility
         else:
             self.logger.error("AI feedback process returned None.")
             QMessageBox.critical(self, "Error", "Failed to get feedback from the AI.")
+            # Ensure feedback box and show button are hidden on error
             self.feedback_groupbox.hide()
+            self.show_feedback_button.hide()
 
-    # --- Updated _display_feedback ---
-    def _display_feedback(self, data: Dict[str, Optional[str]]):
-        """Populates the feedback UI elements with mark and justification."""
-        logger.debug(f"Displaying evaluation data: {data}")
+            self.last_submitted_answers = None
 
-        mark_value = data.get('Mark Awarded', 'N/A')
-        justification = data.get('Mark Justification') # Fetch the justification
+    # --- ADDED: Methods to handle feedback visibility ---
+    def _hide_feedback(self):
+        """Hides the feedback group box and shows the 'Show Feedback' button."""
+        self.feedback_groupbox.hide()
+        self.show_feedback_button.show()
+        self.logger.debug("AI Feedback hidden.")
 
-        self.mark_label.setText(f"Mark Awarded: {mark_value}")
-
-        # --- Display Justification (if available) ---
-        display_text = ""
-        if justification and not justification.startswith("N/A"):
-            display_text = f"**Justification:**\n{justification}\n\n"
-        elif mark_value and not mark_value.startswith("N/A"): # Mark found, but no justification
-             display_text = "(AI did not provide a justification for this mark)\n\n"
-        else: # Neither mark nor justification found
-             display_text = "(AI evaluation failed to produce mark or justification)\n\n"
-
-        # Add placeholder for other feedback types
-        display_text += "(Other feedback sections currently disabled)"
-
-        # Clear or hide other fields
-        self.rating_label.setText("Understanding Rating: -")
-        self.feedback_text.setText(display_text) # Use setText or setMarkdown
-        # --- END DISPLAY Justification ---
-
-        self.feedback_groupbox.setTitle("AI Evaluation")
+    def _show_feedback(self):
+        """Shows the feedback group box and hides the 'Show Feedback' button."""
         self.feedback_groupbox.show()
+        self.show_feedback_button.hide()
+        self.logger.debug("AI Feedback shown.")
+    # --- END ADDED METHODS ---
 
     def _clear_image_links(self):
         """Removes all widgets from the image links layout."""

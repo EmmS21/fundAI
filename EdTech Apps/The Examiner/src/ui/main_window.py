@@ -7,6 +7,7 @@ from .components.profile.profile_header import ProfileHeader
 from .components.profile.achievements.achievement_widget import AchievementWidget
 from .components.profile.profile_info_widget import ProfileInfoWidget
 from .views.question_view import QuestionView # Import the QuestionView
+from src.core import services
 
 logger = logging.getLogger(__name__) # Setup logger for this module
 
@@ -87,6 +88,16 @@ class MainWindow(QMainWindow):
     def show_question_view(self, subject_name, level_key):
         """Creates/shows the question view for the selected subject/level."""
         logger.info(f"Switching to Question View for {subject_name}/{level_key}")
+
+        # --- ADD LOGGING HERE ---
+        try:
+            logger.info("--- Checking services status before creating QuestionView in show_question_view ---")
+            logger.info(f"ID of 'services' module in main_window.py: {id(services)}")
+            logger.info(f"Value of services.user_history_manager in main_window.py: {getattr(services, 'user_history_manager', 'AttributeNotFound')}")
+        except Exception as log_err:
+             logger.error(f"Error logging services status in main_window.py: {log_err}")
+        # ------------------------
+
         # Remove previous instance if it exists to avoid duplicates
         if self.question_view_instance:
              logger.debug("Removing previous QuestionView instance.")
@@ -94,6 +105,7 @@ class MainWindow(QMainWindow):
              self.question_view_instance.deleteLater() # Ensure proper Qt cleanup
 
         # Create the new QuestionView
+        logger.info("Creating new QuestionView instance...") # Add log
         self.question_view_instance = QuestionView(subject_name, level_key)
         # Connect its 'back' signal to our slot to switch back
         self.question_view_instance.back_requested.connect(self.show_profile_view)

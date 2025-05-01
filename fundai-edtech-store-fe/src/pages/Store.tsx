@@ -16,10 +16,14 @@ export default function Store() {
   }, []);
 
   const loadApps = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const apps = await window.electronAPI.getApps();
-      setApps(apps);
+      const fetchedApps = await window.electronAPI.getApps();
+      console.log('[Store.tsx] Apps received from electronAPI.getApps:', fetchedApps);
+      setApps(fetchedApps);
     } catch (err) {
+      console.error('[Store.tsx] Error loading apps:', err);
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
@@ -41,8 +45,9 @@ export default function Store() {
           <UploadModal 
             onClose={() => setShowUploadModal(false)}
             onUpload={async (formData) => {
-              // TODO: Implement upload logic
+              console.log('[Store.tsx] Upload initiated with:', formData);
               setShowUploadModal(false);
+              loadApps();
             }}
           />
         )}

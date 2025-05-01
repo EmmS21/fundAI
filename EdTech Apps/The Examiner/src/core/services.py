@@ -18,6 +18,7 @@ from src.data.cache.cache_manager import CacheManager
 from PySide6.QtCore import QThreadPool
 from typing import Optional
 from .queue_manager import QueueManager
+from .history.user_history_manager import UserHistoryManager
 
 # DON'T IMPORT THIS DIRECTLY - it creates a circular import
 # from src.data.cache.cache_manager import CacheManager
@@ -30,6 +31,8 @@ cache_manager = None
 network_monitor: Optional[NetworkMonitor] = None
 mongodb_client = None
 firebase_client = None
+threadpool: Optional[QThreadPool] = None
+user_history_manager: Optional[UserHistoryManager] = None
 
 def initialize_services():
     """Initialize all application services"""

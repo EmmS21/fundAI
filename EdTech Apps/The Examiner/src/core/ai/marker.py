@@ -162,151 +162,6 @@ def parse_ai_response(response_text: str) -> Dict[str, Optional[str]]:
 
     return parsed_data
 
-def get_ai_feedback(
-    question_data: Dict,
-    correct_answer_data: Dict,
-    user_answer: str,
-    marks: Optional[int]
-) -> Optional[Dict[str, Optional[str]]]: # Return type allows None values in dict
-    """
-    Finds model, loads it using llama-cpp-python, generates feedback,
-    parses the response flexibly, and unloads the model.
-
-    Args:
-        question_data: The dictionary representing the question.
-        correct_answer_data: The dictionary representing the correct answer/marking scheme.
-        user_answer: The answer submitted by the user.
-        marks: The total marks allocated for the question.
-
-    Returns:
-        A dictionary containing the parsed AI response sections (values can be None),
-        or None if a critical error occurred before generation/parsing.
-    """
-    logger.info(f"Requesting AI feedback for question ID: {question_data.get('id')}")
-
-    model_path = find_model_path()
-    if not model_path:
-        logger.error("Could not proceed without model path.")
-        return None
-
-    # --- 1. Construct the Few-Shot Prompt ---
-    question_text = question_data.get('question_text', 'N/A')
-    sub_questions = question_data.get('sub_questions', 'N/A')
-    max_marks_str = str(marks) if marks is not None else 'N/A'
-    correct_answer_details = correct_answer_data.get('answer_details', 'Marking scheme not available.')
-
-    # Start building the prompt
-    prompt_parts = [
-        """**ROLE:** You are a strict AI Examiner following Cambridge International marking standards. You are fair but demand a high level of understanding and precision. Do not be overly lenient or unnecessarily pedantic. Your goal is to provide insightful, actionable feedback to help the student improve significantly.
-
-**TASK:** Evaluate the student's answer below based *only* on the provided Question and Marking Scheme/Correct Answer details. Award a mark out of the maximum available, provide detailed feedback, identify knowledge gaps, suggest specific study topics, propose reflection questions, present the correct answer, and rate the student's understanding objectively.
-
-**CRITICAL INSTRUCTIONS - FOLLOW EXACTLY:**
-*   Your response MUST start *immediately* with the first heading (`## Mark Awarded`). Do NOT include any introduction or preamble.
-*   You MUST use the following Markdown headings *exactly* as written, including the `##` and spacing. Do NOT invent new headings or omit any. Use the format shown in the examples below.
-
-**FORMATTING HEADINGS:**
-1.  `## Mark Awarded`
-2.  `## Feedback`
-3.  `## Understanding Gap`
-4.  `## Study Topics`
-5.  `## Self-Reflection Questions`
-6.  `## Correct Answer`
-7.  `## Understanding Rating`
-
---- EXAMPLES START ---
-"""
-    ]
-
-    # Add the examples from the imported list
-    for i, example in enumerate(FEW_SHOT_EXAMPLES):
-        prompt_parts.append(f"--- Example {i+1} ---")
-        prompt_parts.append("**INPUT DATA:**")
-        prompt_parts.append(example["input"].strip())
-        prompt_parts.append("**RESPONSE:**")
-        prompt_parts.append(example["output"].strip())
-        prompt_parts.append("--- End Example {i+1} ---\n")
-
-    # Add the separator and the actual query
-    prompt_parts.append("""--- EXAMPLES END ---
-
-**NOW, EVALUATE THE FOLLOWING INPUT:**
-
-**INPUT DATA:**
-""")
-    prompt_parts.append(f"""
-*   **Question:** {question_text}
-*   **Sub-questions (if any):** {sub_questions}
-*   **Maximum Marks:** {max_marks_str}
-*   **Marking Scheme / Correct Answer:** {correct_answer_details}
-*   **Student's Answer:** {user_answer}
-""")
-    prompt_parts.append("**RESPONSE:**") # Signal for AI to start its response
-
-    # Join all parts into the final prompt string
-    prompt = "\n".join(prompt_parts)
-
-    logger.debug(f"Generated Few-Shot AI Prompt (structure):\n{prompt[:200]}...\n...\n...{prompt[-200:]}") # Log start/end
-
-    # --- 2. Load Model and Generate Response ---
-    llm = None
-    response_text = None
-    try:
-        logger.info(f"Loading model: {model_path}...")
-        llm = Llama(
-            model_path=model_path,
-            n_ctx=CONTEXT_SIZE,
-            n_gpu_layers=GPU_LAYERS,
-            verbose=False # Set verbose=False for cleaner logs now
-        )
-        logger.info("Model loaded. Generating response...")
-
-        output = llm(
-            prompt,
-            max_tokens=MAX_TOKENS,
-            stop=["<|endoftext|>", "<|im_end|>"],
-            temperature=0.2,
-            echo=False
-        )
-
-        response_text = output.get("choices", [{}])[0].get("text")
-        if response_text:
-             logger.info("Received response from AI model.")
-             logger.debug(f"AI Raw Response Text:\n{response_text}") # <-- UNCOMMENT THIS LINE
-        else:
-             logger.warning("AI response 'choices' or 'text' field is missing or empty.")
-             logger.debug(f"Full AI output dict: {output}")
-             return None
-
-    except Exception as e:
-        logger.error(f"Error during AI model load or generation: {e}", exc_info=True)
-        return None # Indicate failure
-    finally:
-        if llm is not None:
-            logger.info("Unloading AI model...")
-            del llm
-            logger.info("AI model unloaded.")
-
-
-    # --- 3. Parse the Response ---
-    if response_text:
-        # --- ADDED: Log raw text BEFORE parsing ---
-        logger.info(f"RAW AI Response Text to be Parsed:\n---------------------\n{response_text}\n---------------------")
-        # --- END ADDED ---
-
-        logger.info("Parsing AI response using flexible parser...")
-        parsed_data = parse_ai_response(response_text) # Call the new parser
-        if parsed_data:
-             logger.info("Finished parsing AI response.")
-             logger.debug(f"Parsed Data: {parsed_data}") # Log the final parsed structure
-             return parsed_data
-        else:
-             # parse_ai_response now returns a dict even on failure, maybe log instead
-             logger.error("Flexible parsing returned empty data, indicates major issue.")
-             return {key: "N/A (Parsing Failed)" for key in expected_headings} # Use keys from parser
-    else:
-        logger.error("No response text available for parsing.")
-        return None
 
 # Example of how you might call the Deepseek API (replace with actual implementation)
 # def call_deepseek_api(prompt: str) -> Optional[str]:
@@ -396,17 +251,16 @@ def _generate_step(
 def run_ai_evaluation(
     question_data: Dict,
     correct_answer_data: Dict,
-    user_answer: str,
+    user_answer: Dict[str, str], # Expecting dict
     marks: Optional[int]
 ) -> Optional[Dict[str, Optional[str]]]:
     """
     Loads model once. Uses explicit CoT prompt to guide reasoning and asks
-    for a specific 3-line output format. Parses the potentially messy output.
+    for a specific 3-line output format, focusing on detailed Rationale and Study Topics. Parses the output using regex.
     """
-    logger.info("Starting AI Evaluation (Explicit CoT + Robust Parsing).")
+    logger.info("Starting AI Evaluation (Explicit CoT + Enhanced Rationale/Study Topics).")
     model_path = find_model_path()
     if not model_path: logger.error("Cannot run evaluation: Model path not found."); return None
-    # Grammar check removed
 
     llm = None
     results: Dict[str, Optional[str]] = { "Grade": None, "Rationale": None, "Study Topics": None }
@@ -417,9 +271,26 @@ def run_ai_evaluation(
         llm = Llama( model_path=model_path, n_ctx=CONTEXT_SIZE, n_gpu_layers=GPU_LAYERS, verbose=False )
         logger.info("Model loaded.")
 
-        # --- Prepare context (remains the same) ---
-        question_text=question_data.get('question_text','N/A'); sub_questions=question_data.get('sub_questions','N/A')
-        max_marks_str=str(marks) if marks is not None else '?'; correct_answer_log_str='Marking scheme not available.'
+        # --- Prepare context ---
+        question_text=question_data.get('question_text','') 
+        sub_questions=question_data.get('sub_questions',[]) 
+
+        # --- Format user answer dict (same as previous attempt) ---
+        user_answer_str_parts = []
+        if isinstance(user_answer, dict):
+            if len(user_answer) == 1 and "main" in user_answer:
+                 user_answer_str_parts.append(user_answer["main"])
+            else:
+                 for key, value in sorted(user_answer.items()): 
+                      user_answer_str_parts.append(f"- Part {key}: {value}")
+            user_answer_formatted = "\n".join(user_answer_str_parts) if user_answer_str_parts else "N/A"
+        else:
+             logger.warning("run_ai_evaluation received user_answer as string, expected dict. Using as is.")
+             user_answer_formatted = user_answer or "N/A"
+        # --------------------------------------------
+
+        max_marks_str=str(marks) if marks is not None else '?'
+        correct_answer_log_str='Marking scheme not available.'
         if isinstance(correct_answer_data,dict): # Extract scheme correctly
             answers_list=correct_answer_data.get('answers');
             if isinstance(answers_list,list) and len(answers_list)>0:
@@ -434,84 +305,104 @@ def run_ai_evaluation(
                                 if part_notes: scheme_parts.append(f"   Notes: {part_notes}")
                         if scheme_parts: correct_answer_log_str="\n".join(scheme_parts)
         # Logging inputs...
-        logger.info("-----------------------------------------"); logger.info("AI Input Data -> Question: %s", question_text); logger.info("AI Input Data -> Sub-Questions: %s", sub_questions); logger.info("AI Input Data -> Max Marks: %s", max_marks_str); logger.info("AI Input Data -> Student Answer: %s", user_answer); logger.info("AI Input Data -> Correct Answer/Scheme: %s", correct_answer_log_str); logger.info("-----------------------------------------")
+        logger.info("-----------------------------------------\nAI Input Data -> Question: %s\nAI Input Data -> Sub-Questions: %s\nAI Input Data -> Max Marks: %s\nAI Input Data -> Student Answer:\n%s\nAI Input Data -> Correct Answer/Scheme:\n%s\n-----------------------------------------", 
+                    question_text, sub_questions, max_marks_str, user_answer_formatted, correct_answer_log_str)
         base_context = f"""
 **Question:** {question_text}
 **Sub-questions (if any):** {sub_questions}
 **Maximum Marks:** {max_marks_str}
 **Marking Scheme / Correct Answer Details:** {correct_answer_log_str}
-**Student's Answer:** {user_answer}
+**Student's Answer:** 
+{user_answer_formatted}
 """
         # --- Define the Explicit CoT Prompt (Describe output format clearly) ---
         prompt1_parts = [
             f"**ROLE:** AI Examiner simulating a teacher's step-by-step marking.",
             f"**TASK:** Carefully evaluate the Student's Answer against the Marking Scheme below. Determine the mark by assessing demonstrated understanding for each part. Follow the reasoning steps internally, then provide ONLY the final output strictly following the REQUIRED OUTPUT FORMAT described below.",
             f"**Internal Reasoning Steps to Follow:**",
-             # ... (Keep the detailed 5 CoT steps: Initialize, Analyze Part-by-Part, Compare, Award, Sum, Final Calc, Rationale, Study Topics) ...
-            f"  1. Initialize Score: 0 / {max_marks_str}.",
-            f"  2. Analyze Part-by-Part: For each part:",
-            f"     a. Compare student answer meaning/intent for this part to the scheme requirements.",
-            f"     b. Assess understanding. Is it relevant? Correct?",
-            f"     c. Award whole marks for this part based ONLY on alignment with scheme. Award 0 if irrelevant/wrong.",
-            f"     d. Add marks to running total.",
-            f"  3. Final Calculation: Determine the `Final Calculated Mark: F / {max_marks_str}`.",
-            f"  4. Rationale: Formulate a single sentence explaining the primary reason for the final mark (`Rationale: [Sentence]`).",
-            f"  5. Study Topics: Identify key topics the student needs to revise (`Study Topics: [Topics]`).",
-            f"**REQUIRED OUTPUT FORMAT:**", # Removed "Grammar Enforced"
-            f"  After performing the internal reasoning, your entire output MUST consist of ONLY the following three lines:",
+            f"  1. **Initialize Score:** Start score at 0 / {max_marks_str}.",
+            f"  2. **Analyze Part-by-Part:** For each part:",
+            f"     a. Compare the student's answer meaning/intent for this part to the scheme requirements.",
+            f"     b. Assess understanding: Is it relevant? Is it correct?",
+            f"     c. Award whole marks for this part based ONLY on alignment with the scheme. Award 0 if irrelevant/wrong.",
+            f"     d. Add marks to the running total.",
+            f"     e. **Identify Specific Gaps:** Note down the *specific concepts or details* from the marking scheme that the student missed or got wrong in this part.",
+            f"  3. **Final Calculation:** Determine the `Final Calculated Mark: F / {max_marks_str}`.",
+            f"  4. **Rationale:** Formulate a concise (1-3 sentences) explanation for the final mark. This explanation MUST explicitly mention the *key concepts or requirements from the Marking Scheme* (identified in Step 2d) that the student failed to demonstrate understanding of.",
+            f"  5. **Detailed Study Plan:** Based *only* on the specific gaps identified in Step 2d, create a detailed study plan. Include these three components clearly labeled:",
+            f"     a. **Specific Topics:** List the precise topics or sub-topics from the syllabus/scheme the student needs to revise (e.g., 'Structure of a nephron', 'Definition of selective re-uptake').",
+            f"     b. **Guiding Questions:** Provide 2-3 specific questions the student should ask themselves *while studying* these topics to ensure deep understanding (e.g., 'What pressure drives ultrafiltration?', 'How does ADH affect the collecting duct?').",
+            f"     c. **Google Search Terms:** Suggest 2-3 concrete terms or phrases the student can search for online to find relevant explanations or diagrams (e.g., 'glomerular filtration process animation', 'role of loop of Henle concentration gradient').",
+            f"**REQUIRED OUTPUT FORMAT:**", # Still expecting 3 main lines, but content is enhanced
+            f"  After performing the internal reasoning, your entire output MUST consist of ONLY the following three lines, starting *exactly* with these headings:",
             f"  Line 1: Start with 'Grade: ' followed by the Final Calculated Mark from Step 3 (e.g., Grade: 0 / {max_marks_str}).",
-            f"  Line 2: Start with 'Rationale: ' followed by the Rationale sentence from Step 4.",
-            f"  Line 3: Start with 'Study Topics: ' followed by the Study topics from Step 5.",
+            f"  Line 2: `Rationale: [Detailed rationale sentence(s) from Step 4, mentioning specific missed concepts from the scheme]`",
+            f"  Line 3: `Study Topics: [Detailed study plan from Step 5, including 'Specific Topics:', 'Guiding Questions:', and 'Google Search Terms:']`", # Content is enhanced here
             f"  Do NOT include your internal reasoning steps or any other text in the final output.",
             f"**INPUT DATA:**",
             base_context,
             f"**Output:**"
         ]
-        prompt = "\n".join(prompt1_parts)
-        logger.debug(f"Full Prompt for Generation (No Grammar):\n{prompt}")
+        # ----------------------------------------------------
+        prompt = "\\n".join(prompt1_parts)
+        logger.debug(f"Full Prompt for Generation (Enhanced Rationale/Study Topics):\\n{prompt}")
 
         # --- Generate Response WITHOUT Grammar ---
-        # <<< --- CALLING HELPER WITHOUT GRAMMAR --- >>>
-        raw_response_text = _generate_step( # Use the simplified helper name
+        raw_response_text = _generate_step(
             llm,
             prompt,
-            # grammar=None, # Ensure grammar is NOT passed
-            max_tokens=GENERATION_MAX_TOKENS,
-            stop_sequences=["<|endoftext|>"]
+            max_tokens=GENERATION_MAX_TOKENS, # May need more tokens for detailed study plan
+            stop_sequences=["<|endoftext|>"] 
         )
-        # <<< --- END HELPER CALL --- >>>
 
         # Log the Raw Output
-        logger.info(f"Raw FULL text from AI (No Grammar Applied):\n---------------------\n{raw_response_text}\n---------------------")
+        logger.info(f"Raw FULL text from AI (Enhanced Rationale/Study Topics):\n---------------------\n{raw_response_text}\n---------------------")
 
-        # --- NEW Parsing Logic (Using Regex) ---
+        # --- Parsing Logic (Remains the same - relies on headings) ---
         if raw_response_text:
             # Use regex to find lines starting with the specific prefixes
-            # re.MULTILINE treats ^ as start of line, $ as end of line
-            # re.DOTALL makes . match newlines if needed, though unlikely here
-            # Capture the content after the prefix until the end of the line
             grade_match = re.search(r"^Grade:(.*)$", raw_response_text, re.MULTILINE)
-            rationale_match = re.search(r"^Rationale:(.*)$", raw_response_text, re.MULTILINE)
-            topics_match = re.search(r"^Study Topics:(.*)$", raw_response_text, re.MULTILINE)
+            # Use the multiline extractor helper for Rationale and Study Topics
+            # Define the helper function (or ensure it's defined elsewhere in the file)
+            def extract_multiline_content(heading: str, text: str) -> Optional[str]:
+                 start_match = re.search(f"^{heading}:(.*)$", text, re.MULTILINE | re.IGNORECASE)
+                 if not start_match: return None
+                 content_start_index = start_match.end()
+                 next_heading_index = len(text)
+                 headings = ["Grade:", "Rationale:", "Study Topics:"] # Only these 3 headings expected
+                 for h in headings:
+                      next_match = re.search(f"^{h}", text[content_start_index:], re.MULTILINE | re.IGNORECASE)
+                      if next_match:
+                           current_next_index = content_start_index + next_match.start()
+                           next_heading_index = min(next_heading_index, current_next_index)
+                 content = text[start_match.start(1):next_heading_index].strip()
+                 # Replace escaped newlines if the model adds them literally
+                 content = content.replace('\\n', '\n') 
+                 return content if content else None
 
             results["Grade"] = grade_match.group(1).strip() if grade_match else "N/A (Not Found)"
-            results["Rationale"] = rationale_match.group(1).strip() if rationale_match else "N/A (Not Found)"
-            results["Study Topics"] = topics_match.group(1).strip() if topics_match else "N/A (Not Found)"
+            results["Rationale"] = extract_multiline_content("Rationale", raw_response_text) or "N/A (Not Found)"
+            results["Study Topics"] = extract_multiline_content("Study Topics", raw_response_text) or "N/A (Not Found)"
 
-            if grade_match and rationale_match and topics_match:
-                logger.info(f"Successfully parsed output using Regex.")
+            if grade_match and results["Rationale"] != "N/A (Not Found)" and results["Study Topics"] != "N/A (Not Found)":
+                logger.info(f"Successfully parsed all 3 required output lines using Regex/Multiline Extraction.")
             else:
-                logger.warning(f"Could not find all required lines using Regex in raw output. Grade found: {bool(grade_match)}, Rationale found: {bool(rationale_match)}, Topics found: {bool(topics_match)}")
+                logger.warning(f"Could not find all required lines using Regex/Multiline Extraction. Grade found: {bool(grade_match)}, Rationale found: {results['Rationale'] != 'N/A (Not Found)'}, Study Topics found: {results['Study Topics'] != 'N/A (Not Found)'}")
         else:
             logger.error("Generation failed to produce output.")
             results = {k: "N/A (Generation Error)" for k in results}
-        # --- END NEW Parsing Logic ---
+        # --- END Parsing Logic ---
 
         logger.info("AI evaluation completed.")
 
-    except Exception as e: logger.error(f"Error during AI evaluation: {e}", exc_info=True); results = {k: f"N/A (Exception: {e})" for k in results}; return results
+    except Exception as e: 
+        logger.error(f"Error during AI evaluation: {e}", exc_info=True)
+        results = {k: f"N/A (Exception: {e})" for k in results}
     finally:
-        if llm is not None: logger.info("Unloading AI model..."); del llm; logger.info("AI model unloaded.")
+        if llm is not None: 
+            logger.info("Unloading AI model...")
+            del llm
+            logger.info("AI model unloaded.")
 
     logger.debug(f"Final evaluation results: {results}")
     return results
