@@ -6,21 +6,32 @@ from datetime import datetime
 # Core services
 from src.core import services
 from src.core.logging_config import configure_logging
-from src.core.network.network_monitor import NetworkMonitor
-from src.core.mongodb_client import MongoDBClient
+from src.core.network.monitor import NetworkMonitor
+from src.core.mongodb.client import MongoDBClient
 from src.core.queue_manager import QueueManager
 from src.core.network.sync_service import SyncService
 from src.data.cache.cache_manager import CacheManager
+from src.core.history.user_history_manager import UserHistoryManager
 
 # Set up logging
+configure_logging()
 logger = logging.getLogger(__name__)
 
 def initialize_app():
     """Initialize the application and its services"""
+    print(">>> DEBUG: Entered initialize_app()", file=sys.stderr)
+
     # Configure logging first
-    configure_logging()
-    logger.info("Starting application initialization")
-    
+    print(">>> DEBUG: Attempting to call configure_logging()...", file=sys.stderr)
+    try:
+        configure_logging()
+    except Exception as e:
+        print(f">>> DEBUG: *** ERROR IN configure_logging() CALL ***: {e}", file=sys.stderr)
+
+    # Now get the logger AFTER attempting configuration
+    logger = logging.getLogger(__name__)
+    logger.info("Log attempt after basic config.") # Test if logger works at all
+
     # Initialize services in the correct order to avoid circular dependencies
     logger.info("Initializing core services...")
     
@@ -40,14 +51,38 @@ def initialize_app():
     cache_manager = CacheManager()
     services.cache_manager = cache_manager
     
-    # 5. Initialize Sync Service (depends on network monitor, queue manager)
+    # 5. Initialize User History Manager
+    uhm_instance = None # Define outside try
+    print(">>> DEBUG: == Attempting UserHistoryManager Initialization ==", file=sys.stderr)
+    try:
+        # Add a print RIGHT BEFORE instantiation
+        print(">>> DEBUG: Instantiating UserHistoryManager()...", file=sys.stderr)
+        uhm_instance = UserHistoryManager()
+        # Add print RIGHT AFTER instantiation attempt
+        print(f">>> DEBUG: UserHistoryManager() instantiation finished. Instance: {uhm_instance}", file=sys.stderr)
+
+        services.user_history_manager = uhm_instance
+        print(f">>> DEBUG: Assigned UserHistoryManager to services. Service is None: {services.user_history_manager is None}", file=sys.stderr)
+        logger.info("User History Manager initialization step completed in app.py.")
+
+    except Exception as e:
+        print(f">>> DEBUG: *** ERROR DURING UserHistoryManager INITIALIZATION OR ASSIGNMENT ***: {e}", file=sys.stderr)
+        logger.error(f"CRITICAL: Failed UserHistoryManager init/assignment: {e}", exc_info=True)
+    
+    # 6. Initialize Sync Service (depends on network monitor, queue manager)
     sync_service = SyncService()
     services.sync_service = sync_service
     
     # Start services that need to be running continuously
     sync_service.start()
     
+    # Maybe start network monitor here if it has a start method
+    if hasattr(network_monitor, 'start'):
+        network_monitor.start()
+    
+    logger.info(f"--- Initializing services. ID of 'services' module: {id(services)} ---")
     logger.info("Application initialization complete")
+    print(">>> DEBUG: Exiting initialize_app()", file=sys.stderr)
     return True
 
 def shutdown_app():
