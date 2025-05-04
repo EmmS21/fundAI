@@ -1,7 +1,7 @@
 import logging
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QScrollArea, QSizePolicy, QDialog, QFrame, QMessageBox, QGroupBox)
 from PySide6.QtGui import QPixmap, QImage, QFont, QGuiApplication, QMovie
-from PySide6.QtCore import Qt, Signal, QUrl, QThread, QStandardPaths
+from PySide6.QtCore import Qt, Signal, QUrl, QThread, QStandardPaths, Slot
 from src.data.cache.cache_manager import CacheManager
 import os
 import sys
@@ -9,6 +9,8 @@ import json
 from src.core.ai.marker import run_ai_evaluation # Use the updated orchestrator name
 from typing import Dict, Optional, Any
 from src.core import services # <-- ADD THIS IMPORT
+from src.core.network.monitor import NetworkStatus
+from src.core.ai.groq_client import GroqClient # Keep this import
 
 logger = logging.getLogger(__name__)
 
@@ -167,25 +169,13 @@ class WaitingDialog(QDialog):
         self.label = QLabel("Generating AI Feedback, please wait...")
         self.label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.label)
-
-        # --- Optional Spinner GIF ---
-        # self.spinner_label = QLabel()
-        # self.movie = QMovie("path/to/your/spinner.gif") # Needs a GIF file
-        # if self.movie.isValid():
-        #     self.spinner_label.setMovie(self.movie)
-        #     layout.addWidget(self.spinner_label, alignment=Qt.AlignCenter)
-        #     self.movie.start()
-        # else:
-        #     logger.warning("Spinner GIF not found or invalid.")
-        # ----------------------------
-
         self.setMinimumWidth(300)
         self.setLayout(layout)
 
 # --- Worker Thread for AI Feedback ---
 class AIFeedbackWorker(QThread):
-    # Signal emits the results dictionary or potentially a more complex structure later
-    feedback_ready = Signal(object)
+    # Signal emits: results dictionary (or None), prompt string (or None)
+    feedback_ready = Signal(object, object) # Change signature to emit two objects
 
     # --- MODIFY: Accept dictionary for user_answer ---
     def __init__(self, question_data: Dict, correct_answer_data: Dict, user_answer: Dict[str, str], marks: Optional[int]):
@@ -198,17 +188,58 @@ class AIFeedbackWorker(QThread):
     def run(self):
         """Runs the AI evaluation function in a separate thread."""
         logger.info("AIFeedbackWorker started.")
-        # --- NOTE: run_ai_evaluation needs to be updated to handle the user_answer dict ---
-        # For now, it might fail or only process part of the answer depending on its implementation
-        # We will update run_ai_evaluation and the backend API in the next step.
-        evaluation_results = run_ai_evaluation(
+        # --- Get BOTH results and prompt ---
+        evaluation_results, generated_prompt = run_ai_evaluation( # Capture both return values
             self.question_data,
             self.correct_answer_data,
-            self.user_answer, # Pass the dictionary
+            self.user_answer,
             self.marks
         )
-        self.feedback_ready.emit(evaluation_results)
+        # --- Emit BOTH results and prompt ---
+        self.feedback_ready.emit(evaluation_results, generated_prompt)
         logger.info("AIFeedbackWorker finished.")
+
+# --- (GroqFeedbackWorker Class - Needs Modification) ---
+class GroqFeedbackWorker(QThread):
+    feedback_ready = Signal(int, object)
+    feedback_error = Signal(int, str)
+
+    # Modify __init__ to accept prompt string
+    def __init__(self, history_id: int, local_prompt: str): # Simplified - only needs prompt now
+        super().__init__()
+        self.history_id = history_id
+        self.local_prompt = local_prompt
+        # Removed other data args (question_data, etc.) as GroqClient now only needs prompt
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+
+    def run(self):
+        """Runs the Groq evaluation using the provided prompt."""
+        self.logger.info(f"GroqFeedbackWorker started for history_id: {self.history_id}")
+        if not self.local_prompt:
+            self.logger.error(f"GroqFeedbackWorker cannot run for history_id {self.history_id}: Prompt is missing.")
+            self.feedback_error.emit(self.history_id, "Worker started without prompt")
+            return
+
+        try:
+            groq_client = GroqClient()
+            # Call the method that accepts the prompt
+            cloud_report = groq_client.generate_report_from_prompt(self.local_prompt)
+
+            if cloud_report and not cloud_report.get("error"):
+                self.logger.info(f"Groq report generated successfully for history_id: {self.history_id}")
+                self.feedback_ready.emit(self.history_id, cloud_report)
+            else:
+                error_msg = cloud_report.get('error', 'Unknown error from GroqClient') if cloud_report else "GroqClient returned None"
+                self.logger.error(f"Groq report generation failed for history_id {self.history_id}: {error_msg}")
+                self.feedback_error.emit(self.history_id, error_msg)
+
+        except ValueError as key_error:
+             self.logger.error(f"Failed to initialize GroqClient in worker: {key_error}")
+             self.feedback_error.emit(self.history_id, f"API Key Error: {key_error}")
+        except Exception as e:
+            self.logger.error(f"Exception in GroqFeedbackWorker for history_id {self.history_id}: {e}", exc_info=True)
+            self.feedback_error.emit(self.history_id, f"Worker Exception: {e}")
+        self.logger.info(f"GroqFeedbackWorker finished for history_id: {self.history_id}")
 
 class QuestionView(QWidget):
     """Widget to display a single question and handle user interaction."""
@@ -225,9 +256,10 @@ class QuestionView(QWidget):
         self.logger = logging.getLogger(__name__)
         self.feedback_worker = None
         self.waiting_dialog = None # Add instance variable for the dialog
-        # --- ADDED: Dictionary to hold sub-question input fields ---
         self.sub_answer_fields: Dict[str, QTextEdit] = {}
-        self.last_submitted_answers = None #
+        self.last_submitted_answers = None 
+        self.last_used_prompt = None 
+        self.groq_workers = {} # <--- ADD THIS INITIALIZATION
 
         self._setup_ui()
         self.load_random_question()
@@ -340,12 +372,12 @@ class QuestionView(QWidget):
         # --- END FIX ---
 
         # --- ADDED: Preliminary Feedback Label ---
-        self.preliminary_feedback_label = QLabel(
-            "Note: This is preliminary feedback. A more detailed analysis may be available online."
-        )
-        self.preliminary_feedback_label.setObjectName("PreliminaryLabel") # For styling
-        self.preliminary_feedback_label.setWordWrap(True)
-        self.feedback_layout.addWidget(self.preliminary_feedback_label)
+        # self.preliminary_feedback_label = QLabel(
+        #     "Note: This is preliminary feedback. A more detailed analysis may be available online."
+        # )
+        # self.preliminary_feedback_label.setObjectName("PreliminaryLabel") # For styling
+        # self.preliminary_feedback_label.setWordWrap(True)
+        # self.feedback_layout.addWidget(self.preliminary_feedback_label)
         # -----------------------------------------
 
         self.feedback_groupbox.hide() # Start hidden
@@ -392,6 +424,26 @@ class QuestionView(QWidget):
         self.main_layout.addWidget(self.image_section_label)
         self.main_layout.addWidget(self.image_links_container) 
 
+        # Add a label to indicate feedback status
+        self.feedback_status_label = QLabel("Preliminary Feedback")
+        self.feedback_status_label.setObjectName("FeedbackStatusLabel")
+        # Optional: Add specific styling for the status label
+        self.feedback_status_label.setStyleSheet("font-style: italic; color: #555;")
+        self.feedback_layout.addWidget(self.feedback_status_label) # Add before main text
+
+        # Ensure existing widgets are added (adjust names if needed)
+        self.mark_label = QLabel("Grade: N/A")
+        self.feedback_layout.addWidget(self.mark_label)
+
+        self.feedback_text = QTextEdit()
+        self.feedback_text.setReadOnly(True)
+        # ... other feedback_text properties ...
+        self.feedback_layout.addWidget(self.feedback_text)
+
+        # ... rest of feedback_groupbox setup ...
+        # -----------------------------------------------------------
+
+        # ... rest of _setup_ui ...
 
     def load_random_question(self):
         """Fetches and displays a random question from the cache."""
@@ -723,8 +775,9 @@ class QuestionView(QWidget):
     # NOTE: This function now receives results potentially based on the dictionary input.
     # The structure of eval_results might need changes based on how run_ai_evaluation is updated.
     # For now, assume it returns a similar dictionary for overall feedback.
-    def _handle_ai_feedback_result(self, eval_results: Optional[Dict[str, Optional[str]]]):
-        """Receives the evaluation results dict (or None) from the worker thread."""
+    @Slot(object, object)
+    def _handle_ai_feedback_result(self, eval_results: Optional[Dict[str, Optional[str]]], generated_prompt: Optional[str]):
+        """Receives the LOCAL evaluation results AND the prompt used."""
         # Close Dialog
         if self.waiting_dialog:
             self.waiting_dialog.accept()
@@ -739,21 +792,17 @@ class QuestionView(QWidget):
         for text_edit in self.sub_answer_fields.values():
              text_edit.setReadOnly(False)
 
+        # Store the prompt used for potential cloud sync
+        self.last_used_prompt = generated_prompt
+        if not generated_prompt:
+            self.logger.warning("Local AI evaluation did not return a prompt string.")
+
+        history_id = None # Initialize history_id
 
         if eval_results:
-            self.logger.info(f"Displaying feedback results: {eval_results}")
+            self.logger.info(f"Received local AI feedback: {eval_results}")
 
-            # --- ADD A PRINT HERE to inspect the services module ---
-            self.logger.debug(f"--- In _handle_ai_feedback_result ---")
-            try:
-                # Print the module itself and specifically the attribute we need
-                self.logger.debug(f"Services module object: {services}")
-                self.logger.debug(f"Value of services.user_history_manager BEFORE access: {getattr(services, 'user_history_manager', 'AttributeNotFound')}")
-            except Exception as inspect_err:
-                self.logger.error(f"Error inspecting services module: {inspect_err}")
-            # ------------------------------------------------------
-
-            # --- Store results to history database --- #
+            # 1. Store Local results to history database
             try:
                 history_manager = services.user_history_manager # Get the manager
                 # --- Log prerequisite checks ---
@@ -808,13 +857,19 @@ class QuestionView(QWidget):
                     if not self.last_submitted_answers: missing.append("Last Submitted Answers")
                     self.logger.error(f"Skipping history storage: Prerequisites not met - Missing: {', '.join(missing)}")
 
-
             except Exception as e:
                 self.logger.error(f"CRITICAL ERROR during history storage attempt: {e}", exc_info=True)
             # --- END: Store results ---
 
+            # 2. Trigger Cloud Sync (if local save succeeded AND we have a prompt)
+            if history_id and self.last_used_prompt:
+                 self.trigger_cloud_sync(history_id, self.last_used_prompt) # Pass prompt
+            elif not history_id:
+                 self.logger.warning("Cannot trigger cloud sync because local history save failed.")
+            elif not self.last_used_prompt:
+                 self.logger.warning("Cannot trigger cloud sync because the local prompt was not available.")
 
-            # --- MODIFICATION: Display full response ---
+            # 3. Display LOCAL feedback in UI (using eval_results)
             grade = eval_results.get('Grade', 'N/A')
             rationale = eval_results.get('Rationale', 'N/A')
             study_topics = eval_results.get('Study Topics', 'N/A')
@@ -836,6 +891,10 @@ class QuestionView(QWidget):
             self.show_feedback_button.hide()
 
             self.last_submitted_answers = None
+
+        # Reset temp prompt after handling
+        self.last_used_prompt = None
+        self.last_submitted_answers = None # Also reset answers here
 
     # --- ADDED: Methods to handle feedback visibility ---
     def _hide_feedback(self):
@@ -952,6 +1011,143 @@ class QuestionView(QWidget):
         except Exception as e:
             self.logger.error(f"Unexpected error creating image popup for {image_path}: {e}", exc_info=True)
             QMessageBox.critical(self, "Popup Error", f"An unexpected error occurred while trying to display the image:\n{e}")
+
+    def trigger_cloud_sync(self, history_id: int, local_prompt: str):
+        """Checks network and either triggers immediate Groq call or queues."""
+        self.logger.info(f"Triggering cloud sync process for history_id: {history_id}")
+        if not local_prompt:
+             self.logger.error(f"Cannot trigger cloud sync for {history_id}: Local prompt is missing.")
+             return
+
+        network_monitor = services.network_monitor
+        sync_service = services.sync_service
+        history_manager = services.user_history_manager # Get history manager
+
+        if not history_manager:
+             self.logger.error("UserHistoryManager not available. Cannot mark status or process fully.")
+             # Decide if we should still attempt queueing/worker start without DB updates
+             # For now, let's proceed but log the limitation
+
+        # Check Online Status
+        if network_monitor and network_monitor.get_status() == NetworkStatus.ONLINE:
+            self.logger.info("Network ONLINE. Attempting immediate Groq analysis.")
+
+            # --- REPLACE PLACEHOLDER ---
+            if history_manager:
+                 # Mark as sent immediately (optimistic)
+                 sent_success = history_manager.mark_as_sent_to_cloud(history_id)
+                 if not sent_success:
+                      self.logger.warning(f"Failed to mark history {history_id} as sent in DB.")
+                 else:
+                      self.logger.info(f"Marked history {history_id} as sent to cloud in DB.")
+            else:
+                 self.logger.warning(f"Cannot mark history {history_id} as sent: UserHistoryManager unavailable.")
+            # --- END REPLACE PLACEHOLDER ---
+
+            # Start Groq worker thread with just the prompt
+            worker = GroqFeedbackWorker(
+                history_id=history_id,
+                local_prompt=local_prompt
+            )
+            worker.feedback_ready.connect(self._handle_groq_feedback_result)
+            worker.feedback_error.connect(self._handle_groq_feedback_error)
+            self.groq_workers[history_id] = worker
+            worker.finished.connect(lambda hid=history_id: self.groq_workers.pop(hid, None))
+            worker.start()
+
+        elif sync_service: # Offline or Network Monitor unavailable
+            self.logger.info("Network OFFLINE or status unknown. Queueing request via SyncService.")
+            # Pass prompt to queueing method
+            queued = sync_service.queue_cloud_analysis(history_id, local_prompt)
+            if not queued:
+                 self.logger.error(f"Failed to queue cloud analysis request for history_id: {history_id}")
+        else:
+            self.logger.error("Cannot queue offline request: SyncService unavailable.")
+
+    @Slot(int, object)
+    def _handle_groq_feedback_result(self, history_id: int, cloud_report: Dict):
+        """Receives the cloud report from the GroqFeedbackWorker."""
+        self.logger.info(f"Received successful Groq feedback for history_id: {history_id}")
+        history_manager = services.user_history_manager
+
+        if history_manager:
+            # --- REPLACE PLACEHOLDER ---
+            # Update the database entry with the received report
+            success = history_manager.update_with_cloud_report(history_id, cloud_report)
+            # --- END REPLACE PLACEHOLDER ---
+
+            if success:
+                 self.logger.info(f"Successfully updated answer_history for {history_id} with cloud report via direct call.")
+
+                 # --- Update UI with FINALIZED Cloud Report ---
+                 self.logger.info(f"Updating UI with FINALIZED cloud report for history_id: {history_id}")
+                 try:
+                      # Check if this is still the currently displayed question's history
+                      # Avoid updating UI if user navigated away quickly
+                      current_qid = self.current_question_data.get('id') if self.current_question_data else None
+                      history_qid = history_manager.get_question_id_for_history(history_id) # Needs implementation in UHM
+
+                      if history_qid and current_qid == history_qid:
+                            self.logger.info(f"Cloud report matches current question {current_qid}. Updating UI.")
+
+                            cloud_grade = cloud_report.get('grade', 'N/A (Cloud)')
+                            cloud_rationale = cloud_report.get('rationale', 'N/A (Cloud)')
+                            cloud_study_topics_obj = cloud_report.get('study_topics', {})
+
+                            # Change status label to Finalized
+                            self.feedback_status_label.setText("Finalized Report (Cloud AI)")
+                            self.feedback_status_label.setStyleSheet("font-style: normal; color: #166534; font-weight: bold;") # e.g., Green/Bold
+
+                            # Update grade and feedback text
+                            self.mark_label.setText(f"Grade: {cloud_grade}") # No need for (Cloud) suffix now
+
+                            # Format study topics (adapt as needed)
+                            study_topics_display = "Study Topics:\n"
+                            if isinstance(cloud_study_topics_obj, dict):
+                                if 'raw' in cloud_study_topics_obj: study_topics_display += cloud_study_topics_obj['raw']
+                                elif 'lines' in cloud_study_topics_obj: study_topics_display += "\n".join(f"- {line}" for line in cloud_study_topics_obj['lines'])
+                                else: study_topics_display += json.dumps(cloud_study_topics_obj, indent=2)
+                            else: study_topics_display += str(cloud_study_topics_obj)
+
+                            full_feedback = f"Rationale:\n{cloud_rationale}\n\n{study_topics_display}"
+                            self.feedback_text.setText(full_feedback)
+
+                            # Ensure feedback area is visible
+                            self._show_feedback()
+
+                            self.logger.info(f"UI updated successfully with cloud report for {history_id}.")
+                      else:
+                           self.logger.info(f"Cloud report received for history_id {history_id}, but user has navigated away from question {history_qid}. UI not updated.")
+
+
+                 except Exception as ui_update_err:
+                      self.logger.error(f"Error updating UI with cloud report for {history_id}: {ui_update_err}", exc_info=True)
+                 # --- END UI UPDATE ---
+
+                 self.update_new_report_indicator() # Update badge count
+            else:
+                 self.logger.error(f"Failed to update answer_history for {history_id} with cloud report data.")
+        else:
+            self.logger.error("UserHistoryManager service not available when Groq result received. Cannot save cloud report to DB.")
+
+    @Slot(int, str)
+    def _handle_groq_feedback_error(self, history_id: int, error_message: str):
+        """Handles errors reported by the GroqFeedbackWorker."""
+        self.logger.error(f"GroqFeedbackWorker reported error for history_id {history_id}: {error_message}")
+        # Optional: Add logic here, like marking DB entry as failed direct sync
+
+    def update_new_report_indicator(self):
+        """Placeholder: Signal or call method to update the UI badge."""
+        self.logger.info("Placeholder: Update UI indicator for new reports.")
+        # Find the profile widget and call its update method
+        # This might involve traversing parent widgets or using signals/slots
+        # Example (highly dependent on your exact UI structure):
+        main_window = self.window() # Get the top-level window
+        if hasattr(main_window, 'profile_info_widget') and hasattr(main_window.profile_info_widget, 'update_new_report_indicator'):
+             self.logger.debug("Calling update_new_report_indicator on main window's profile widget.")
+             main_window.profile_info_widget.update_new_report_indicator()
+        else:
+             self.logger.warning("Could not find profile_info_widget or its update method to update badge.")
 
 # Example Usage (if run standalone)
 if __name__ == '__main__':
