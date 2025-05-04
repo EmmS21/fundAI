@@ -1,74 +1,34 @@
-2025-04-30 23:15:47,345 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-05-04 12:41:58,092 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:47,346 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("users")
+2025-05-04 12:41:58,092 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("users")
 INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("users")
-2025-04-30 23:15:47,346 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-05-04 12:41:58,092 INFO sqlalchemy.engine.Engine [raw sql] ()
 INFO:sqlalchemy.engine.Engine:[raw sql] ()
-2025-04-30 23:15:47,346 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("exam_results")
+2025-05-04 12:41:58,092 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("exam_results")
 INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("exam_results")
-2025-04-30 23:15:47,346 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-05-04 12:41:58,092 INFO sqlalchemy.engine.Engine [raw sql] ()
 INFO:sqlalchemy.engine.Engine:[raw sql] ()
-2025-04-30 23:15:47,346 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("question_responses")
+2025-05-04 12:41:58,092 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("question_responses")
 INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("question_responses")
-2025-04-30 23:15:47,346 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-05-04 12:41:58,092 INFO sqlalchemy.engine.Engine [raw sql] ()
 INFO:sqlalchemy.engine.Engine:[raw sql] ()
-2025-04-30 23:15:47,346 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("user_subjects")
+2025-05-04 12:41:58,092 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("user_subjects")
 INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("user_subjects")
-2025-04-30 23:15:47,346 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-05-04 12:41:58,092 INFO sqlalchemy.engine.Engine [raw sql] ()
 INFO:sqlalchemy.engine.Engine:[raw sql] ()
-2025-04-30 23:15:47,346 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("subjects")
+2025-05-04 12:41:58,092 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("subjects")
 INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("subjects")
-2025-04-30 23:15:47,346 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-05-04 12:41:58,092 INFO sqlalchemy.engine.Engine [raw sql] ()
 INFO:sqlalchemy.engine.Engine:[raw sql] ()
-2025-04-30 23:15:47,346 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("paper_cache")
+2025-05-04 12:41:58,093 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("paper_cache")
 INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("paper_cache")
-2025-04-30 23:15:47,346 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-05-04 12:41:58,093 INFO sqlalchemy.engine.Engine [raw sql] ()
 INFO:sqlalchemy.engine.Engine:[raw sql] ()
-2025-04-30 23:15:47,346 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("cached_questions")
+2025-05-04 12:41:58,093 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("cached_questions")
 INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("cached_questions")
-2025-04-30 23:15:47,346 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-05-04 12:41:58,093 INFO sqlalchemy.engine.Engine [raw sql] ()
 INFO:sqlalchemy.engine.Engine:[raw sql] ()
-2025-04-30 23:15:47,346 INFO sqlalchemy.engine.Engine PRAGMA temp.table_info("cached_questions")
-INFO:sqlalchemy.engine.Engine:PRAGMA temp.table_info("cached_questions")
-2025-04-30 23:15:47,346 INFO sqlalchemy.engine.Engine [raw sql] ()
-INFO:sqlalchemy.engine.Engine:[raw sql] ()
-2025-04-30 23:15:47,347 INFO sqlalchemy.engine.Engine 
-CREATE TABLE cached_questions (
-	question_id TEXT NOT NULL, 
-	paper_id TEXT NOT NULL, 
-	paper_year INTEGER NOT NULL, 
-	paper_number TEXT NOT NULL, 
-	subject TEXT NOT NULL, 
-	level TEXT NOT NULL, 
-	topic TEXT, 
-	content TEXT NOT NULL, 
-	marks INTEGER NOT NULL, 
-	cached_at DATETIME NOT NULL, 
-	last_accessed DATETIME NOT NULL, 
-	PRIMARY KEY (question_id)
-)
-
-
-INFO:sqlalchemy.engine.Engine:
-CREATE TABLE cached_questions (
-	question_id TEXT NOT NULL, 
-	paper_id TEXT NOT NULL, 
-	paper_year INTEGER NOT NULL, 
-	paper_number TEXT NOT NULL, 
-	subject TEXT NOT NULL, 
-	level TEXT NOT NULL, 
-	topic TEXT, 
-	content TEXT NOT NULL, 
-	marks INTEGER NOT NULL, 
-	cached_at DATETIME NOT NULL, 
-	last_accessed DATETIME NOT NULL, 
-	PRIMARY KEY (question_id)
-)
-
-
-2025-04-30 23:15:47,347 INFO sqlalchemy.engine.Engine [no key 0.00003s] ()
-INFO:sqlalchemy.engine.Engine:[no key 0.00003s] ()
-2025-04-30 23:15:47,347 INFO sqlalchemy.engine.Engine COMMIT
+2025-05-04 12:41:58,093 INFO sqlalchemy.engine.Engine COMMIT
 INFO:sqlalchemy.engine.Engine:COMMIT
 >>> DEBUG: configure_logging() CALLED.
 >>> DEBUG: configure_logging() FINISHED.
@@ -94,51 +54,51 @@ INFO:src.data.cache.cache_manager:Cache Manager initialized
 >>> DEBUG: UserHistoryManager _connect_db() exiting.
 >>> DEBUG: UserHistoryManager DB connection SUCCESS in __init__.
 >>> DEBUG: UserHistoryManager __init__() finished.
->>> DEBUG: UserHistoryManager() instantiation finished. Instance: <src.core.history.user_history_manager.UserHistoryManager object at 0x1119a4ad0>
+>>> DEBUG: UserHistoryManager() instantiation finished. Instance: <src.core.history.user_history_manager.UserHistoryManager object at 0x112cc1d30>
 >>> DEBUG: Assigned UserHistoryManager to services. Service is None: False
 INFO:src.app:User History Manager initialization step completed in app.py.
 INFO:src.core.network.sync_service:Sync Service initialized
 INFO:src.core.network.sync_service:Sync service started
-INFO:src.app:--- Initializing services. ID of 'services' module: 4366877376 ---
+INFO:src.app:--- Initializing services. ID of 'services' module: 4376135136 ---
 INFO:src.app:Application initialization complete
 >>> DEBUG: Exiting initialize_app()
 INFO:__main__:--- Checking services status immediately after initialize_app() in main.py ---
-INFO:__main__:ID of 'services' module in main.py: 4366877376
-INFO:__main__:Value of services.user_history_manager in main.py: <src.core.history.user_history_manager.UserHistoryManager object at 0x1119a4ad0>
-2025-04-30 23:15:47,884 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+INFO:__main__:ID of 'services' module in main.py: 4376135136
+INFO:__main__:Value of services.user_history_manager in main.py: <src.core.history.user_history_manager.UserHistoryManager object at 0x112cc1d30>
+2025-05-04 12:41:59,021 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:47,884 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("users")
+2025-05-04 12:41:59,021 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("users")
 INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("users")
-2025-04-30 23:15:47,884 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-05-04 12:41:59,021 INFO sqlalchemy.engine.Engine [raw sql] ()
 INFO:sqlalchemy.engine.Engine:[raw sql] ()
-2025-04-30 23:15:47,885 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("exam_results")
+2025-05-04 12:41:59,021 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("exam_results")
 INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("exam_results")
-2025-04-30 23:15:47,885 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-05-04 12:41:59,021 INFO sqlalchemy.engine.Engine [raw sql] ()
 INFO:sqlalchemy.engine.Engine:[raw sql] ()
-2025-04-30 23:15:47,885 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("question_responses")
+2025-05-04 12:41:59,021 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("question_responses")
 INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("question_responses")
-2025-04-30 23:15:47,885 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-05-04 12:41:59,021 INFO sqlalchemy.engine.Engine [raw sql] ()
 INFO:sqlalchemy.engine.Engine:[raw sql] ()
-2025-04-30 23:15:47,885 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("user_subjects")
+2025-05-04 12:41:59,022 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("user_subjects")
 INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("user_subjects")
-2025-04-30 23:15:47,885 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-05-04 12:41:59,022 INFO sqlalchemy.engine.Engine [raw sql] ()
 INFO:sqlalchemy.engine.Engine:[raw sql] ()
-2025-04-30 23:15:47,885 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("subjects")
+2025-05-04 12:41:59,022 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("subjects")
 INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("subjects")
-2025-04-30 23:15:47,885 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-05-04 12:41:59,022 INFO sqlalchemy.engine.Engine [raw sql] ()
 INFO:sqlalchemy.engine.Engine:[raw sql] ()
-2025-04-30 23:15:47,885 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("paper_cache")
+2025-05-04 12:41:59,022 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("paper_cache")
 INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("paper_cache")
-2025-04-30 23:15:47,885 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-05-04 12:41:59,022 INFO sqlalchemy.engine.Engine [raw sql] ()
 INFO:sqlalchemy.engine.Engine:[raw sql] ()
-2025-04-30 23:15:47,885 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("cached_questions")
+2025-05-04 12:41:59,022 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("cached_questions")
 INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("cached_questions")
-2025-04-30 23:15:47,885 INFO sqlalchemy.engine.Engine [raw sql] ()
+2025-05-04 12:41:59,022 INFO sqlalchemy.engine.Engine [raw sql] ()
 INFO:sqlalchemy.engine.Engine:[raw sql] ()
-2025-04-30 23:15:47,885 INFO sqlalchemy.engine.Engine COMMIT
+2025-05-04 12:41:59,022 INFO sqlalchemy.engine.Engine COMMIT
 INFO:sqlalchemy.engine.Engine:COMMIT
 INFO:src.core.services:Initializing application services...
-INFO:src.core.firebase.client:Anonymous authentication successful. User ID: IHwzs0rAwgNqNHEh5hdx2kU6kNz1
+INFO:src.core.firebase.client:Anonymous authentication successful. User ID: b0ULS5DQARcTmld9jus3Lgs1GrA3
 INFO:src.core.firebase.client:Found user document with ID: xRdFYm6W7mEfv7cfxxVK
 INFO:src.core.firebase.client:Firebase client initialized successfully
 INFO:src.core.services:Firebase client initialized
@@ -150,130 +110,130 @@ INFO:src.core.services:Cache manager initialized and started
 INFO:src.core.services:Sync service initialized
 INFO:src.core.network.sync_service:Sync service already running
 INFO:src.core.services:All application services initialized successfully
-2025-04-30 23:15:48,869 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-05-04 12:42:00,276 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:48,872 INFO sqlalchemy.engine.Engine SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
+2025-05-04 12:42:00,277 INFO sqlalchemy.engine.Engine SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
 FROM users
  LIMIT ? OFFSET ?
 INFO:sqlalchemy.engine.Engine:SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
 FROM users
  LIMIT ? OFFSET ?
-2025-04-30 23:15:48,872 INFO sqlalchemy.engine.Engine [generated in 0.00021s] (1, 0)
-INFO:sqlalchemy.engine.Engine:[generated in 0.00021s] (1, 0)
+2025-05-04 12:42:00,277 INFO sqlalchemy.engine.Engine [generated in 0.00014s] (1, 0)
+INFO:sqlalchemy.engine.Engine:[generated in 0.00014s] (1, 0)
 Found existing user, showing MainWindow
 Found profile picture in database
 Image data length: 4245205
 First few bytes: b'\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00H\x00H\x00\x00'
 Setting up subjects section
 Setting up SubjectSelector UI
-2025-04-30 23:15:49,220 INFO sqlalchemy.engine.Engine SELECT user_subjects.id AS user_subjects_id, user_subjects.user_id AS user_subjects_user_id, user_subjects.subject_id AS user_subjects_subject_id, user_subjects.grade_7 AS user_subjects_grade_7, user_subjects.o_level AS user_subjects_o_level, user_subjects.a_level AS user_subjects_a_level, user_subjects.created_at AS user_subjects_created_at, user_subjects.updated_at AS user_subjects_updated_at 
+2025-05-04 12:42:00,588 INFO sqlalchemy.engine.Engine SELECT user_subjects.id AS user_subjects_id, user_subjects.user_id AS user_subjects_user_id, user_subjects.subject_id AS user_subjects_subject_id, user_subjects.grade_7 AS user_subjects_grade_7, user_subjects.o_level AS user_subjects_o_level, user_subjects.a_level AS user_subjects_a_level, user_subjects.created_at AS user_subjects_created_at, user_subjects.updated_at AS user_subjects_updated_at 
 FROM user_subjects 
 WHERE ? = user_subjects.user_id
 INFO:sqlalchemy.engine.Engine:SELECT user_subjects.id AS user_subjects_id, user_subjects.user_id AS user_subjects_user_id, user_subjects.subject_id AS user_subjects_subject_id, user_subjects.grade_7 AS user_subjects_grade_7, user_subjects.o_level AS user_subjects_o_level, user_subjects.a_level AS user_subjects_a_level, user_subjects.created_at AS user_subjects_created_at, user_subjects.updated_at AS user_subjects_updated_at 
 FROM user_subjects 
 WHERE ? = user_subjects.user_id
-2025-04-30 23:15:49,220 INFO sqlalchemy.engine.Engine [generated in 0.00012s] (1,)
-INFO:sqlalchemy.engine.Engine:[generated in 0.00012s] (1,)
-2025-04-30 23:15:49,221 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-05-04 12:42:00,588 INFO sqlalchemy.engine.Engine [generated in 0.00013s] (1,)
+INFO:sqlalchemy.engine.Engine:[generated in 0.00013s] (1,)
+2025-05-04 12:42:00,589 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:49,222 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
+2025-05-04 12:42:00,589 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
 INFO:sqlalchemy.engine.Engine:SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
-2025-04-30 23:15:49,222 INFO sqlalchemy.engine.Engine [generated in 0.00005s] (1,)
-INFO:sqlalchemy.engine.Engine:[generated in 0.00005s] (1,)
-2025-04-30 23:15:49,222 INFO sqlalchemy.engine.Engine ROLLBACK
+2025-05-04 12:42:00,589 INFO sqlalchemy.engine.Engine [generated in 0.00006s] (1,)
+INFO:sqlalchemy.engine.Engine:[generated in 0.00006s] (1,)
+2025-05-04 12:42:00,589 INFO sqlalchemy.engine.Engine ROLLBACK
 INFO:sqlalchemy.engine.Engine:ROLLBACK
-2025-04-30 23:15:49,222 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-05-04 12:42:00,589 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:49,222 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
+2025-05-04 12:42:00,589 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
 INFO:sqlalchemy.engine.Engine:SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
-2025-04-30 23:15:49,222 INFO sqlalchemy.engine.Engine [cached since 0.0005585s ago] (2,)
-INFO:sqlalchemy.engine.Engine:[cached since 0.0005585s ago] (2,)
-2025-04-30 23:15:49,222 INFO sqlalchemy.engine.Engine ROLLBACK
+2025-05-04 12:42:00,589 INFO sqlalchemy.engine.Engine [cached since 0.0005599s ago] (2,)
+INFO:sqlalchemy.engine.Engine:[cached since 0.0005599s ago] (2,)
+2025-05-04 12:42:00,589 INFO sqlalchemy.engine.Engine ROLLBACK
 INFO:sqlalchemy.engine.Engine:ROLLBACK
-2025-04-30 23:15:49,222 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-05-04 12:42:00,590 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:49,222 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
+2025-05-04 12:42:00,590 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
 INFO:sqlalchemy.engine.Engine:SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
-2025-04-30 23:15:49,222 INFO sqlalchemy.engine.Engine [cached since 0.000864s ago] (4,)
-INFO:sqlalchemy.engine.Engine:[cached since 0.000864s ago] (4,)
-2025-04-30 23:15:49,223 INFO sqlalchemy.engine.Engine ROLLBACK
+2025-05-04 12:42:00,590 INFO sqlalchemy.engine.Engine [cached since 0.0008712s ago] (4,)
+INFO:sqlalchemy.engine.Engine:[cached since 0.0008712s ago] (4,)
+2025-05-04 12:42:00,590 INFO sqlalchemy.engine.Engine ROLLBACK
 INFO:sqlalchemy.engine.Engine:ROLLBACK
-2025-04-30 23:15:49,223 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-05-04 12:42:00,590 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:49,223 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
+2025-05-04 12:42:00,590 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
 INFO:sqlalchemy.engine.Engine:SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
-2025-04-30 23:15:49,223 INFO sqlalchemy.engine.Engine [cached since 0.001142s ago] (3,)
-INFO:sqlalchemy.engine.Engine:[cached since 0.001142s ago] (3,)
-2025-04-30 23:15:49,223 INFO sqlalchemy.engine.Engine ROLLBACK
+2025-05-04 12:42:00,590 INFO sqlalchemy.engine.Engine [cached since 0.001145s ago] (3,)
+INFO:sqlalchemy.engine.Engine:[cached since 0.001145s ago] (3,)
+2025-05-04 12:42:00,590 INFO sqlalchemy.engine.Engine ROLLBACK
 INFO:sqlalchemy.engine.Engine:ROLLBACK
-2025-04-30 23:15:49,223 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-05-04 12:42:00,590 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:49,223 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
+2025-05-04 12:42:00,590 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
 INFO:sqlalchemy.engine.Engine:SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
-2025-04-30 23:15:49,223 INFO sqlalchemy.engine.Engine [cached since 0.0014s ago] (5,)
+2025-05-04 12:42:00,590 INFO sqlalchemy.engine.Engine [cached since 0.0014s ago] (5,)
 INFO:sqlalchemy.engine.Engine:[cached since 0.0014s ago] (5,)
-2025-04-30 23:15:49,223 INFO sqlalchemy.engine.Engine ROLLBACK
+2025-05-04 12:42:00,590 INFO sqlalchemy.engine.Engine ROLLBACK
 INFO:sqlalchemy.engine.Engine:ROLLBACK
-2025-04-30 23:15:49,223 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-05-04 12:42:00,590 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:49,223 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
+2025-05-04 12:42:00,590 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
 INFO:sqlalchemy.engine.Engine:SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
-2025-04-30 23:15:49,223 INFO sqlalchemy.engine.Engine [cached since 0.001644s ago] (6,)
-INFO:sqlalchemy.engine.Engine:[cached since 0.001644s ago] (6,)
-2025-04-30 23:15:49,223 INFO sqlalchemy.engine.Engine ROLLBACK
+2025-05-04 12:42:00,590 INFO sqlalchemy.engine.Engine [cached since 0.001648s ago] (6,)
+INFO:sqlalchemy.engine.Engine:[cached since 0.001648s ago] (6,)
+2025-05-04 12:42:00,591 INFO sqlalchemy.engine.Engine ROLLBACK
 INFO:sqlalchemy.engine.Engine:ROLLBACK
-2025-04-30 23:15:49,225 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-05-04 12:42:00,592 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:49,225 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
+2025-05-04 12:42:00,592 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
 INFO:sqlalchemy.engine.Engine:SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
-2025-04-30 23:15:49,225 INFO sqlalchemy.engine.Engine [cached since 0.003092s ago] (1,)
-INFO:sqlalchemy.engine.Engine:[cached since 0.003092s ago] (1,)
-2025-04-30 23:15:49,225 INFO sqlalchemy.engine.Engine ROLLBACK
+2025-05-04 12:42:00,592 INFO sqlalchemy.engine.Engine [cached since 0.00321s ago] (1,)
+INFO:sqlalchemy.engine.Engine:[cached since 0.00321s ago] (1,)
+2025-05-04 12:42:00,592 INFO sqlalchemy.engine.Engine ROLLBACK
 INFO:sqlalchemy.engine.Engine:ROLLBACK
 INFO:src.ui.components.profile.subjects.subject_list:[SubjectList] Attempting connect for Accounting...
 INFO:src.ui.components.profile.subjects.subject_list:[SubjectList] Connection for Accounting successful: True
 SubjectCard init - Subject: Accounting, Initial levels: {'grade_7': False, 'o_level': False, 'a_level': False}
 DEBUG: _update_header_status called for Subject: Accounting
 DEBUG: Setting header status to No Levels Selected
-2025-04-30 23:15:49,238 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-05-04 12:42:00,605 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:49,238 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
+2025-05-04 12:42:00,605 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
 INFO:sqlalchemy.engine.Engine:SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
-2025-04-30 23:15:49,238 INFO sqlalchemy.engine.Engine [cached since 0.01612s ago] (2,)
-INFO:sqlalchemy.engine.Engine:[cached since 0.01612s ago] (2,)
-2025-04-30 23:15:49,238 INFO sqlalchemy.engine.Engine ROLLBACK
+2025-05-04 12:42:00,605 INFO sqlalchemy.engine.Engine [cached since 0.01659s ago] (2,)
+INFO:sqlalchemy.engine.Engine:[cached since 0.01659s ago] (2,)
+2025-05-04 12:42:00,606 INFO sqlalchemy.engine.Engine ROLLBACK
 INFO:sqlalchemy.engine.Engine:ROLLBACK
 INFO:src.data.cache.cache_manager:Found 16 cached questions for Biology/o_level across 2 years
 INFO:src.ui.components.profile.subjects.subject_list:[SubjectList] Attempting connect for Biology...
@@ -283,79 +243,79 @@ DEBUG: _update_header_status called for Subject: Biology
 DEBUG: Checking status for enabled level: o_level
 DEBUG: Cache data received for o_level: {'status': 'invalid', 'last_updated': None, 'question_count': 16, 'completion_percentage': 90.0, 'progress_status': 'idle'}
 DEBUG: Setting header status to Ready
-2025-04-30 23:15:49,245 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-05-04 12:42:00,612 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:49,245 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
+2025-05-04 12:42:00,613 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
 INFO:sqlalchemy.engine.Engine:SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
-2025-04-30 23:15:49,245 INFO sqlalchemy.engine.Engine [cached since 0.02323s ago] (4,)
-INFO:sqlalchemy.engine.Engine:[cached since 0.02323s ago] (4,)
-2025-04-30 23:15:49,245 INFO sqlalchemy.engine.Engine ROLLBACK
+2025-05-04 12:42:00,613 INFO sqlalchemy.engine.Engine [cached since 0.02372s ago] (4,)
+INFO:sqlalchemy.engine.Engine:[cached since 0.02372s ago] (4,)
+2025-05-04 12:42:00,613 INFO sqlalchemy.engine.Engine ROLLBACK
 INFO:sqlalchemy.engine.Engine:ROLLBACK
 INFO:src.ui.components.profile.subjects.subject_list:[SubjectList] Attempting connect for Computer Science...
 INFO:src.ui.components.profile.subjects.subject_list:[SubjectList] Connection for Computer Science successful: True
 SubjectCard init - Subject: Computer Science, Initial levels: {'grade_7': False, 'o_level': False, 'a_level': False}
 DEBUG: _update_header_status called for Subject: Computer Science
 DEBUG: Setting header status to No Levels Selected
-2025-04-30 23:15:49,248 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-05-04 12:42:00,616 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:49,248 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
+2025-05-04 12:42:00,616 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
 INFO:sqlalchemy.engine.Engine:SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
-2025-04-30 23:15:49,248 INFO sqlalchemy.engine.Engine [cached since 0.02649s ago] (3,)
-INFO:sqlalchemy.engine.Engine:[cached since 0.02649s ago] (3,)
-2025-04-30 23:15:49,248 INFO sqlalchemy.engine.Engine ROLLBACK
+2025-05-04 12:42:00,616 INFO sqlalchemy.engine.Engine [cached since 0.02699s ago] (3,)
+INFO:sqlalchemy.engine.Engine:[cached since 0.02699s ago] (3,)
+2025-05-04 12:42:00,616 INFO sqlalchemy.engine.Engine ROLLBACK
 INFO:sqlalchemy.engine.Engine:ROLLBACK
 INFO:src.ui.components.profile.subjects.subject_list:[SubjectList] Attempting connect for Physics...
 INFO:src.ui.components.profile.subjects.subject_list:[SubjectList] Connection for Physics successful: True
 SubjectCard init - Subject: Physics, Initial levels: {'grade_7': False, 'o_level': False, 'a_level': False}
 DEBUG: _update_header_status called for Subject: Physics
 DEBUG: Setting header status to No Levels Selected
-2025-04-30 23:15:49,251 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-05-04 12:42:00,619 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:49,252 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
+2025-05-04 12:42:00,619 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
 INFO:sqlalchemy.engine.Engine:SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
-2025-04-30 23:15:49,252 INFO sqlalchemy.engine.Engine [cached since 0.02997s ago] (5,)
-INFO:sqlalchemy.engine.Engine:[cached since 0.02997s ago] (5,)
-2025-04-30 23:15:49,252 INFO sqlalchemy.engine.Engine ROLLBACK
+2025-05-04 12:42:00,619 INFO sqlalchemy.engine.Engine [cached since 0.03024s ago] (5,)
+INFO:sqlalchemy.engine.Engine:[cached since 0.03024s ago] (5,)
+2025-05-04 12:42:00,619 INFO sqlalchemy.engine.Engine ROLLBACK
 INFO:sqlalchemy.engine.Engine:ROLLBACK
 INFO:src.ui.components.profile.subjects.subject_list:[SubjectList] Attempting connect for English Language...
 INFO:src.ui.components.profile.subjects.subject_list:[SubjectList] Connection for English Language successful: True
 SubjectCard init - Subject: English Language, Initial levels: {'grade_7': False, 'o_level': False, 'a_level': False}
 DEBUG: _update_header_status called for Subject: English Language
 DEBUG: Setting header status to No Levels Selected
-2025-04-30 23:15:49,256 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-05-04 12:42:00,622 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:49,256 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
+2025-05-04 12:42:00,622 INFO sqlalchemy.engine.Engine SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
 INFO:sqlalchemy.engine.Engine:SELECT subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM subjects 
 WHERE subjects.id = ?
-2025-04-30 23:15:49,256 INFO sqlalchemy.engine.Engine [cached since 0.03414s ago] (6,)
-INFO:sqlalchemy.engine.Engine:[cached since 0.03414s ago] (6,)
-2025-04-30 23:15:49,256 INFO sqlalchemy.engine.Engine ROLLBACK
+2025-05-04 12:42:00,622 INFO sqlalchemy.engine.Engine [cached since 0.03348s ago] (6,)
+INFO:sqlalchemy.engine.Engine:[cached since 0.03348s ago] (6,)
+2025-05-04 12:42:00,623 INFO sqlalchemy.engine.Engine ROLLBACK
 INFO:sqlalchemy.engine.Engine:ROLLBACK
 INFO:src.ui.components.profile.subjects.subject_list:[SubjectList] Attempting connect for Economics...
 INFO:src.ui.components.profile.subjects.subject_list:[SubjectList] Connection for Economics successful: True
 SubjectCard init - Subject: Economics, Initial levels: {'grade_7': False, 'o_level': False, 'a_level': False}
 DEBUG: _update_header_status called for Subject: Economics
 DEBUG: Setting header status to No Levels Selected
-2025-04-30 23:15:49,327 INFO sqlalchemy.engine.Engine ROLLBACK
+2025-05-04 12:42:00,749 INFO sqlalchemy.engine.Engine ROLLBACK
 INFO:sqlalchemy.engine.Engine:ROLLBACK
-2025-04-30 23:15:49.432 Python[317:10644597] +[IMKClient subclass]: chose IMKClient_Legacy
-INFO:src.data.cache.cache_manager:Found 16 cached questions for Biology/o_level across 2 years
 INFO:src.core.firebase.client:Found user document with ID: xRdFYm6W7mEfv7cfxxVK
+2025-05-04 12:42:00.988 Python[46629:11579041] +[IMKClient subclass]: chose IMKClient_Legacy
+INFO:src.data.cache.cache_manager:Found 16 cached questions for Biology/o_level across 2 years
 INFO:src.core.firebase.client:Found user document with ID: xRdFYm6W7mEfv7cfxxVK
 INFO:src.core.firebase.client:Successfully retrieved subscription status for user
 INFO:src.core.mongodb.client:Extracted subscription type: trial
@@ -383,38 +343,38 @@ DEBUG: _update_header_status called for Subject: English Language
 DEBUG: Setting header status to No Levels Selected
 DEBUG: _update_header_status called for Subject: Economics
 DEBUG: Setting header status to No Levels Selected
-2025-04-30 23:15:50,689 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-05-04 12:42:02,385 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:50,689 INFO sqlalchemy.engine.Engine SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
+2025-05-04 12:42:02,385 INFO sqlalchemy.engine.Engine SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
 FROM users
  LIMIT ? OFFSET ?
 INFO:sqlalchemy.engine.Engine:SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
 FROM users
  LIMIT ? OFFSET ?
-2025-04-30 23:15:50,689 INFO sqlalchemy.engine.Engine [cached since 1.818s ago] (1, 0)
-INFO:sqlalchemy.engine.Engine:[cached since 1.818s ago] (1, 0)
-2025-04-30 23:15:50,692 INFO sqlalchemy.engine.Engine COMMIT
+2025-05-04 12:42:02,385 INFO sqlalchemy.engine.Engine [cached since 2.108s ago] (1, 0)
+INFO:sqlalchemy.engine.Engine:[cached since 2.108s ago] (1, 0)
+2025-05-04 12:42:02,389 INFO sqlalchemy.engine.Engine COMMIT
 INFO:sqlalchemy.engine.Engine:COMMIT
-2025-04-30 23:15:50,693 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-05-04 12:42:02,389 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:50,693 INFO sqlalchemy.engine.Engine SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
+2025-05-04 12:42:02,389 INFO sqlalchemy.engine.Engine SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
 FROM users
  LIMIT ? OFFSET ?
 INFO:sqlalchemy.engine.Engine:SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
 FROM users
  LIMIT ? OFFSET ?
-2025-04-30 23:15:50,693 INFO sqlalchemy.engine.Engine [cached since 1.821s ago] (1, 0)
-INFO:sqlalchemy.engine.Engine:[cached since 1.821s ago] (1, 0)
-2025-04-30 23:15:50,696 INFO sqlalchemy.engine.Engine SELECT user_subjects.id AS user_subjects_id, user_subjects.user_id AS user_subjects_user_id, user_subjects.subject_id AS user_subjects_subject_id, user_subjects.grade_7 AS user_subjects_grade_7, user_subjects.o_level AS user_subjects_o_level, user_subjects.a_level AS user_subjects_a_level, user_subjects.created_at AS user_subjects_created_at, user_subjects.updated_at AS user_subjects_updated_at, subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
+2025-05-04 12:42:02,389 INFO sqlalchemy.engine.Engine [cached since 2.112s ago] (1, 0)
+INFO:sqlalchemy.engine.Engine:[cached since 2.112s ago] (1, 0)
+2025-05-04 12:42:02,393 INFO sqlalchemy.engine.Engine SELECT user_subjects.id AS user_subjects_id, user_subjects.user_id AS user_subjects_user_id, user_subjects.subject_id AS user_subjects_subject_id, user_subjects.grade_7 AS user_subjects_grade_7, user_subjects.o_level AS user_subjects_o_level, user_subjects.a_level AS user_subjects_a_level, user_subjects.created_at AS user_subjects_created_at, user_subjects.updated_at AS user_subjects_updated_at, subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM user_subjects JOIN subjects ON user_subjects.subject_id = subjects.id 
 WHERE user_subjects.user_id = ?
 INFO:sqlalchemy.engine.Engine:SELECT user_subjects.id AS user_subjects_id, user_subjects.user_id AS user_subjects_user_id, user_subjects.subject_id AS user_subjects_subject_id, user_subjects.grade_7 AS user_subjects_grade_7, user_subjects.o_level AS user_subjects_o_level, user_subjects.a_level AS user_subjects_a_level, user_subjects.created_at AS user_subjects_created_at, user_subjects.updated_at AS user_subjects_updated_at, subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM user_subjects JOIN subjects ON user_subjects.subject_id = subjects.id 
 WHERE user_subjects.user_id = ?
-2025-04-30 23:15:50,697 INFO sqlalchemy.engine.Engine [generated in 0.00014s] (1,)
-INFO:sqlalchemy.engine.Engine:[generated in 0.00014s] (1,)
+2025-05-04 12:42:02,393 INFO sqlalchemy.engine.Engine [generated in 0.00016s] (1,)
+INFO:sqlalchemy.engine.Engine:[generated in 0.00016s] (1,)
 INFO:src.data.database.operations:Found 6 subjects for user 1
-2025-04-30 23:15:50,697 INFO sqlalchemy.engine.Engine COMMIT
+2025-05-04 12:42:02,393 INFO sqlalchemy.engine.Engine COMMIT
 INFO:sqlalchemy.engine.Engine:COMMIT
 INFO:src.data.cache.cache_manager:Queuing update check for Biology/o_level
 INFO:src.data.cache.cache_manager:Queueing questions for caching: Biology at o_level (MongoDB level: olevel)
@@ -448,46 +408,50 @@ INFO:src.data.cache.cache_manager:MongoDB connected, checking for new content...
 Error getting cached subscription: Invalid isoformat string: ''
 Error getting cached subscription: Invalid isoformat string: ''
 Error getting cached subscription: Invalid isoformat string: ''
-2025-04-30 23:15:52,506 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-05-04 12:42:04,032 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:52,507 INFO sqlalchemy.engine.Engine SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
+2025-05-04 12:42:04,033 INFO sqlalchemy.engine.Engine SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
 FROM users
  LIMIT ? OFFSET ?
 INFO:sqlalchemy.engine.Engine:SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
 FROM users
  LIMIT ? OFFSET ?
-2025-04-30 23:15:52,507 INFO sqlalchemy.engine.Engine [cached since 3.635s ago] (1, 0)
-INFO:sqlalchemy.engine.Engine:[cached since 3.635s ago] (1, 0)
-2025-04-30 23:15:52,509 INFO sqlalchemy.engine.Engine COMMIT
+2025-05-04 12:42:04,033 INFO sqlalchemy.engine.Engine [cached since 3.755s ago] (1, 0)
+INFO:sqlalchemy.engine.Engine:[cached since 3.755s ago] (1, 0)
+2025-05-04 12:42:04,035 INFO sqlalchemy.engine.Engine COMMIT
 INFO:sqlalchemy.engine.Engine:COMMIT
-2025-04-30 23:15:52,509 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2025-05-04 12:42:04,035 INFO sqlalchemy.engine.Engine BEGIN (implicit)
 INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
-2025-04-30 23:15:52,509 INFO sqlalchemy.engine.Engine SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
+2025-05-04 12:42:04,035 INFO sqlalchemy.engine.Engine SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
 FROM users
  LIMIT ? OFFSET ?
 INFO:sqlalchemy.engine.Engine:SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
 FROM users
  LIMIT ? OFFSET ?
-2025-04-30 23:15:52,509 INFO sqlalchemy.engine.Engine [cached since 3.638s ago] (1, 0)
-INFO:sqlalchemy.engine.Engine:[cached since 3.638s ago] (1, 0)
-2025-04-30 23:15:52,512 INFO sqlalchemy.engine.Engine SELECT user_subjects.id AS user_subjects_id, user_subjects.user_id AS user_subjects_user_id, user_subjects.subject_id AS user_subjects_subject_id, user_subjects.grade_7 AS user_subjects_grade_7, user_subjects.o_level AS user_subjects_o_level, user_subjects.a_level AS user_subjects_a_level, user_subjects.created_at AS user_subjects_created_at, user_subjects.updated_at AS user_subjects_updated_at, subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
+2025-05-04 12:42:04,035 INFO sqlalchemy.engine.Engine [cached since 3.758s ago] (1, 0)
+INFO:sqlalchemy.engine.Engine:[cached since 3.758s ago] (1, 0)
+2025-05-04 12:42:04,038 INFO sqlalchemy.engine.Engine SELECT user_subjects.id AS user_subjects_id, user_subjects.user_id AS user_subjects_user_id, user_subjects.subject_id AS user_subjects_subject_id, user_subjects.grade_7 AS user_subjects_grade_7, user_subjects.o_level AS user_subjects_o_level, user_subjects.a_level AS user_subjects_a_level, user_subjects.created_at AS user_subjects_created_at, user_subjects.updated_at AS user_subjects_updated_at, subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM user_subjects JOIN subjects ON user_subjects.subject_id = subjects.id 
 WHERE user_subjects.user_id = ?
 INFO:sqlalchemy.engine.Engine:SELECT user_subjects.id AS user_subjects_id, user_subjects.user_id AS user_subjects_user_id, user_subjects.subject_id AS user_subjects_subject_id, user_subjects.grade_7 AS user_subjects_grade_7, user_subjects.o_level AS user_subjects_o_level, user_subjects.a_level AS user_subjects_a_level, user_subjects.created_at AS user_subjects_created_at, user_subjects.updated_at AS user_subjects_updated_at, subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
 FROM user_subjects JOIN subjects ON user_subjects.subject_id = subjects.id 
 WHERE user_subjects.user_id = ?
-2025-04-30 23:15:52,512 INFO sqlalchemy.engine.Engine [cached since 1.816s ago] (1,)
-INFO:sqlalchemy.engine.Engine:[cached since 1.816s ago] (1,)
+2025-05-04 12:42:04,038 INFO sqlalchemy.engine.Engine [cached since 1.646s ago] (1,)
+INFO:sqlalchemy.engine.Engine:[cached since 1.646s ago] (1,)
 INFO:src.data.database.operations:Found 6 subjects for user 1
-2025-04-30 23:15:52,512 INFO sqlalchemy.engine.Engine COMMIT
+2025-05-04 12:42:04,038 INFO sqlalchemy.engine.Engine COMMIT
 INFO:sqlalchemy.engine.Engine:COMMIT
 INFO:src.data.cache.cache_manager:Queuing update check for Biology/o_level
 INFO:src.data.cache.cache_manager:Queueing questions for caching: Biology at o_level (MongoDB level: olevel)
 INFO:src.core.mongodb.client:Getting questions for Biology at olevel level (limit: 50)
 INFO:src.core.firebase.client:Found user document with ID: xRdFYm6W7mEfv7cfxxVK
+INFO:src.core.firebase.client:Successfully retrieved subscription status for user
+INFO:src.core.mongodb.client:Extracted subscription type: trial
+INFO:src.core.mongodb.client:Extracted subscription end date: 2027-01-01T12:53:22.707876
+INFO:src.core.mongodb.client:Subscription is active: Type=trial, Expires=2027-01-01 12:53:22.707876
 INFO:src.core.mongodb.client:Filtered to 14 questions with matching answers
 INFO:src.data.cache.cache_manager:Found 14 source question paper documents to process for Biology at o_level
-INFO:src.data.cache.cache_manager:Will perform full processing only for target _ids: {'67d50ebecec12312c07d55f9', '67d50f56da1cae21c770da4d'}
+INFO:src.data.cache.cache_manager:Will perform full processing only for target _ids: {'67d50f56da1cae21c770da4d', '67d50ebecec12312c07d55f9'}
 INFO:src.data.cache.cache_manager:--- Processing Question Paper #1/14 with _id: 67d42cf3b2ed25f8c739ec59 ---
 WARNING:src.data.cache.cache_manager:Skipping image processing for Q 1, Img 0: Missing URL.
 INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/1.json
@@ -540,32 +504,21 @@ WARNING:src.data.cache.cache_manager:Skipping image processing for Q 2, Img 1: M
 INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/2.json
 INFO:src.data.cache.cache_manager:--- Processing Question Paper #10/14 with _id: 67d50ebecec12312c07d55f9 ---
 INFO:src.data.cache.cache_manager:Fetching initial content for q#1, img#0 from URL: https://ibb.co/9H2PtG9F
-INFO:src.core.firebase.client:Successfully retrieved subscription status for user
-INFO:src.core.mongodb.client:Extracted subscription type: trial
-INFO:src.core.mongodb.client:Extracted subscription end date: 2027-01-01T12:53:22.707876
-INFO:src.core.mongodb.client:Subscription is active: Type=trial, Expires=2027-01-01 12:53:22.707876
 INFO:src.core.firebase.client:Found user document with ID: xRdFYm6W7mEfv7cfxxVK
-INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/9H2PtG9F
-INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/9H2PtG9F...
-INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/CKvL2W5k/pdf-full-page-2.png
-INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/CKvL2W5k/pdf-full-page-2.png
-INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
 INFO:src.core.firebase.client:Successfully retrieved subscription status for user
 INFO:src.core.mongodb.client:Extracted subscription type: trial
 INFO:src.core.mongodb.client:Extracted subscription end date: 2027-01-01T12:53:22.707876
 INFO:src.core.mongodb.client:Subscription is active: Type=trial, Expires=2027-01-01 12:53:22.707876
-INFO:src.data.cache.cache_manager:Successfully obtained image bytes (99452 bytes) from second request.
-INFO:src.data.cache.cache_manager:Saving actual image content (99452 bytes) to: src/data/cache/assets/biology/o_level/2022/q1_img_0.png
-INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2022/q1_img_0.png
-INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 1, Img 0: src/data/cache/assets/biology/o_level/2022/q1_img_0.png
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/1.json
-INFO:src.data.cache.cache_manager:Fetching initial content for q#2, img#0 from URL: https://ibb.co/spNDtCW0
 INFO:src.core.mongodb.client:Standardized subject: 'biology', Question level: 'olevel', Answer level: 'OLevel'
 INFO:src.core.mongodb.client:Executing MongoDB query: {'paper_meta.Subject': {'$regex': 'biology', '$options': 'i'}, 'paper_meta.Level': 'olevel'}
 INFO:src.core.mongodb.client:Found 24 question documents
+INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/9H2PtG9F
+INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/9H2PtG9F...
+INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/CKvL2W5k/pdf-full-page-2.png
+INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/CKvL2W5k/pdf-full-page-2.png
 INFO:src.core.mongodb.client:Filtered to 14 questions with matching answers
 INFO:src.data.cache.cache_manager:Found 14 source question paper documents to process for Biology at o_level
-INFO:src.data.cache.cache_manager:Will perform full processing only for target _ids: {'67d50ebecec12312c07d55f9', '67d50f56da1cae21c770da4d'}
+INFO:src.data.cache.cache_manager:Will perform full processing only for target _ids: {'67d50f56da1cae21c770da4d', '67d50ebecec12312c07d55f9'}
 INFO:src.data.cache.cache_manager:--- Processing Question Paper #1/14 with _id: 67d42cf3b2ed25f8c739ec59 ---
 WARNING:src.data.cache.cache_manager:Skipping image processing for Q 1, Img 0: Missing URL.
 INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/1.json
@@ -618,6 +571,13 @@ WARNING:src.data.cache.cache_manager:Skipping image processing for Q 2, Img 1: M
 INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/2.json
 INFO:src.data.cache.cache_manager:--- Processing Question Paper #10/14 with _id: 67d50ebecec12312c07d55f9 ---
 INFO:src.data.cache.cache_manager:Fetching initial content for q#1, img#0 from URL: https://ibb.co/9H2PtG9F
+INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
+INFO:src.data.cache.cache_manager:Successfully obtained image bytes (99452 bytes) from second request.
+INFO:src.data.cache.cache_manager:Saving actual image content (99452 bytes) to: src/data/cache/assets/biology/o_level/2022/q1_img_0.png
+INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2022/q1_img_0.png
+INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 1, Img 0: src/data/cache/assets/biology/o_level/2022/q1_img_0.png
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/1.json
+INFO:src.data.cache.cache_manager:Fetching initial content for q#2, img#0 from URL: https://ibb.co/spNDtCW0
 INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/spNDtCW0
 INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/spNDtCW0...
 INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/5XSz2kKN/pdf-full-page-6.png
@@ -641,11 +601,6 @@ INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets
 INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 1, Img 0: src/data/cache/assets/biology/o_level/2022/q1_img_0.png
 INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/1.json
 INFO:src.data.cache.cache_manager:Fetching initial content for q#2, img#0 from URL: https://ibb.co/spNDtCW0
-ERROR:src.data.cache.cache_manager:Network error during image processing for q#3, img#0 (Initial URL: https://ibb.co/B5pxY5Fpnull): 404 Client Error: Not Found for url: https://ibb.co/B5pxY5Fpnull
-WARNING:src.data.cache.cache_manager:Download failed for Q 3, Img 0, URL: https://ibb.co/B5pxY5Fpnull
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/3.json
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/4.json
-INFO:src.data.cache.cache_manager:Fetching initial content for q#5, img#0 from URL: https://ibb.co/zW7Y88NN
 INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/spNDtCW0
 INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/spNDtCW0...
 INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/5XSz2kKN/pdf-full-page-6.png
@@ -658,62 +613,11 @@ INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 2, 
 INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/2.json
 INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/3.json
 INFO:src.data.cache.cache_manager:Fetching initial content for q#3, img#0 from URL: https://ibb.co/B5pxY5Fpnull
-INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/zW7Y88NN
-INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/zW7Y88NN...
-INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/Q7CR88XX/pdf-full-page-11.png
-INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/Q7CR88XX/pdf-full-page-11.png
-INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
-INFO:src.data.cache.cache_manager:Successfully obtained image bytes (79247 bytes) from second request.
-INFO:src.data.cache.cache_manager:Saving actual image content (79247 bytes) to: src/data/cache/assets/biology/o_level/2022/q5_img_0.png
-INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2022/q5_img_0.png
-INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 5, Img 0: src/data/cache/assets/biology/o_level/2022/q5_img_0.png
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/5.json
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/6.json
-INFO:src.data.cache.cache_manager:Fetching initial content for q#7, img#0 from URL: https://ibb.co/FqkZwjhM
 ERROR:src.data.cache.cache_manager:Network error during image processing for q#3, img#0 (Initial URL: https://ibb.co/B5pxY5Fpnull): 404 Client Error: Not Found for url: https://ibb.co/B5pxY5Fpnull
 WARNING:src.data.cache.cache_manager:Download failed for Q 3, Img 0, URL: https://ibb.co/B5pxY5Fpnull
 INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/3.json
 INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/4.json
 INFO:src.data.cache.cache_manager:Fetching initial content for q#5, img#0 from URL: https://ibb.co/zW7Y88NN
-INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/FqkZwjhM
-INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/FqkZwjhM...
-INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/cXKfF7yH/pdf-full-page-14.png
-INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/cXKfF7yH/pdf-full-page-14.png
-INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
-INFO:src.data.cache.cache_manager:Successfully obtained image bytes (78380 bytes) from second request.
-INFO:src.data.cache.cache_manager:Saving actual image content (78380 bytes) to: src/data/cache/assets/biology/o_level/2022/q7_img_0.png
-INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2022/q7_img_0.png
-INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 7, Img 0: src/data/cache/assets/biology/o_level/2022/q7_img_0.png
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/7.json
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/8.json
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/9.json
-INFO:src.data.cache.cache_manager:--- Processing Question Paper #11/14 with _id: 67d50efd3fcaaa35de32af3b ---
-WARNING:src.data.cache.cache_manager:Skipping image processing for Q 1, Img 0: Missing URL.
-WARNING:src.data.cache.cache_manager:Skipping image processing for Q 1, Img 1: Missing URL.
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/1.json
-WARNING:src.data.cache.cache_manager:Skipping image processing for Q 2, Img 0: Missing URL.
-WARNING:src.data.cache.cache_manager:Skipping image processing for Q 2, Img 1: Missing URL.
-WARNING:src.data.cache.cache_manager:Skipping image processing for Q 2, Img 2: Missing URL.
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/2.json
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/3.json
-INFO:src.data.cache.cache_manager:--- Processing Question Paper #12/14 with _id: 67d50f181fa4c87210e21d60 ---
-WARNING:src.data.cache.cache_manager:Skipping image processing for Q 1, Img 0: Missing URL.
-WARNING:src.data.cache.cache_manager:Skipping image processing for Q 1, Img 1: Missing URL.
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/1.json
-WARNING:src.data.cache.cache_manager:Skipping image processing for Q 2, Img 0: Missing URL.
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/2.json
-WARNING:src.data.cache.cache_manager:Skipping image processing for Q 3, Img 0: Missing URL.
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/3.json
-INFO:src.data.cache.cache_manager:--- Processing Question Paper #13/14 with _id: 67d50f376c04f34274cb2e71 ---
-WARNING:src.data.cache.cache_manager:Skipping image processing for Q 1, Img 0: Missing URL.
-WARNING:src.data.cache.cache_manager:Skipping image processing for Q 1, Img 1: Missing URL.
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/1.json
-WARNING:src.data.cache.cache_manager:Skipping image processing for Q 2, Img 0: Missing URL.
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/2.json
-WARNING:src.data.cache.cache_manager:Skipping image processing for Q 3, Img 0: Missing URL.
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/3.json
-INFO:src.data.cache.cache_manager:--- Processing Question Paper #14/14 with _id: 67d50f56da1cae21c770da4d ---
-INFO:src.data.cache.cache_manager:Fetching initial content for q#1, img#0 from URL: https://ibb.co/JRD3pthv
 INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/zW7Y88NN
 INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/zW7Y88NN...
 INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/Q7CR88XX/pdf-full-page-11.png
@@ -765,21 +669,15 @@ WARNING:src.data.cache.cache_manager:Skipping image processing for Q 3, Img 0: M
 INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/3.json
 INFO:src.data.cache.cache_manager:--- Processing Question Paper #14/14 with _id: 67d50f56da1cae21c770da4d ---
 INFO:src.data.cache.cache_manager:Fetching initial content for q#1, img#0 from URL: https://ibb.co/JRD3pthv
+ERROR:src.data.cache.cache_manager:Network error during image processing for q#3, img#0 (Initial URL: https://ibb.co/B5pxY5Fpnull): 404 Client Error: Not Found for url: https://ibb.co/B5pxY5Fpnull
+WARNING:src.data.cache.cache_manager:Download failed for Q 3, Img 0, URL: https://ibb.co/B5pxY5Fpnull
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/3.json
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/4.json
+INFO:src.data.cache.cache_manager:Fetching initial content for q#5, img#0 from URL: https://ibb.co/zW7Y88NN
 INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/JRD3pthv
 INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/JRD3pthv...
 INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/C5RP98rb/pdf-full-page-1.png
 INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/C5RP98rb/pdf-full-page-1.png
-INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/JRD3pthv
-INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/JRD3pthv...
-INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/C5RP98rb/pdf-full-page-1.png
-INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/C5RP98rb/pdf-full-page-1.png
-INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
-INFO:src.data.cache.cache_manager:Successfully obtained image bytes (61813 bytes) from second request.
-INFO:src.data.cache.cache_manager:Saving actual image content (61813 bytes) to: src/data/cache/assets/biology/o_level/2024/q1_fig_11.png
-INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2024/q1_fig_11.png
-INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 1, Img 0: src/data/cache/assets/biology/o_level/2024/q1_fig_11.png
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/1.json
-INFO:src.data.cache.cache_manager:Fetching initial content for q#2, img#0 from URL: https://ibb.co/8gNNMwMr
 INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
 INFO:src.data.cache.cache_manager:Successfully obtained image bytes (61813 bytes) from second request.
 INFO:src.data.cache.cache_manager:Saving actual image content (61813 bytes) to: src/data/cache/assets/biology/o_level/2024/q1_fig_11.png
@@ -792,14 +690,120 @@ INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image 
 INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/qY77B8BN/pdf-full-page-4.png
 INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/qY77B8BN/pdf-full-page-4.png
 INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
-INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/8gNNMwMr
-INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/8gNNMwMr...
 INFO:src.data.cache.cache_manager:Successfully obtained image bytes (47405 bytes) from second request.
 INFO:src.data.cache.cache_manager:Saving actual image content (47405 bytes) to: src/data/cache/assets/biology/o_level/2024/q2_fig_21.png
 INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2024/q2_fig_21.png
 INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 2, Img 0: src/data/cache/assets/biology/o_level/2024/q2_fig_21.png
 INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/2.json
 INFO:src.data.cache.cache_manager:Fetching initial content for q#3, img#0 from URL: https://ibb.co/mCfLXfxR
+INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/zW7Y88NN
+INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/zW7Y88NN...
+INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/Q7CR88XX/pdf-full-page-11.png
+INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/Q7CR88XX/pdf-full-page-11.png
+INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
+INFO:src.data.cache.cache_manager:Successfully obtained image bytes (79247 bytes) from second request.
+INFO:src.data.cache.cache_manager:Saving actual image content (79247 bytes) to: src/data/cache/assets/biology/o_level/2022/q5_img_0.png
+INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2022/q5_img_0.png
+INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 5, Img 0: src/data/cache/assets/biology/o_level/2022/q5_img_0.png
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/5.json
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/6.json
+INFO:src.data.cache.cache_manager:Fetching initial content for q#7, img#0 from URL: https://ibb.co/FqkZwjhM
+INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/mCfLXfxR
+INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/mCfLXfxR...
+INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/ynHwYH3N/pdf-full-page-7.png
+INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/ynHwYH3N/pdf-full-page-7.png
+INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
+INFO:src.data.cache.cache_manager:Successfully obtained image bytes (96181 bytes) from second request.
+INFO:src.data.cache.cache_manager:Saving actual image content (96181 bytes) to: src/data/cache/assets/biology/o_level/2024/q3_fig_31.png
+INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2024/q3_fig_31.png
+INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 3, Img 0: src/data/cache/assets/biology/o_level/2024/q3_fig_31.png
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/3.json
+INFO:src.data.cache.cache_manager:Fetching initial content for q#4, img#0 from URL: https://ibb.co/spZCccMT
+INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/FqkZwjhM
+INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/spZCccMT
+INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/FqkZwjhM...
+INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/spZCccMT...
+INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/cXKfF7yH/pdf-full-page-14.png
+INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/cXKfF7yH/pdf-full-page-14.png
+INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/bjkFYY84/pdf-full-page-8.png
+INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/bjkFYY84/pdf-full-page-8.png
+INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
+INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
+INFO:src.data.cache.cache_manager:Successfully obtained image bytes (63318 bytes) from second request.
+INFO:src.data.cache.cache_manager:Saving actual image content (63318 bytes) to: src/data/cache/assets/biology/o_level/2024/q4_fig_41.png
+INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2024/q4_fig_41.png
+INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 4, Img 0: src/data/cache/assets/biology/o_level/2024/q4_fig_41.png
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/4.json
+INFO:src.data.cache.cache_manager:Fetching initial content for q#5, img#0 from URL: https://ibb.co/9kyd2cP9
+INFO:src.data.cache.cache_manager:Successfully obtained image bytes (78380 bytes) from second request.
+INFO:src.data.cache.cache_manager:Saving actual image content (78380 bytes) to: src/data/cache/assets/biology/o_level/2022/q7_img_0.png
+INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2022/q7_img_0.png
+INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 7, Img 0: src/data/cache/assets/biology/o_level/2022/q7_img_0.png
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/7.json
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/8.json
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2022/9.json
+INFO:src.data.cache.cache_manager:--- Processing Question Paper #11/14 with _id: 67d50efd3fcaaa35de32af3b ---
+WARNING:src.data.cache.cache_manager:Skipping image processing for Q 1, Img 0: Missing URL.
+WARNING:src.data.cache.cache_manager:Skipping image processing for Q 1, Img 1: Missing URL.
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/1.json
+WARNING:src.data.cache.cache_manager:Skipping image processing for Q 2, Img 0: Missing URL.
+WARNING:src.data.cache.cache_manager:Skipping image processing for Q 2, Img 1: Missing URL.
+WARNING:src.data.cache.cache_manager:Skipping image processing for Q 2, Img 2: Missing URL.
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/2.json
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/3.json
+INFO:src.data.cache.cache_manager:--- Processing Question Paper #12/14 with _id: 67d50f181fa4c87210e21d60 ---
+WARNING:src.data.cache.cache_manager:Skipping image processing for Q 1, Img 0: Missing URL.
+WARNING:src.data.cache.cache_manager:Skipping image processing for Q 1, Img 1: Missing URL.
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/1.json
+WARNING:src.data.cache.cache_manager:Skipping image processing for Q 2, Img 0: Missing URL.
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/2.json
+WARNING:src.data.cache.cache_manager:Skipping image processing for Q 3, Img 0: Missing URL.
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/3.json
+INFO:src.data.cache.cache_manager:--- Processing Question Paper #13/14 with _id: 67d50f376c04f34274cb2e71 ---
+WARNING:src.data.cache.cache_manager:Skipping image processing for Q 1, Img 0: Missing URL.
+WARNING:src.data.cache.cache_manager:Skipping image processing for Q 1, Img 1: Missing URL.
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/1.json
+WARNING:src.data.cache.cache_manager:Skipping image processing for Q 2, Img 0: Missing URL.
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/2.json
+WARNING:src.data.cache.cache_manager:Skipping image processing for Q 3, Img 0: Missing URL.
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/3.json
+INFO:src.data.cache.cache_manager:--- Processing Question Paper #14/14 with _id: 67d50f56da1cae21c770da4d ---
+INFO:src.data.cache.cache_manager:Fetching initial content for q#1, img#0 from URL: https://ibb.co/JRD3pthv
+INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/JRD3pthv
+INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/JRD3pthv...
+INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/C5RP98rb/pdf-full-page-1.png
+INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/C5RP98rb/pdf-full-page-1.png
+INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
+INFO:src.data.cache.cache_manager:Successfully obtained image bytes (61813 bytes) from second request.
+INFO:src.data.cache.cache_manager:Saving actual image content (61813 bytes) to: src/data/cache/assets/biology/o_level/2024/q1_fig_11.png
+INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2024/q1_fig_11.png
+INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 1, Img 0: src/data/cache/assets/biology/o_level/2024/q1_fig_11.png
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/1.json
+INFO:src.data.cache.cache_manager:Fetching initial content for q#2, img#0 from URL: https://ibb.co/8gNNMwMr
+INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/9kyd2cP9
+INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/9kyd2cP9...
+INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/ZpcbKG96/pdf-full-page-10.png
+INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/ZpcbKG96/pdf-full-page-10.png
+INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
+INFO:src.data.cache.cache_manager:Successfully obtained image bytes (85422 bytes) from second request.
+INFO:src.data.cache.cache_manager:Saving actual image content (85422 bytes) to: src/data/cache/assets/biology/o_level/2024/q5_fig_51.png
+INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2024/q5_fig_51.png
+INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 5, Img 0: src/data/cache/assets/biology/o_level/2024/q5_fig_51.png
+INFO:src.data.cache.cache_manager:Fetching initial content for q#5, img#1 from URL: https://ibb.co/Df05qBsW
+INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/Df05qBsW
+INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/Df05qBsW...
+INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/pjYJmHGw/pdf-full-page-12.png
+INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/pjYJmHGw/pdf-full-page-12.png
+INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
+INFO:src.data.cache.cache_manager:Successfully obtained image bytes (88663 bytes) from second request.
+INFO:src.data.cache.cache_manager:Saving actual image content (88663 bytes) to: src/data/cache/assets/biology/o_level/2024/q5_fig_52.png
+INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2024/q5_fig_52.png
+INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 5, Img 1: src/data/cache/assets/biology/o_level/2024/q5_fig_52.png
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/5.json
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/6.json
+INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/7.json
+INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/8gNNMwMr
+INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/8gNNMwMr...
 INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/qY77B8BN/pdf-full-page-4.png
 INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/qY77B8BN/pdf-full-page-4.png
 INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
@@ -809,459 +813,3 @@ INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets
 INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 2, Img 0: src/data/cache/assets/biology/o_level/2024/q2_fig_21.png
 INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/2.json
 INFO:src.data.cache.cache_manager:Fetching initial content for q#3, img#0 from URL: https://ibb.co/mCfLXfxR
-INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/mCfLXfxR
-INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/mCfLXfxR...
-INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/ynHwYH3N/pdf-full-page-7.png
-INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/ynHwYH3N/pdf-full-page-7.png
-INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
-INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/mCfLXfxR
-INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/mCfLXfxR...
-INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/ynHwYH3N/pdf-full-page-7.png
-INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/ynHwYH3N/pdf-full-page-7.png
-INFO:src.data.cache.cache_manager:Successfully obtained image bytes (96181 bytes) from second request.
-INFO:src.data.cache.cache_manager:Saving actual image content (96181 bytes) to: src/data/cache/assets/biology/o_level/2024/q3_fig_31.png
-INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2024/q3_fig_31.png
-INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 3, Img 0: src/data/cache/assets/biology/o_level/2024/q3_fig_31.png
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/3.json
-INFO:src.data.cache.cache_manager:Fetching initial content for q#4, img#0 from URL: https://ibb.co/spZCccMT
-INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
-INFO:src.data.cache.cache_manager:Successfully obtained image bytes (96181 bytes) from second request.
-INFO:src.data.cache.cache_manager:Saving actual image content (96181 bytes) to: src/data/cache/assets/biology/o_level/2024/q3_fig_31.png
-INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2024/q3_fig_31.png
-INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 3, Img 0: src/data/cache/assets/biology/o_level/2024/q3_fig_31.png
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/3.json
-INFO:src.data.cache.cache_manager:Fetching initial content for q#4, img#0 from URL: https://ibb.co/spZCccMT
-INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/spZCccMT
-INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/spZCccMT...
-INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/bjkFYY84/pdf-full-page-8.png
-INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/bjkFYY84/pdf-full-page-8.png
-INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
-INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/spZCccMT
-INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/spZCccMT...
-INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/bjkFYY84/pdf-full-page-8.png
-INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/bjkFYY84/pdf-full-page-8.png
-INFO:src.data.cache.cache_manager:Successfully obtained image bytes (63318 bytes) from second request.
-INFO:src.data.cache.cache_manager:Saving actual image content (63318 bytes) to: src/data/cache/assets/biology/o_level/2024/q4_fig_41.png
-INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2024/q4_fig_41.png
-INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 4, Img 0: src/data/cache/assets/biology/o_level/2024/q4_fig_41.png
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/4.json
-INFO:src.data.cache.cache_manager:Fetching initial content for q#5, img#0 from URL: https://ibb.co/9kyd2cP9
-INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
-INFO:src.data.cache.cache_manager:Successfully obtained image bytes (63318 bytes) from second request.
-INFO:src.data.cache.cache_manager:Saving actual image content (63318 bytes) to: src/data/cache/assets/biology/o_level/2024/q4_fig_41.png
-INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2024/q4_fig_41.png
-INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 4, Img 0: src/data/cache/assets/biology/o_level/2024/q4_fig_41.png
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/4.json
-INFO:src.data.cache.cache_manager:Fetching initial content for q#5, img#0 from URL: https://ibb.co/9kyd2cP9
-INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/9kyd2cP9
-INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/9kyd2cP9...
-INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/ZpcbKG96/pdf-full-page-10.png
-INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/ZpcbKG96/pdf-full-page-10.png
-INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/9kyd2cP9
-INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/9kyd2cP9...
-INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/ZpcbKG96/pdf-full-page-10.png
-INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/ZpcbKG96/pdf-full-page-10.png
-INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
-INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
-INFO:src.data.cache.cache_manager:Successfully obtained image bytes (85422 bytes) from second request.
-INFO:src.data.cache.cache_manager:Saving actual image content (85422 bytes) to: src/data/cache/assets/biology/o_level/2024/q5_fig_51.png
-INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2024/q5_fig_51.png
-INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 5, Img 0: src/data/cache/assets/biology/o_level/2024/q5_fig_51.png
-INFO:src.data.cache.cache_manager:Fetching initial content for q#5, img#1 from URL: https://ibb.co/Df05qBsW
-INFO:src.data.cache.cache_manager:Successfully obtained image bytes (85422 bytes) from second request.
-INFO:src.data.cache.cache_manager:Saving actual image content (85422 bytes) to: src/data/cache/assets/biology/o_level/2024/q5_fig_51.png
-INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2024/q5_fig_51.png
-INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 5, Img 0: src/data/cache/assets/biology/o_level/2024/q5_fig_51.png
-INFO:src.data.cache.cache_manager:Fetching initial content for q#5, img#1 from URL: https://ibb.co/Df05qBsW
-INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/Df05qBsW
-INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/Df05qBsW...
-INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/pjYJmHGw/pdf-full-page-12.png
-INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/pjYJmHGw/pdf-full-page-12.png
-INFO:src.data.cache.cache_manager:Initial Content-Type: text/html; charset=utf-8 for URL: https://ibb.co/Df05qBsW
-INFO:src.data.cache.cache_manager:Content is HTML. Parsing to find direct image link for https://ibb.co/Df05qBsW...
-INFO:src.data.cache.cache_manager:Extracted potential direct image URL: https://i.ibb.co/pjYJmHGw/pdf-full-page-12.png
-INFO:src.data.cache.cache_manager:Fetching actual image content from: https://i.ibb.co/pjYJmHGw/pdf-full-page-12.png
-INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
-INFO:src.data.cache.cache_manager:Successfully obtained image bytes (88663 bytes) from second request.
-INFO:src.data.cache.cache_manager:Saving actual image content (88663 bytes) to: src/data/cache/assets/biology/o_level/2024/q5_fig_52.png
-INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2024/q5_fig_52.png
-INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 5, Img 1: src/data/cache/assets/biology/o_level/2024/q5_fig_52.png
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/5.json
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/6.json
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/7.json
-INFO:src.data.cache.cache_manager:SECOND request status: 200, Content-Type: image/png
-INFO:src.data.cache.cache_manager:Successfully obtained image bytes (88663 bytes) from second request.
-INFO:src.data.cache.cache_manager:Saving actual image content (88663 bytes) to: src/data/cache/assets/biology/o_level/2024/q5_fig_52.png
-INFO:src.data.cache.cache_manager:Successfully saved file: src/data/cache/assets/biology/o_level/2024/q5_fig_52.png
-INFO:src.data.cache.cache_manager:Successfully downloaded and got path for Q 5, Img 1: src/data/cache/assets/biology/o_level/2024/q5_fig_52.png
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/5.json
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/6.json
-INFO:src.data.cache.cache_manager:Successfully saved question file: src/data/cache/questions/biology/o_level/2024/7.json
-INFO:src.ui.components.profile.subjects.subject_list:[SubjectList] Received test request for Biology/o_level, emitting signal.
-INFO:src.ui.components.profile.subjects.subject_selector:SubjectSelector received test request for Biology/o_level, emitting signal.
-INFO:src.ui.main_window:Switching to Question View for Biology/o_level
-INFO:src.ui.main_window:--- Checking services status before creating QuestionView in show_question_view ---
-INFO:src.ui.main_window:ID of 'services' module in main_window.py: 4366877376
-INFO:src.ui.main_window:Value of services.user_history_manager in main_window.py: <src.core.history.user_history_manager.UserHistoryManager object at 0x1119a4ad0>
-INFO:src.ui.main_window:Creating new QuestionView instance...
-INFO:src.ui.views.question_view:Loading random question for Biology - o_level
-INFO:src.data.cache.cache_manager:Selected random question file: src/data/cache/questions/biology/o_level/2022/3.json
-INFO:src.data.cache.cache_manager:Constructed potential answer file path: src/data/cache/answers/biology/o_level/2022/3.json
-INFO:src.data.cache.cache_manager:Checking existence of answer file at 'src/data/cache/answers/biology/o_level/2022/3.json': True
-INFO:src.data.cache.cache_manager:Successfully loaded answer data for 3.json
-INFO:src.data.cache.cache_manager:Final combined question_data dictionary being returned for src/data/cache/questions/biology/o_level/2022/3.json:
-{'answer_ref': '3.json',
- 'context_materials': None,
- 'correct_answer_data': {'answers': [{'answer_text': 'Answers related to plant '
-                                                     'cuttings, asexual '
-                                                     'reproduction, xylem '
-                                                     'function, and selective '
-                                                     'breeding in dahlias.',
-                                      'marking_scheme': {'total_marks': 14},
-                                      'question_number': 3,
-                                      'sub_answers': [{'marking_notes': 'removal '
-                                                                        'of '
-                                                                        'leaves: '
-                                                                        'reduction '
-                                                                        '+ '
-                                                                        'surface '
-                                                                        'area '
-                                                                        '/ '
-                                                                        'stomata '
-                                                                        '; (1 '
-                                                                        'mark)\n'
-                                                                        'covering '
-                                                                        'with '
-                                                                        'transparent '
-                                                                        'bag: '
-                                                                        'increase '
-                                                                        'humidity '
-                                                                        '; (1 '
-                                                                        'mark)\n'
-                                                                        'to '
-                                                                        'reduce '
-                                                                        'transpiration '
-                                                                        'OR '
-                                                                        'evaporation '
-                                                                        '/ '
-                                                                        'water '
-                                                                        'loss '
-                                                                        '; (1 '
-                                                                        'mark)',
-                                                       'marks': 3,
-                                                       'sub_number': 'a(i)',
-                                                       'text': 'removal of '
-                                                               'leaves:\n'
-                                                               'reduction + '
-                                                               'surface area / '
-                                                               'stomata ;\n'
-                                                               '\n'
-                                                               'covering with '
-                                                               'transparent '
-                                                               'bag:\n'
-                                                               'increase '
-                                                               'humidity ;\n'
-                                                               '\n'
-                                                               'to reduce '
-                                                               'transpiration '
-                                                               'OR evaporation '
-                                                               '/ water loss '
-                                                               ';'},
-                                                      {'marking_notes': 'Any '
-                                                                        'two '
-                                                                        'points '
-                                                                        'required. '
-                                                                        '(1 '
-                                                                        'mark '
-                                                                        'each)',
-                                                       'marks': 2,
-                                                       'sub_number': 'a(ii)',
-                                                       'text': 'production of '
-                                                               'genetically '
-                                                               'identical '
-                                                               'offspring / '
-                                                               'clones ;\n'
-                                                               'mitosis ;\n'
-                                                               'from one '
-                                                               'parent/ AW;'},
-                                                      {'marking_notes': 'function: '
-                                                                        'xylem '
-                                                                        'vessels '
-                                                                        'transport '
-                                                                        'water '
-                                                                        'and/or '
-                                                                        'minerals '
-                                                                        '; (1 '
-                                                                        'mark)\n'
-                                                                        'adaptation: '
-                                                                        'long '
-                                                                        '/ '
-                                                                        'thin '
-                                                                        '/ no '
-                                                                        'end '
-                                                                        'cell '
-                                                                        'walls '
-                                                                        '/ '
-                                                                        'hollow '
-                                                                        'tubes '
-                                                                        '/ no '
-                                                                        'cytoplasm '
-                                                                        '; (1 '
-                                                                        'mark)\n'
-                                                                        'function: '
-                                                                        '(mechanical) '
-                                                                        'support '
-                                                                        '/ '
-                                                                        'keeps '
-                                                                        'stem '
-                                                                        'upright '
-                                                                        '; (1 '
-                                                                        'mark)\n'
-                                                                        'adaptation: '
-                                                                        'lignified '
-                                                                        'OR '
-                                                                        'woody '
-                                                                        '/ '
-                                                                        'strengthened '
-                                                                        '/ '
-                                                                        'hard '
-                                                                        '+ '
-                                                                        'walls '
-                                                                        '; (1 '
-                                                                        'mark)',
-                                                       'marks': 4,
-                                                       'sub_number': 'b',
-                                                       'text': 'function: '
-                                                               'xylem vessels '
-                                                               'transport '
-                                                               'water and/or '
-                                                               'minerals ;\n'
-                                                               'adaptation: '
-                                                               'long / thin / '
-                                                               'no end cell '
-                                                               'walls / hollow '
-                                                               'tubes / no '
-                                                               'cytoplasm ;\n'
-                                                               'function: '
-                                                               '(mechanical) '
-                                                               'support / '
-                                                               'keeps stem '
-                                                               'upright ;\n'
-                                                               'adaptation: '
-                                                               'lignified OR '
-                                                               'woody / '
-                                                               'strengthened / '
-                                                               'hard + walls '
-                                                               ';'},
-                                                      {'marking_notes': 'Any '
-                                                                        'five '
-                                                                        'points '
-                                                                        'required. '
-                                                                        '(1 '
-                                                                        'mark '
-                                                                        'each)',
-                                                       'marks': 5,
-                                                       'sub_number': 'c',
-                                                       'text': '1 artificial '
-                                                               'selection / '
-                                                               'selective '
-                                                               'breeding ;\n'
-                                                               '2 transfer '
-                                                               'pollen / '
-                                                               'pollination ;\n'
-                                                               '3 from anther '
-                                                               '/ stamen of '
-                                                               'one plant + '
-                                                               'e.g. red petal '
-                                                               'colour ;\n'
-                                                               '4 to stigma / '
-                                                               'carpel /pistil '
-                                                               'of another ;\n'
-                                                               '5 '
-                                                               'fertilisation '
-                                                               'OR gametes / '
-                                                               'genetic '
-                                                               'material + '
-                                                               'combined AW ;\n'
-                                                               '6 grow seeds '
-                                                               ';\n'
-                                                               '7 select the '
-                                                               'ones with best '
-                                                               'combination of '
-                                                               'characteristics '
-                                                               ';'}]}],
-                         'id': '67d50ebecec12312c07d55f9',
-                         'level': 'o_level',
-                         'question_number_str': '3',
-                         'subject': 'Biology',
-                         'year': '2022'},
- 'difficulty': {'justification': 'Covers concepts of plant transport, asexual '
-                                 'reproduction, and selective breeding.',
-                'level': 'Medium'},
- 'id': '67d50ebecec12312c07d55f9',
- 'images': [{'description': 'Diagram showing the process of taking cuttings '
-                            'from a dahlia plant.',
-             'label': None,
-             'local_path': None,
-             'url': 'https://ibb.co/B5pxY5Fpnull'}],
- 'level': 'o_level',
- 'marks': 14,
- 'question_number_str': '3',
- 'question_text': 'A gardener grows a species of dahlia, a flowering plant. '
-                  'Each year the gardener chooses his best plants and takes '
-                  'cuttings to make new plants.',
- 'sub_questions': [{'marks': 3,
-                    'sub_number': 'a(i)',
-                    'text': 'Removing the lower leaves and placing the '
-                            'cuttings in a transparent bag helps prevent them '
-                            'wilting until the roots develop.\n'
-                            '\n'
-                            'Suggest and explain how these two steps help to '
-                            'prevent wilting.'},
-                   {'marks': 2,
-                    'sub_number': 'a(ii)',
-                    'text': 'Taking cuttings is a commercial application of '
-                            'asexual reproduction.\n'
-                            'Define asexual reproduction.'},
-                   {'marks': 4,
-                    'sub_number': 'b',
-                    'text': 'The stems of the dahlia cuttings contain xylem '
-                            'vessels.\n'
-                            'Describe two functions of xylem vessels in young '
-                            'stems of dahlias.\n'
-                            'For each function explain one way in which xylem '
-                            'structure is adapted for this function.'},
-                   {'marks': 5,
-                    'sub_number': 'c',
-                    'text': "The gardener's dahlia cuttings grow into "
-                            'full-sized plants with flowers.\n'
-                            'The gardener decides that he would like to '
-                            'produce a plant that combines the '
-                            'disease-resistant characteristics of one of these '
-                            'plants with the red petal colour of another.\n'
-                            'With reference to named parts of the flowers, '
-                            'describe how he could achieve this.'}],
- 'subject': 'Biology',
- 'subtopic': 'Transport and Reproduction',
- 'tables': None,
- 'topic': 'Plant Biology',
- 'year': '2022'}
-INFO:src.ui.views.question_view:Determined project root: /Users/emmanuelsibanda/Desktop/GitHub/fundAI/EdTech Apps/The Examiner
-WARNING:src.ui.views.question_view:Image #0: Invalid local_path provided: None
-WARNING:src.ui.views.question_view:Image #0: Skipping link creation for Label='None'. Reason: label=False, local_path=False, is_str=False, abs_path_valid=False, path_exists=False.
-INFO:src.ui.views.question_view:Starting AIFeedbackWorker thread with structured answers...
-INFO:src.ui.views.question_view:AIFeedbackWorker started.
-INFO:src.core.ai.marker:Starting AI Evaluation (Explicit CoT + Enhanced Rationale/Study Topics).
-INFO:src.core.ai.marker:Found model at: /Users/emmanuelsibanda/Documents/models/llama/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf
-INFO:src.core.ai.marker:Loading model for evaluation: /Users/emmanuelsibanda/Documents/models/llama/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf...
-llama_init_from_model: n_ctx_per_seq (2048) < n_ctx_train (131072) -- the full capacity of the model will not be utilized
-ggml_metal_init: skipping kernel_get_rows_bf16                     (not supported)
-ggml_metal_init: skipping kernel_mul_mv_bf16_f32                   (not supported)
-ggml_metal_init: skipping kernel_mul_mv_bf16_f32_1row              (not supported)
-ggml_metal_init: skipping kernel_mul_mv_bf16_f32_l4                (not supported)
-ggml_metal_init: skipping kernel_mul_mv_bf16_bf16                  (not supported)
-ggml_metal_init: skipping kernel_mul_mv_id_bf16_f32                (not supported)
-ggml_metal_init: skipping kernel_mul_mm_bf16_f32                   (not supported)
-ggml_metal_init: skipping kernel_mul_mm_id_bf16_f32                (not supported)
-ggml_metal_init: skipping kernel_flash_attn_ext_bf16_h64           (not supported)
-ggml_metal_init: skipping kernel_flash_attn_ext_bf16_h80           (not supported)
-ggml_metal_init: skipping kernel_flash_attn_ext_bf16_h96           (not supported)
-ggml_metal_init: skipping kernel_flash_attn_ext_bf16_h112          (not supported)
-ggml_metal_init: skipping kernel_flash_attn_ext_bf16_h128          (not supported)
-ggml_metal_init: skipping kernel_flash_attn_ext_bf16_h256          (not supported)
-ggml_metal_init: skipping kernel_flash_attn_ext_vec_bf16_h128      (not supported)
-ggml_metal_init: skipping kernel_flash_attn_ext_vec_bf16_h256      (not supported)
-ggml_metal_init: skipping kernel_cpy_f32_bf16                      (not supported)
-ggml_metal_init: skipping kernel_cpy_bf16_f32                      (not supported)
-ggml_metal_init: skipping kernel_cpy_bf16_bf16                     (not supported)
-INFO:src.core.ai.marker:Model loaded.
-INFO:src.core.ai.marker:-----------------------------------------
-AI Input Data -> Question: A gardener grows a species of dahlia, a flowering plant. Each year the gardener chooses his best plants and takes cuttings to make new plants.
-AI Input Data -> Sub-Questions: [{'sub_number': 'a(i)', 'text': 'Removing the lower leaves and placing the cuttings in a transparent bag helps prevent them wilting until the roots develop.\n\nSuggest and explain how these two steps help to prevent wilting.', 'marks': 3}, {'sub_number': 'a(ii)', 'text': 'Taking cuttings is a commercial application of asexual reproduction.\nDefine asexual reproduction.', 'marks': 2}, {'sub_number': 'b', 'text': 'The stems of the dahlia cuttings contain xylem vessels.\nDescribe two functions of xylem vessels in young stems of dahlias.\nFor each function explain one way in which xylem structure is adapted for this function.', 'marks': 4}, {'sub_number': 'c', 'text': "The gardener's dahlia cuttings grow into full-sized plants with flowers.\nThe gardener decides that he would like to produce a plant that combines the disease-resistant characteristics of one of these plants with the red petal colour of another.\nWith reference to named parts of the flowers, describe how he could achieve this.", 'marks': 5}]
-AI Input Data -> Max Marks: 14
-AI Input Data -> Student Answer:
-- Part a(i): no
-- Part a(ii): no
-- Part b: no
-- Part c: no
-AI Input Data -> Correct Answer/Scheme:
- - Part a(i) (3 marks): removal of leaves:
-reduction + surface area / stomata ;
-
-covering with transparent bag:
-increase humidity ;
-
-to reduce transpiration OR evaporation / water loss ;
-   Notes: removal of leaves: reduction + surface area / stomata ; (1 mark)
-covering with transparent bag: increase humidity ; (1 mark)
-to reduce transpiration OR evaporation / water loss ; (1 mark)
- - Part a(ii) (2 marks): production of genetically identical offspring / clones ;
-mitosis ;
-from one parent/ AW;
-   Notes: Any two points required. (1 mark each)
- - Part b (4 marks): function: xylem vessels transport water and/or minerals ;
-adaptation: long / thin / no end cell walls / hollow tubes / no cytoplasm ;
-function: (mechanical) support / keeps stem upright ;
-adaptation: lignified OR woody / strengthened / hard + walls ;
-   Notes: function: xylem vessels transport water and/or minerals ; (1 mark)
-adaptation: long / thin / no end cell walls / hollow tubes / no cytoplasm ; (1 mark)
-function: (mechanical) support / keeps stem upright ; (1 mark)
-adaptation: lignified OR woody / strengthened / hard + walls ; (1 mark)
- - Part c (5 marks): 1 artificial selection / selective breeding ;
-2 transfer pollen / pollination ;
-3 from anther / stamen of one plant + e.g. red petal colour ;
-4 to stigma / carpel /pistil of another ;
-5 fertilisation OR gametes / genetic material + combined AW ;
-6 grow seeds ;
-7 select the ones with best combination of characteristics ;
-   Notes: Any five points required. (1 mark each)
------------------------------------------
-INFO:src.core.ai.marker:Raw FULL text from AI (Enhanced Rationale/Study Topics):
----------------------
- 
-Grade: 0 / 14
-Rationale: The student did not demonstrate any understanding of the marking scheme.
-Study Topics: Specific Topics: None
-Guiding Questions: None
-Google Search Terms: None
-**Line 2:** `Rationale: [Empty]`
-**Line 3:** `Study Topics: [Empty]`
-
-**Question:** A gardener grows a species of dahlia, a flowering plant. Each year the gardener chooses his best plants and takes cuttings to make new plants.
-
-**Sub-questions (if any):** [{'sub_number': 'a(i)', 'text': 'Removing the lower leaves and placing the cuttings in a transparent bag helps prevent them wilting until the roots develop.\n\nSuggest and explain how these two steps help to prevent wilting.', 'marks': 3}, {'sub_number': 'a(ii)', 'text': 'Taking cuttings is a commercial application of asexual reproduction.\nDefine asexual reproduction.', 'marks': 2}, {'sub_number': 'b', 'text': 'The stems of the dahlia cuttings contain xylem vessels.\nDescribe two functions of xylem vessels in young stems of dahlias.\nFor each function explain one way in which xylem structure is adapted for this function.', 'marks': 4}, {'sub_number': 'c', 'text': "The gardener's dahlia cuttings grow into full-sized plants with flowers.\nThe gardener decides that he would like to produce a plant that combines the disease-resistant characteristics of one of these plants with the red petal colour of another.\nWith reference to named parts of the flowers, describe how he could achieve this.", 'marks': 5}]
-**Maximum Marks:** 14
-**Marking Scheme / Correct Answer Details:**  - Part a(i) (3 marks): removal + surface area / stomata ; covering with transparent bag: increase humidity ; reducing transpiration or evaporation / water loss; notes: removal of leaves: reduction + surface area / stomata ; (1 mark)
-   covering with transparent bag: increase humidity ; (1 mark)
-   to reduce transpiration OR evaporation / water loss ; (1 mark)
-- Part a(ii) (2 marks): production of genetically identical offspring / clones ;
-mitosis ;
-from one parent/ AW;
-   notes: any two points required. (1 mark each)
-- Part b (4 marks): function: xylem vessels transport water and/or minerals ;
-adaptation: long / thin / no end cell walls / hollow tubes / no cytoplasm ;
-function: (mechanical) support / keeps stem upright ;
-adaptation: lignified OR woody / strengthened / hard + walls ;
-   notes: function: xylem vessels transport water and/or minerals ; (1 mark)
-adaptation: long / thin / no end cell walls / hollow tubes / no cytoplasm ; (1 mark)
-function: (mechanical) support / keeps stem upright ; (1 mark)
-adaptation: lignified OR woody / strengthened / hard + walls ;
-   notes: function: xylem vessels transport water and/or minerals ; (1 mark)
-adaptation: long / thin / no end cell walls / hollow tubes / no cytoplasm ;
----------------------
-INFO:src.core.ai.marker:Successfully parsed all 3 required output lines using Regex/Multiline Extraction.
-INFO:src.core.ai.marker:AI evaluation completed.
-INFO:src.core.ai.marker:Unloading AI model...
-INFO:src.core.ai.marker:AI model unloaded.
-INFO:src.ui.views.question_view:AIFeedbackWorker finished.
-INFO:src.ui.views.question_view:Displaying feedback results: {'Grade': '0 / 14', 'Rationale': 'The student did not demonstrate any understanding of the marking scheme.', 'Study Topics': 'Specific Topics: None\nGuiding Questions: None\nGoogle Search Terms: None\n**Line 2:** `Rationale: [Empty]`\n**Line 3:** `Study Topics: [Empty]`\n\n**Question:** A gardener grows a species of dahlia, a flowering plant. Each year the gardener chooses his best plants and takes cuttings to make new plants.\n\n**Sub-questions (if any):** [{\'sub_number\': \'a(i)\', \'text\': \'Removing the lower leaves and placing the cuttings in a transparent bag helps prevent them wilting until the roots develop.\n\nSuggest and explain how these two steps help to prevent wilting.\', \'marks\': 3}, {\'sub_number\': \'a(ii)\', \'text\': \'Taking cuttings is a commercial application of asexual reproduction.\nDefine asexual reproduction.\', \'marks\': 2}, {\'sub_number\': \'b\', \'text\': \'The stems of the dahlia cuttings contain xylem vessels.\nDescribe two functions of xylem vessels in young stems of dahlias.\nFor each function explain one way in which xylem structure is adapted for this function.\', \'marks\': 4}, {\'sub_number\': \'c\', \'text\': "The gardener\'s dahlia cuttings grow into full-sized plants with flowers.\nThe gardener decides that he would like to produce a plant that combines the disease-resistant characteristics of one of these plants with the red petal colour of another.\nWith reference to named parts of the flowers, describe how he could achieve this.", \'marks\': 5}]\n**Maximum Marks:** 14\n**Marking Scheme / Correct Answer Details:**  - Part a(i) (3 marks): removal + surface area / stomata ; covering with transparent bag: increase humidity ; reducing transpiration or evaporation / water loss; notes: removal of leaves: reduction + surface area / stomata ; (1 mark)\n   covering with transparent bag: increase humidity ; (1 mark)\n   to reduce transpiration OR evaporation / water loss ; (1 mark)\n- Part a(ii) (2 marks): production of genetically identical offspring / clones ;\nmitosis ;\nfrom one parent/ AW;\n   notes: any two points required. (1 mark each)\n- Part b (4 marks): function: xylem vessels transport water and/or minerals ;\nadaptation: long / thin / no end cell walls / hollow tubes / no cytoplasm ;\nfunction: (mechanical) support / keeps stem upright ;\nadaptation: lignified OR woody / strengthened / hard + walls ;\n   notes: function: xylem vessels transport water and/or minerals ; (1 mark)\nadaptation: long / thin / no end cell walls / hollow tubes / no cytoplasm ; (1 mark)\nfunction: (mechanical) support / keeps stem upright ; (1 mark)\nadaptation: lignified OR woody / strengthened / hard + walls ;\n   notes: function: xylem vessels transport water and/or minerals ; (1 mark)\nadaptation: long / thin / no end cell walls / hollow tubes / no cytoplasm ;'}
-INFO:src.ui.views.question_view:Calling add_history_entry with:
-INFO:src.ui.views.question_view:  user_id: 1
-INFO:src.ui.views.question_view:  cached_question_id: 67d50ebecec12312c07d55f9
-INFO:src.ui.views.question_view:  user_answer_dict: {'a(i)': 'no', 'a(ii)': 'no', 'b': 'no', 'c': 'no'}
-INFO:src.ui.views.question_view:  local_ai_feedback_dict: {'Grade': '0 / 14', 'Rationale': 'The student did not demonstrate any understanding of the marking scheme.', 'Study Topics': 'Specific Topics: None\nGuiding Questions: None\nGoogle Search Terms: None\n**Line 2:** `Rationale: [Empty]`\n**Line 3:** `Study Topics: [Empty]`\n\n**Question:** A gardener grows a species of dahlia, a flowering plant. Each year the gardener chooses his best plants and takes cuttings to make new plants.\n\n**Sub-questions (if any):** [{\'sub_number\': \'a(i)\', \'text\': \'Removing the lower leaves and placing the cuttings in a transparent bag helps prevent them wilting until the roots develop.\n\nSuggest and explain how these two steps help to prevent wilting.\', \'marks\': 3}, {\'sub_number\': \'a(ii)\', \'text\': \'Taking cuttings is a commercial application of asexual reproduction.\nDefine asexual reproduction.\', \'marks\': 2}, {\'sub_number\': \'b\', \'text\': \'The stems of the dahlia cuttings contain xylem vessels.\nDescribe two functions of xylem vessels in young stems of dahlias.\nFor each function explain one way in which xylem structure is adapted for this function.\', \'marks\': 4}, {\'sub_number\': \'c\', \'text\': "The gardener\'s dahlia cuttings grow into full-sized plants with flowers.\nThe gardener decides that he would like to produce a plant that combines the disease-resistant characteristics of one of these plants with the red petal colour of another.\nWith reference to named parts of the flowers, describe how he could achieve this.", \'marks\': 5}]\n**Maximum Marks:** 14\n**Marking Scheme / Correct Answer Details:**  - Part a(i) (3 marks): removal + surface area / stomata ; covering with transparent bag: increase humidity ; reducing transpiration or evaporation / water loss; notes: removal of leaves: reduction + surface area / stomata ; (1 mark)\n   covering with transparent bag: increase humidity ; (1 mark)\n   to reduce transpiration OR evaporation / water loss ; (1 mark)\n- Part a(ii) (2 marks): production of genetically identical offspring / clones ;\nmitosis ;\nfrom one parent/ AW;\n   notes: any two points required. (1 mark each)\n- Part b (4 marks): function: xylem vessels transport water and/or minerals ;\nadaptation: long / thin / no end cell walls / hollow tubes / no cytoplasm ;\nfunction: (mechanical) support / keeps stem upright ;\nadaptation: lignified OR woody / strengthened / hard + walls ;\n   notes: function: xylem vessels transport water and/or minerals ; (1 mark)\nadaptation: long / thin / no end cell walls / hollow tubes / no cytoplasm ; (1 mark)\nfunction: (mechanical) support / keeps stem upright ; (1 mark)\nadaptation: lignified OR woody / strengthened / hard + walls ;\n   notes: function: xylem vessels transport water and/or minerals ; (1 mark)\nadaptation: long / thin / no end cell walls / hollow tubes / no cytoplasm ;'}
-INFO:src.ui.views.question_view:  exam_result_id: None
->>> DEBUG: UserHistoryManager _get_connection() called.
-WARNING:src.core.history.user_history_manager:Could not parse study topics into JSON, storing raw: name 're' is not defined
-INFO:src.core.history.user_history_manager:Successfully added answer history entry with ID: 1 for user 1, question 67d50ebecec12312c07d55f9
-INFO:src.ui.views.question_view:add_history_entry call SUCCEEDED. Returned history_id: 1

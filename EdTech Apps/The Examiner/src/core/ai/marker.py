@@ -253,7 +253,7 @@ def run_ai_evaluation(
     correct_answer_data: Dict,
     user_answer: Dict[str, str], # Expecting dict
     marks: Optional[int]
-) -> Optional[Dict[str, Optional[str]]]:
+) -> Optional[Tuple[Dict[str, Optional[str]], Optional[str]]]:
     """
     Loads model once. Uses explicit CoT prompt to guide reasoning and asks
     for a specific 3-line output format, focusing on detailed Rationale and Study Topics. Parses the output using regex.
@@ -350,9 +350,9 @@ def run_ai_evaluation(
         # --- Generate Response WITHOUT Grammar ---
         raw_response_text = _generate_step(
             llm,
-            prompt,
-            max_tokens=GENERATION_MAX_TOKENS, # May need more tokens for detailed study plan
-            stop_sequences=["<|endoftext|>"] 
+            prompt, # Pass the generated prompt
+            max_tokens=GENERATION_MAX_TOKENS,
+            stop_sequences=["<|endoftext|>"]
         )
 
         # Log the Raw Output
@@ -395,9 +395,10 @@ def run_ai_evaluation(
 
         logger.info("AI evaluation completed.")
 
-    except Exception as e: 
+    except Exception as e:
         logger.error(f"Error during AI evaluation: {e}", exc_info=True)
         results = {k: f"N/A (Exception: {e})" for k in results}
+        prompt = None # Ensure prompt is None on error
     finally:
         if llm is not None: 
             logger.info("Unloading AI model...")
@@ -405,6 +406,5 @@ def run_ai_evaluation(
             logger.info("AI model unloaded.")
 
     logger.debug(f"Final evaluation results: {results}")
-    return results
-
-# --- (Ensure UI code in question_view.py handles Grade, Rationale, Study Topics) --- 
+    # --- RETURN PROMPT ALONGSIDE RESULTS ---
+    return results, prompt 

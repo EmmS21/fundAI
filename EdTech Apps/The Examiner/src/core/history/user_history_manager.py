@@ -3,16 +3,14 @@ import sqlite3
 import json
 import os
 from datetime import datetime
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, Tuple
 import threading
-import sys # Add sys import
+import sys 
+import re
 
-# --- Corrected DB Path Definition ---
-# Go up THREE levels from core/history to the project root
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-DB_FILE = 'student_profile.db' # Use the correct database file name
+DB_FILE = 'student_profile.db' 
 DB_PATH = os.path.join(PROJECT_ROOT, DB_FILE)
-# --- End Correction ---
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +19,6 @@ class UserHistoryManager:
     _lock = threading.RLock() 
 
     def __new__(cls, *args, **kwargs):
-        # Add print to see if singleton logic is involved
         print(">>> DEBUG: UserHistoryManager __new__() called.", file=sys.stderr)
         if cls._instance is None:
             print(">>> DEBUG: UserHistoryManager creating new instance.", file=sys.stderr)
@@ -216,3 +213,116 @@ class UserHistoryManager:
         # TODO: Implement SQL SELECT query
         logger.info(f"Placeholder: Get history for user {user_id}.")
         return [] # Placeholder
+
+    def _execute_update(self, sql: str, params: tuple) -> bool:
+        """Helper function to execute UPDATE statements."""
+        conn = self._get_connection()
+        if not conn:
+            logger.error("_execute_update: Cannot proceed, no database connection.")
+            return False
+        success = False
+        cursor = None
+        with self._lock:
+            try:
+                cursor = conn.cursor()
+                logger.debug(f"Executing SQL: {sql}")
+                logger.debug(f"With Params: {params}")
+                cursor.execute(sql, params)
+                conn.commit()
+                success = True
+                logger.debug(f"Update successful for history_id: {params[-1]}") # Assumes ID is last param
+            except sqlite3.Error as e:
+                logger.error(f"DATABASE ERROR during update: {e}", exc_info=True)
+                if conn: conn.rollback()
+            except Exception as e_generic:
+                 logger.error(f"UNEXPECTED ERROR during database update: {e_generic}", exc_info=True)
+                 if conn: conn.rollback()
+            finally:
+                if cursor: cursor.close()
+        return success
+
+    def get_history_details_for_sync(self, history_id: int) -> Optional[Tuple[str, str]]:
+        """Retrieves cached_question_id, user_answer_json for syncing."""
+        # (Implementation as previously proposed)
+        conn = self._get_connection()
+        if not conn: return None
+        cursor = None
+        try:
+            cursor = conn.cursor()
+            sql = "SELECT cached_question_id, user_answer_json FROM answer_history WHERE history_id = ?"
+            cursor.execute(sql, (history_id,))
+            result = cursor.fetchone()
+            if result:
+                logger.debug(f"Retrieved details for sync for history_id {history_id}")
+                return result # Returns (cached_question_id, user_answer_json)
+            else:
+                logger.warning(f"No history entry found for history_id {history_id}")
+                return None
+        except sqlite3.Error as e:
+            logger.error(f"DATABASE ERROR getting history details for sync (id={history_id}): {e}", exc_info=True)
+            return None
+        finally:
+            if cursor: cursor.close()
+
+
+    def get_unsynced_history_ids(self, limit: int = 10) -> list[int]:
+        """Gets IDs of history entries that haven't been successfully synced yet."""
+        # (Implementation as previously proposed)
+        conn = self._get_connection()
+        if not conn: return []
+        cursor = None
+        ids = []
+        try:
+            cursor = conn.cursor()
+            sql = """
+                SELECT history_id FROM answer_history
+                WHERE cloud_report_received = FALSE
+                ORDER BY answer_timestamp ASC
+                LIMIT ?
+            """
+            cursor.execute(sql, (limit,))
+            results = cursor.fetchall()
+            ids = [row[0] for row in results]
+            logger.info(f"Found {len(ids)} unsynced history entries.")
+        except sqlite3.Error as e:
+            logger.error(f"DATABASE ERROR getting unsynced history IDs: {e}", exc_info=True)
+        finally:
+            if cursor: cursor.close()
+        return ids
+
+    def get_new_report_count(self) -> int:
+        """Gets the count of received cloud reports."""
+        # (Implementation as previously proposed)
+        conn = self._get_connection()
+        if not conn: return 0
+        cursor = None
+        count = 0
+        try:
+            cursor = conn.cursor()
+            sql = "SELECT COUNT(*) FROM answer_history WHERE cloud_report_received = TRUE" # Add refinement later if needed (e.g., viewed flag)
+            cursor.execute(sql)
+            result = cursor.fetchone()
+            count = result[0] if result else 0
+            logger.debug(f"Found {count} new cloud reports.")
+        except sqlite3.Error as e:
+            logger.error(f"DATABASE ERROR getting new report count: {e}", exc_info=True)
+        finally:
+            if cursor: cursor.close()
+        return count
+
+    def get_question_id_for_history(self, history_id: int) -> Optional[str]:
+        """Retrieves the cached_question_id for a given history_id."""
+        conn = self._get_connection()
+        if not conn: return None
+        cursor = None
+        try:
+            cursor = conn.cursor()
+            sql = "SELECT cached_question_id FROM answer_history WHERE history_id = ?"
+            cursor.execute(sql, (history_id,))
+            result = cursor.fetchone()
+            return result[0] if result else None
+        except sqlite3.Error as e:
+            logger.error(f"DATABASE ERROR getting question ID for history_id {history_id}: {e}", exc_info=True)
+            return None
+        finally:
+            if cursor: cursor.close()

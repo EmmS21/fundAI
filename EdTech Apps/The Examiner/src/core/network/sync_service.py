@@ -11,6 +11,7 @@ from src.data.cache.cache_manager import CacheManager
 from src.core import services
 from enum import Enum
 import json
+from src.core.ai.groq_client import GroqClient
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -159,6 +160,9 @@ class SyncService:
                     # Process user items individually
                     for item in type_items:
                         self._process_item(item)
+                elif item_type == 'cloud_analysis_request':
+                    for item in type_items:
+                        self._process_item(item)
                 else:
                     logger.warning(f"Unknown batch item type: {item_type}")
                     success = False
@@ -194,6 +198,8 @@ class SyncService:
                 self._sync_with_retry(self._sync_question, item)
             elif item.item_type == 'system_metrics':
                 self._sync_with_retry(self._sync_system_metrics, item)
+            elif item.item_type == 'cloud_analysis_request':
+                self._sync_with_retry(self._sync_cloud_analysis_request, item)
             else:
                 logger.warning(f"Unknown item type: {item.item_type}")
                 self._queue_manager.mark_failed(item.id)
@@ -633,3 +639,94 @@ class SyncService:
             if item.batch_id and item.status == QueueStatus.PENDING:
                 batch_ids.add(item.batch_id)
         return list(batch_ids)
+
+    def _sync_cloud_analysis_request(self, item: QueueItem) -> bool:
+        """Handles syncing a request for cloud AI analysis using a pre-gen prompt."""
+        logger.info(f"Starting cloud analysis sync for history_id: {item.data.get('history_id')}")
+
+        history_id = item.data.get('history_id')
+        local_prompt = item.data.get('local_prompt') # Get the prompt from queue data
+
+        if not history_id:
+            logger.error(f"Missing 'history_id' in queue item data for item ID {item.id}. Cannot process.")
+            return False # Non-retryable
+        if not local_prompt:
+            logger.error(f"Missing 'local_prompt' in queue item data for history_id {history_id}. Cannot process.")
+            return False # Non-retryable
+
+        # Mark as sent before making API call (optimistic)
+        history_manager = services.user_history_manager
+        if history_manager:
+             history_manager.mark_as_sent_to_cloud(history_id)
+        else:
+             logger.error("UserHistoryManager service not available in SyncService. Cannot mark as sent.")
+             # Proceed with API call anyway, but log this issue.
+
+        # Call Groq Client with the prompt
+        try:
+             groq_client = GroqClient()
+             logger.info(f"Calling GroqClient.generate_report_from_prompt for history_id {history_id}")
+             cloud_report = groq_client.generate_report_from_prompt(local_prompt)
+        except ValueError as key_error:
+             logger.error(f"Failed to initialize GroqClient: {key_error}. Cannot process item {history_id}.")
+             return False # Don't retry if key is missing
+        except Exception as client_err:
+             logger.error(f"Unexpected error creating GroqClient or calling generate_report: {client_err}", exc_info=True)
+             return False # Allow retry
+
+        if cloud_report and not cloud_report.get("error"):
+            logger.info(f"Successfully received cloud report for history_id {history_id}.")
+            # TODO: Send report to actual cloud DB if needed
+            logger.info("Placeholder: Sending report to cloud DB...")
+            cloud_db_success = True 
+
+            if cloud_db_success:
+                 if history_manager:
+                      update_success = history_manager.update_with_cloud_report(history_id, cloud_report)
+                      if update_success:
+                           logger.info(f"Successfully updated local answer_history for {history_id} with cloud report.")
+                           return True 
+                      else:
+                           logger.error(f"Failed to update local answer_history for {history_id} after receiving cloud report.")
+                           return False 
+                 else:
+                      logger.error("UserHistoryManager service not available to update local DB after successful Groq call.")
+                      return False 
+            else:
+                 logger.error(f"Failed to store cloud report in cloud database for history_id {history_id}.")
+                 return False 
+        else:
+            error_detail = cloud_report.get('error', 'Unknown Groq error') if cloud_report else 'Groq call returned None'
+            logger.error(f"Failed to generate cloud report via Groq for history_id {history_id}. Error: {error_detail}")
+            return False 
+
+    def queue_cloud_analysis(self, history_id: int, local_prompt: str) -> bool: 
+        """Queues an item for cloud analysis."""
+        if not local_prompt:
+            logger.error(f"Cannot queue cloud analysis for history_id {history_id}: Local prompt is missing.")
+            return False
+
+        logger.info(f"Queueing cloud analysis request for history_id: {history_id}")
+        item_data = {
+            "history_id": history_id,
+            "local_prompt": local_prompt 
+        }
+        item_type = 'cloud_analysis_request'
+        priority = QueuePriority.HIGH 
+
+        try:
+            queue_manager = services.queue_manager
+            history_manager = services.user_history_manager
+            if queue_manager:
+                queue_manager.add_to_queue(item_data, item_type, priority)
+                if history_manager:
+                     history_manager.mark_as_queued_for_cloud(history_id)
+                else:
+                     logger.warning(f"Could not mark history {history_id} as queued: UserHistoryManager not found.")
+                return True
+            else:
+                logger.error("QueueManager service is not available. Cannot queue cloud analysis.")
+                return False
+        except Exception as e:
+            logger.error(f"Failed to add cloud analysis request to queue for history_id {history_id}: {e}", exc_info=True)
+            return False
