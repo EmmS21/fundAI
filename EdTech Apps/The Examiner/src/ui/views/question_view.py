@@ -1,18 +1,18 @@
 import logging
+logger = logging.getLogger(__name__)
+
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QScrollArea, QSizePolicy, QDialog, QFrame, QMessageBox, QGroupBox)
-from PySide6.QtGui import QPixmap, QImage, QFont, QGuiApplication, QMovie
+from PySide6.QtGui import QPixmap, QImage, QFont, QGuiApplication
 from PySide6.QtCore import Qt, Signal, QUrl, QThread, QStandardPaths, Slot
 from src.data.cache.cache_manager import CacheManager
 import os
 import sys
 import json
-from src.core.ai.marker import run_ai_evaluation # Use the updated orchestrator name
+from src.core.ai.marker import run_ai_evaluation
 from typing import Dict, Optional, Any
-from src.core import services # <-- ADD THIS IMPORT
+from src.core import services
 from src.core.network.monitor import NetworkStatus
-from src.core.ai.groq_client import GroqClient # Keep this import
-
-logger = logging.getLogger(__name__)
+from src.core.ai.groq_client import GroqClient
 
 # --- QSS Styles ---
 # Define styles here for better organization
@@ -81,79 +81,99 @@ SUB_QUESTION_STYLE = """
     }}
 """
 
-# --- ADDED: Style for Feedback Area ---
+# --- ADDED/MODIFIED: Style for Feedback Area ---
 FEEDBACK_STYLE = """
-    QGroupBox#FeedbackGroup {{
-        background-color: #E0F2FE; /* Light blue */
-        border: 1px solid #BAE6FD; /* Lighter blue border */
+    QGroupBox#FeedbackGroup {{ /* Outer container */
+        background-color: #374151; /* Darker gray background for the main AI Feedback area */
+        border: 1px solid #4B5563;
         border-radius: 8px;
-        margin-top: 10px;
-        padding: 5px 10px 10px 10px; /* Adjusted padding top for hide button */
+        margin-top: 15px; /* More space above */
+        padding: 8px;
     }}
     QGroupBox#FeedbackGroup::title {{
         subcontrol-origin: margin;
         subcontrol-position: top left;
-        padding: 0 5px 0 5px; /* Keep existing title style or adjust */
-        margin-top: 5px; /* Move title down slightly */
+        padding: 0 5px 0 5px;
+        margin-top: 5px;
         left: 10px;
-        color: #0C4A6E; /* Darker blue title */
+        color: #F9FAFB; /* Light title on dark background */
         font-weight: bold;
     }}
-    QLabel#FeedbackLabel {{ /* Style for labels inside feedback box */
-        background-color: transparent;
-        color: #1F2937; /* Dark gray text */
+
+    /* --- Styling for Preliminary Feedback Box --- */
+    QGroupBox#PreliminaryFeedbackSubGroup {{
+        background-color: #F3F4F6; /* Light Gray background */
+        border: 1px solid #D1D5DB;
+        border-radius: 6px;
+        margin-top: 5px; /* Space below main title */
+        padding-top: 5px; /* Reduced padding */
     }}
-    QTextEdit#FeedbackContent {{ /* Style for text edit inside feedback box */
-        font-size: 14px;
-        border: 1px solid #D1D5DB; /* Standard border */
+    QGroupBox#PreliminaryFeedbackSubGroup::title {{
+        subcontrol-origin: margin;
+        subcontrol-position: top left;
+        padding: 0 5px 0 5px;
+        left: 10px;
+        color: #1F2937; /* Dark title on light background */
+        font-weight: bold;
+        /* font-size: 13px; Optional smaller title */
+    }}
+    QGroupBox#PreliminaryFeedbackSubGroup QPushButton {{ /* Style hide button inside */
+        background-color: transparent; border: none; color: #9CA3AF; font-weight: bold; font-size: 14px; padding: 0px; margin: 0px; max-width: 20px; max-height: 20px;
+    }}
+     QGroupBox#PreliminaryFeedbackSubGroup QPushButton:hover {{ color: #374151; }}
+
+
+    /* --- Styling for Finalized Report Box --- */
+    QGroupBox#FinalizedReportSubGroup {{
+        background-color: #ECFDF5; /* Very Light Green background */
+        border: 1px solid #6EE7B7; /* Green border */
+        border-radius: 6px;
+        margin-top: 10px; /* Space between sections */
+         padding-top: 5px; /* Reduced padding */
+    }}
+     QGroupBox#FinalizedReportSubGroup::title {{
+        subcontrol-origin: margin;
+        subcontrol-position: top left;
+        padding: 0 5px 0 5px;
+        left: 10px;
+        color: #065F46; /* Dark Green title */
+        font-weight: bold;
+         /* font-size: 13px; */
+    }}
+     QGroupBox#FinalizedReportSubGroup QPushButton {{ /* Style hide button inside */
+        background-color: transparent; border: none; color: #9CA3AF; font-weight: bold; font-size: 14px; padding: 0px; margin: 0px; max-width: 20px; max-height: 20px;
+    }}
+     QGroupBox#FinalizedReportSubGroup QPushButton:hover {{ color: #374151; }}
+
+    /* Common styles for labels/text inside sub-groups */
+    QGroupBox#PreliminaryFeedbackSubGroup QLabel, QGroupBox#FinalizedReportSubGroup QLabel {{
+        background-color: transparent; /* Ensure labels inside have transparent background */
+        color: #1F2937;
+    }}
+     QGroupBox#PreliminaryFeedbackSubGroup QTextEdit, QGroupBox#FinalizedReportSubGroup QTextEdit {{
+        font-size: 13px;
+        border: 1px solid #D1D5DB;
         border-radius: 4px;
         padding: 4px;
         background-color: white;
+         margin-bottom: 5px;
     }}
-    QPushButton#HideFeedbackButton {{
-        background-color: transparent;
-        border: none;
-        color: #9CA3AF; /* Gray */
-        font-weight: bold;
-        font-size: 14px;
-        padding: 0px;
-        /* max-width: 20px; Make it small */
-        /* max-height: 20px; */
-        margin: 0px; /* Remove extra margins */
-    }}
-    QPushButton#HideFeedbackButton:hover {{
-        color: #374151; /* Darker gray on hover */
-    }}
-    QLabel#PreliminaryLabel {{
-        background-color: transparent;
-        color: #4B5563; /* Medium gray */
+
+    /* Style for the NEW "Show" buttons */
+    QPushButton.ShowFeedbackButton {{
         font-size: 11px;
-        font-style: italic;
-        padding-top: 5px;
+        padding: 3px 6px;
+        color: #3B82F6; /* Blue text */
+        background-color: transparent;
+        border: 1px solid transparent; /* Optional: add border on hover */
+        text-decoration: underline;
     }}
-    QPushButton#ShowFeedbackButton {{
-         /* Optional: Style the show button if needed */
-        font-size: 12px;
-        padding: 4px 8px;
+    QPushButton.ShowFeedbackButton:hover {{
+        color: #1D4ED8; /* Darker blue */
+        background-color: #EFF6FF; /* Very light blue background */
+        border-color: #BFDBFE;
     }}
-    QLabel#FeedbackSubHeading {{
-        font-weight: bold;
-        margin-top: 8px; /* Add space above subheadings */
-        background-color: transparent; /* Ensure transparency */
-        color: #1F2937; 
-    }}
-    QTextEdit#FeedbackDetails {{ /* Style for the detailed text areas */
-        font-size: 13px; /* Slightly smaller */
-        border: 1px solid #D1D5DB; 
-        border-radius: 4px;
-        padding: 4px;
-        background-color: #FAFAFA; /* Very light gray background */
-        margin-bottom: 5px; /* Space below text areas */
-        min-height: 50px; /* Min height */
-        /* --- REMOVED: max-height constraint --- */
-        /* max-height: 150px; */ 
-        /* ------------------------------------- */
-    }}
+
 """
 
 # --- ADDED: Simple Waiting Dialog ---
@@ -261,6 +281,10 @@ class QuestionView(QWidget):
         self.last_used_prompt = None 
         self.groq_workers = {} # <--- ADD THIS INITIALIZATION
 
+        # ADD State flags
+        self.preliminary_feedback_available = False
+        self.final_report_available = False
+
         self._setup_ui()
         self.load_random_question()
 
@@ -317,83 +341,114 @@ class QuestionView(QWidget):
         scroll_area.setWidget(self.question_content_widget) # Set the container as the scroll area's widget
         self.main_layout.addWidget(scroll_area, 1)
 
-        # --- ADDED: Feedback Display Area (Initially Hidden) ---
+        # --- Main Feedback Container (Outer Shell) ---
         self.feedback_groupbox = QGroupBox("AI Feedback")
         self.feedback_groupbox.setObjectName("FeedbackGroup")
-        # --- ADDED: Explicitly enable background filling ---
-        self.feedback_groupbox.setAutoFillBackground(True) 
-        # ---------------------------------------------------
+        self.feedback_groupbox.setAutoFillBackground(True) # Important for background color
         self.feedback_layout = QVBoxLayout(self.feedback_groupbox)
-        self.feedback_layout.setSpacing(8)
-        # Reduce top margin to accommodate hide button positioning
-        self.feedback_layout.setContentsMargins(5, 0, 5, 5) # L, T, R, B
+        self.feedback_layout.setSpacing(10)
+        self.feedback_layout.setContentsMargins(10, 15, 10, 10) # L, T, R, B (Top adjusted for title)
 
-        # --- ADDED: Hide Button (Top Right) ---
-        self.hide_feedback_button = QPushButton("✕") # Unicode multiplication sign
-        self.hide_feedback_button.setObjectName("HideFeedbackButton")
-        self.hide_feedback_button.setToolTip("Hide Feedback")
-        self.hide_feedback_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.hide_feedback_button.setFixedSize(20, 20) # Keep it small
-        self.hide_feedback_button.clicked.connect(self._hide_feedback) # Connect signal
+        # --- Container 1: Preliminary Feedback ---
+        self.preliminary_feedback_group = QGroupBox("Preliminary Feedback")
+        self.preliminary_feedback_group.setObjectName("PreliminaryFeedbackSubGroup") # For styling
+        prelim_layout = QVBoxLayout(self.preliminary_feedback_group)
+        prelim_layout.setSpacing(5)
+        prelim_layout.setContentsMargins(8, 25, 8, 8) # Adjusted Top margin for title/button
 
-        feedback_top_layout = QHBoxLayout()
-        feedback_top_layout.addStretch() # Push button to the right
-        feedback_top_layout.addWidget(self.hide_feedback_button)
-        # Add this layout at the very top of the feedback groupbox layout
-        self.feedback_layout.addLayout(feedback_top_layout) 
-        # --------------------------------------
+        prelim_hide_button = QPushButton("✕")
+        prelim_hide_button.setFixedSize(18, 18)
+        prelim_hide_button.setToolTip("Hide Preliminary Feedback")
+        # Connect to NEW hide method
+        prelim_hide_button.clicked.connect(self._hide_prelim_feedback) # MODIFIED
+        prelim_hide_layout = QHBoxLayout()
+        prelim_hide_layout.addStretch()
+        prelim_hide_layout.addWidget(prelim_hide_button)
+        # Add hide button layout *within* the prelim_layout
+        prelim_layout.insertLayout(0, prelim_hide_layout) # Insert at top
 
-        # --- FIX: Assign labels and textedit to self. ---
-        self.mark_label = QLabel("Mark Awarded: N/A") # USE self.
-        self.mark_label.setObjectName("FeedbackLabel")
-        self.rating_label = QLabel("Understanding Rating: N/A") # USE self.
-        self.rating_label.setObjectName("FeedbackLabel")
-        # Hide rating label for now as per previous logic
-        self.rating_label.hide() 
+        self.prelim_mark_label = QLabel("Mark Awarded: N/A")
+        self.prelim_mark_label.setObjectName("FeedbackLabel")
+        prelim_layout.addWidget(self.prelim_mark_label)
 
-        mark_rating_layout = QHBoxLayout()
-        mark_rating_layout.addWidget(self.mark_label) # Reference self.
-        mark_rating_layout.addStretch()
-        mark_rating_layout.addWidget(self.rating_label) # Reference self.
-        self.feedback_layout.addLayout(mark_rating_layout)
+        self.prelim_details_label = QLabel("Feedback Details:")
+        self.prelim_details_label.setObjectName("FeedbackLabel")
+        self.prelim_details_label.setStyleSheet("font-weight: bold;")
+        prelim_layout.addWidget(self.prelim_details_label)
 
-        # Assign content label to self for consistency, though not strictly required by the error
-        self.feedback_content_label = QLabel("Feedback Details:")
-        self.feedback_content_label.setObjectName("FeedbackLabel")
-        self.feedback_content_label.setStyleSheet("font-weight: bold;")
-        self.feedback_layout.addWidget(self.feedback_content_label) # Reference self.
+        self.prelim_feedback_text = QTextEdit()
+        self.prelim_feedback_text.setObjectName("FeedbackContent")
+        self.prelim_feedback_text.setReadOnly(True)
+        self.prelim_feedback_text.setMinimumHeight(100) # Example height
+        prelim_layout.addWidget(self.prelim_feedback_text)
 
-        # Assign QTextEdit to self
-        self.feedback_text = QTextEdit() # USE self.
-        self.feedback_text.setObjectName("FeedbackContent")
-        self.feedback_text.setReadOnly(True)
-        self.feedback_text.setFixedHeight(150)
-        self.feedback_layout.addWidget(self.feedback_text) # Reference self.
-        # --- END FIX ---
+        self.feedback_layout.addWidget(self.preliminary_feedback_group)
+        self.preliminary_feedback_group.hide() # Start hidden
 
-        # --- ADDED: Preliminary Feedback Label ---
-        # self.preliminary_feedback_label = QLabel(
-        #     "Note: This is preliminary feedback. A more detailed analysis may be available online."
-        # )
-        # self.preliminary_feedback_label.setObjectName("PreliminaryLabel") # For styling
-        # self.preliminary_feedback_label.setWordWrap(True)
-        # self.feedback_layout.addWidget(self.preliminary_feedback_label)
-        # -----------------------------------------
+        # --- Container 2: Finalized Report ---
+        self.finalized_report_group = QGroupBox("Finalized Report")
+        self.finalized_report_group.setObjectName("FinalizedReportSubGroup") # For styling
+        self.finalized_report_group.setAutoFillBackground(True) # Important for background color
+        final_layout = QVBoxLayout(self.finalized_report_group)
+        final_layout.setSpacing(5)
+        final_layout.setContentsMargins(8, 25, 8, 8) # Adjusted Top margin for title/button
 
-        self.feedback_groupbox.hide() # Start hidden
+        final_hide_button = QPushButton("✕")
+        final_hide_button.setFixedSize(18, 18)
+        final_hide_button.setToolTip("Hide Finalized Report")
+        # Connect to NEW hide method
+        final_hide_button.clicked.connect(self._hide_final_feedback) # MODIFIED
+        final_hide_layout = QHBoxLayout()
+        final_hide_layout.addStretch()
+        final_hide_layout.addWidget(final_hide_button)
+        # Add hide button layout *within* the final_layout
+        final_layout.insertLayout(0, final_hide_layout) # Insert at top
+
+        self.final_status_label = QLabel("Status: Pending Cloud Analysis...")
+        self.final_status_label.setObjectName("FeedbackStatusLabel")
+        self.final_status_label.setStyleSheet("font-style: italic; color: #555;")
+        final_layout.addWidget(self.final_status_label)
+
+        self.final_grade_label = QLabel("Grade: N/A")
+        self.final_grade_label.setObjectName("FeedbackLabel")
+        final_layout.addWidget(self.final_grade_label)
+
+        self.final_feedback_text = QTextEdit()
+        self.final_feedback_text.setObjectName("FeedbackContent") # Reuse style or make specific
+        self.final_feedback_text.setReadOnly(True)
+        self.final_feedback_text.setMinimumHeight(150) # Example height
+        final_layout.addWidget(self.final_feedback_text)
+
+        self.feedback_layout.addWidget(self.finalized_report_group)
+        self.finalized_report_group.hide() # Start hidden
+
+        # --- Add the main container to the main layout ---
         self.main_layout.addWidget(self.feedback_groupbox)
+        self.feedback_groupbox.hide() # Start the whole area hidden
 
         # --- Action Buttons ---
         self.button_layout = QHBoxLayout()
+        self.button_layout.setSpacing(10)
 
-        # --- ADDED: Show Feedback Button (Initially Hidden) ---
-        self.show_feedback_button = QPushButton("Show AI Feedback")
-        self.show_feedback_button.setObjectName("ShowFeedbackButton") # For potential styling
-        self.show_feedback_button.setToolTip("Show Hidden AI Feedback")
-        self.show_feedback_button.hide() # Start hidden
-        self.show_feedback_button.clicked.connect(self._show_feedback) # Connect signal
-        self.button_layout.addWidget(self.show_feedback_button) # Add it to the layout
-        # --------------------------------------------------
+        # --- ADD "Show" Buttons ---
+        self.show_prelim_button = QPushButton("Show Preliminary")
+        self.show_prelim_button.setObjectName("ShowFeedbackButton") # For styling
+        self.show_prelim_button.setProperty("class", "ShowFeedbackButton") # Apply class selector
+        self.show_prelim_button.setToolTip("Show Preliminary Feedback")
+        self.show_prelim_button.hide() # Start hidden
+        self.show_prelim_button.clicked.connect(self._show_prelim_feedback) # Connect show action
+        self.button_layout.addWidget(self.show_prelim_button) # Add to button row
+
+        self.show_final_button = QPushButton("Show Finalized")
+        self.show_final_button.setObjectName("ShowFeedbackButton") # For styling
+        self.show_final_button.setProperty("class", "ShowFeedbackButton") # Apply class selector
+        self.show_final_button.setToolTip("Show Finalized Report")
+        self.show_final_button.hide() # Start hidden
+        self.show_final_button.clicked.connect(self._show_final_feedback) # Connect show action
+        self.button_layout.addWidget(self.show_final_button) # Add to button row
+        # --- END ADD "Show" Buttons ---
+
+        self.button_layout.addStretch() # Push Submit/Next to the right
 
         self.next_button = QPushButton("Next Question")
         # ... styling ...
@@ -404,7 +459,6 @@ class QuestionView(QWidget):
         # ... styling ...
         self.submit_button.clicked.connect(self._trigger_ai_feedback)
 
-        self.button_layout.addStretch() # Push Submit/Next to the right
         self.button_layout.addWidget(self.submit_button)
         self.button_layout.addWidget(self.next_button)
         self.main_layout.addLayout(self.button_layout)
@@ -423,27 +477,6 @@ class QuestionView(QWidget):
 
         self.main_layout.addWidget(self.image_section_label)
         self.main_layout.addWidget(self.image_links_container) 
-
-        # Add a label to indicate feedback status
-        self.feedback_status_label = QLabel("Preliminary Feedback")
-        self.feedback_status_label.setObjectName("FeedbackStatusLabel")
-        # Optional: Add specific styling for the status label
-        self.feedback_status_label.setStyleSheet("font-style: italic; color: #555;")
-        self.feedback_layout.addWidget(self.feedback_status_label) # Add before main text
-
-        # Ensure existing widgets are added (adjust names if needed)
-        self.mark_label = QLabel("Grade: N/A")
-        self.feedback_layout.addWidget(self.mark_label)
-
-        self.feedback_text = QTextEdit()
-        self.feedback_text.setReadOnly(True)
-        # ... other feedback_text properties ...
-        self.feedback_layout.addWidget(self.feedback_text)
-
-        # ... rest of feedback_groupbox setup ...
-        # -----------------------------------------------------------
-
-        # ... rest of _setup_ui ...
 
     def load_random_question(self):
         """Fetches and displays a random question from the cache."""
@@ -469,10 +502,12 @@ class QuestionView(QWidget):
                         if sub_widget: sub_widget.deleteLater()
 
         # --- Hide feedback from previous question and reset visibility state ---
-        self.feedback_groupbox.hide()
-        self.show_feedback_button.hide() # Ensure show button is hidden too
-        self.submit_button.setEnabled(True) # Re-enable submit
-        self.next_button.setEnabled(False) # Disable next until submitted
+        self._hide_prelim_feedback() # Use methods to ensure buttons are shown/hidden correctly
+        self._hide_final_feedback()
+        self.feedback_groupbox.hide() # Hide main container initially
+
+        self.submit_button.setEnabled(True)
+        self.next_button.setEnabled(False)
 
         try:
             # CacheManager.get_random_question now includes 'correct_answer_data'
@@ -555,14 +590,9 @@ class QuestionView(QWidget):
                              desc_label = QLabel(desc_text)
                              desc_label.setWordWrap(True)
                              desc_label.setStyleSheet("background-color: transparent;")
-                             self.sub_elements_layout.addWidget(desc_label) # Add description to layout
+                             self.sub_elements_layout.addWidget(desc_label) 
 
-
-                # --- Enable relevant controls ---
                 self.submit_button.setEnabled(True)
-
-
-                # --- Populate Image Links ---
                 self._clear_image_links()
                 images = question_data.get('images', [])
 
@@ -665,6 +695,9 @@ class QuestionView(QWidget):
             self.question_text_label.setVisible(True)
             self.submit_button.setEnabled(False)
             self._clear_image_links()
+            self._hide_prelim_feedback()
+            self._hide_final_feedback()
+            self.feedback_groupbox.hide()
 
     # Placeholder - adapt key->name mapping as needed
     def _get_level_display_name(self, level_key):
@@ -772,9 +805,6 @@ class QuestionView(QWidget):
         self.feedback_worker.start()
 
     # --- Updated _handle_ai_feedback_result ---
-    # NOTE: This function now receives results potentially based on the dictionary input.
-    # The structure of eval_results might need changes based on how run_ai_evaluation is updated.
-    # For now, assume it returns a similar dictionary for overall feedback.
     @Slot(object, object)
     def _handle_ai_feedback_result(self, eval_results: Optional[Dict[str, Optional[str]]], generated_prompt: Optional[str]):
         """Receives the LOCAL evaluation results AND the prompt used."""
@@ -794,10 +824,7 @@ class QuestionView(QWidget):
 
         # Store the prompt used for potential cloud sync
         self.last_used_prompt = generated_prompt
-        if not generated_prompt:
-            self.logger.warning("Local AI evaluation did not return a prompt string.")
-
-        history_id = None # Initialize history_id
+        history_id = None
 
         if eval_results:
             self.logger.info(f"Received local AI feedback: {eval_results}")
@@ -869,46 +896,49 @@ class QuestionView(QWidget):
             elif not self.last_used_prompt:
                  self.logger.warning("Cannot trigger cloud sync because the local prompt was not available.")
 
-            # 3. Display LOCAL feedback in UI (using eval_results)
+            # 3. Display LOCAL feedback in UI (Preliminary Section)
             grade = eval_results.get('Grade', 'N/A')
-            rationale = eval_results.get('Rationale', 'N/A')
+            rationale = eval_results.get('Rationale', 'No details provided.')
             study_topics = eval_results.get('Study Topics', 'N/A')
 
-            self.mark_label.setText(f"Grade: {grade}")
-            # self.rating_label.hide() # Already hidden in setup
-
+            self.prelim_mark_label.setText(f"Mark Awarded: {grade}") # Update prelim label
             feedback_display_text = f"Rationale:\n{rationale}\n\nStudy Topics:\n{study_topics}"
-            self.feedback_text.setText(feedback_display_text)
-            # --- END MODIFICATION ---
+            self.prelim_feedback_text.setText(feedback_display_text) # Update prelim text edit
 
-            # --- Show feedback box and ensure show button is hidden ---
-            self._show_feedback() # Use the method to manage visibility
+            self.feedback_groupbox.show() # Show the main feedback area
+            self._show_prelim_feedback() # Use method to show prelim & hide button
+            self._hide_final_feedback() # Ensure finalized is hidden initially
+
+            # --- Trigger Cloud Sync (if applicable) ---
+            if history_id and self.last_used_prompt:
+                 self.trigger_cloud_sync(history_id, self.last_used_prompt)
+                 # Optionally update the status in the finalized report group here
+                 self.final_status_label.setText("Status: Awaiting Cloud Analysis...")
+                 self._show_final_feedback() # Show the finalized box (with pending status)
+                 self._hide_prelim_feedback() # Optionally hide prelim once finalized starts
+            elif not history_id:
+                 self.logger.warning("Cannot trigger cloud sync because local history save failed.")
+                 self.final_status_label.setText("Status: Cloud Sync Failed (History Error)")
+                 self._show_final_feedback() # Show the finalized box (with error status)
+                 self._hide_prelim_feedback() # Optionally hide prelim once finalized starts
+            elif not self.last_used_prompt:
+                 self.logger.warning("Cannot trigger cloud sync because the local prompt was not available.")
+                 self.final_status_label.setText("Status: Cloud Sync Failed (Prompt Error)")
+                 self._show_final_feedback() # Show the finalized box (with error status)
+                 self._hide_prelim_feedback() # Optionally hide prelim once finalized starts
+
         else:
             self.logger.error("AI feedback process returned None.")
             QMessageBox.critical(self, "Error", "Failed to get feedback from the AI.")
-            # Ensure feedback box and show button are hidden on error
+            # Hide all feedback sections on error
+            self._hide_prelim_feedback()
+            self._hide_final_feedback()
             self.feedback_groupbox.hide()
-            self.show_feedback_button.hide()
-
             self.last_submitted_answers = None
 
         # Reset temp prompt after handling
-        self.last_used_prompt = None
-        self.last_submitted_answers = None # Also reset answers here
-
-    # --- ADDED: Methods to handle feedback visibility ---
-    def _hide_feedback(self):
-        """Hides the feedback group box and shows the 'Show Feedback' button."""
-        self.feedback_groupbox.hide()
-        self.show_feedback_button.show()
-        self.logger.debug("AI Feedback hidden.")
-
-    def _show_feedback(self):
-        """Shows the feedback group box and hides the 'Show Feedback' button."""
-        self.feedback_groupbox.show()
-        self.show_feedback_button.hide()
-        self.logger.debug("AI Feedback shown.")
-    # --- END ADDED METHODS ---
+        # self.last_used_prompt = None # Keep prompt until cloud sync attempted
+        self.last_submitted_answers = None
 
     def _clear_image_links(self):
         """Removes all widgets from the image links layout."""
@@ -1021,7 +1051,7 @@ class QuestionView(QWidget):
 
         network_monitor = services.network_monitor
         sync_service = services.sync_service
-        history_manager = services.user_history_manager # Get history manager
+        history_manager = services.user_history_manager
 
         if not history_manager:
              self.logger.error("UserHistoryManager not available. Cannot mark status or process fully.")
@@ -1032,30 +1062,34 @@ class QuestionView(QWidget):
         if network_monitor and network_monitor.get_status() == NetworkStatus.ONLINE:
             self.logger.info("Network ONLINE. Attempting immediate Groq analysis.")
 
-            # --- REPLACE PLACEHOLDER ---
-            if history_manager:
-                 # Mark as sent immediately (optimistic)
-                 sent_success = history_manager.mark_as_sent_to_cloud(history_id)
-                 if not sent_success:
-                      self.logger.warning(f"Failed to mark history {history_id} as sent in DB.")
-                 else:
-                      self.logger.info(f"Marked history {history_id} as sent to cloud in DB.")
-            else:
-                 self.logger.warning(f"Cannot mark history {history_id} as sent: UserHistoryManager unavailable.")
-            # --- END REPLACE PLACEHOLDER ---
+            # --- Ensure Worker Management is Correct ---
+            # Check if a worker for this ID is already running (safety)
+            if history_id in self.groq_workers and self.groq_workers[history_id].isRunning():
+                 self.logger.warning(f"Groq worker for history_id {history_id} is already running. Skipping.")
+                 return
 
-            # Start Groq worker thread with just the prompt
+            # Create the worker
             worker = GroqFeedbackWorker(
                 history_id=history_id,
                 local_prompt=local_prompt
             )
+            # Connect signals BEFORE adding to dict or starting
             worker.feedback_ready.connect(self._handle_groq_feedback_result)
             worker.feedback_error.connect(self._handle_groq_feedback_error)
-            self.groq_workers[history_id] = worker
-            worker.finished.connect(lambda hid=history_id: self.groq_workers.pop(hid, None))
-            worker.start()
+            # Connect finished signal to remove worker from the tracking dict
+            # Using a direct lambda is standard and should work fine here.
+            worker.finished.connect(lambda hid=history_id: self._on_groq_worker_finished(hid))
 
-        elif sync_service: # Offline or Network Monitor unavailable
+            # Add worker to dictionary BEFORE starting the thread
+            self.groq_workers[history_id] = worker
+            self.logger.debug(f"Added Groq worker for {history_id} to tracking dictionary.")
+
+            # Start the thread
+            worker.start()
+            self.logger.debug(f"Groq worker for {history_id} started.")
+            # --- End Worker Management Verification ---
+
+        elif sync_service:
             self.logger.info("Network OFFLINE or status unknown. Queueing request via SyncService.")
             # Pass prompt to queueing method
             queued = sync_service.queue_cloud_analysis(history_id, local_prompt)
@@ -1088,34 +1122,37 @@ class QuestionView(QWidget):
                       history_qid = history_manager.get_question_id_for_history(history_id) # Needs implementation in UHM
 
                       if history_qid and current_qid == history_qid:
-                            self.logger.info(f"Cloud report matches current question {current_qid}. Updating UI.")
+                            self.logger.info(f"Cloud report matches current question {current_qid}. Updating Finalized UI section.")
+
+                            # Set Title for the finalized group
+                            self.finalized_report_group.setTitle("Finalized Report (Cloud AI)")
 
                             cloud_grade = cloud_report.get('grade', 'N/A (Cloud)')
                             cloud_rationale = cloud_report.get('rationale', 'N/A (Cloud)')
                             cloud_study_topics_obj = cloud_report.get('study_topics', {})
 
-                            # Change status label to Finalized
-                            self.feedback_status_label.setText("Finalized Report (Cloud AI)")
-                            self.feedback_status_label.setStyleSheet("font-style: normal; color: #166534; font-weight: bold;") # e.g., Green/Bold
+                            # Update status label
+                            self.final_status_label.setText("Status: Analysis Complete")
+                            self.final_status_label.setStyleSheet("font-style: normal; color: #166534; font-weight: bold;") # Green/Bold
 
-                            # Update grade and feedback text
-                            self.mark_label.setText(f"Grade: {cloud_grade}") # No need for (Cloud) suffix now
+                            # Update grade and feedback text in the FINALIZED section
+                            self.final_grade_label.setText(f"Grade: {cloud_grade}")
 
-                            # Format study topics (adapt as needed)
                             study_topics_display = "Study Topics:\n"
                             if isinstance(cloud_study_topics_obj, dict):
-                                if 'raw' in cloud_study_topics_obj: study_topics_display += cloud_study_topics_obj['raw']
-                                elif 'lines' in cloud_study_topics_obj: study_topics_display += "\n".join(f"- {line}" for line in cloud_study_topics_obj['lines'])
-                                else: study_topics_display += json.dumps(cloud_study_topics_obj, indent=2)
+                                 if 'raw' in cloud_study_topics_obj: study_topics_display += cloud_study_topics_obj['raw']
+                                 elif 'lines' in cloud_study_topics_obj: study_topics_display += "\n".join(f"- {line}" for line in cloud_study_topics_obj['lines'])
+                                 else: study_topics_display += json.dumps(cloud_study_topics_obj, indent=2)
                             else: study_topics_display += str(cloud_study_topics_obj)
 
                             full_feedback = f"Rationale:\n{cloud_rationale}\n\n{study_topics_display}"
-                            self.feedback_text.setText(full_feedback)
+                            self.final_feedback_text.setText(full_feedback) # Update finalized text edit
 
-                            # Ensure feedback area is visible
-                            self._show_feedback()
+                            # Ensure the finalized section is visible
+                            self._show_final_feedback() # Shows box, hides button
+                            self.feedback_groupbox.show() # Ensure main area is visible
 
-                            self.logger.info(f"UI updated successfully with cloud report for {history_id}.")
+                            self.logger.info(f"Finalized UI section updated successfully for {history_id}.")
                       else:
                            self.logger.info(f"Cloud report received for history_id {history_id}, but user has navigated away from question {history_qid}. UI not updated.")
 
@@ -1148,6 +1185,56 @@ class QuestionView(QWidget):
              main_window.profile_info_widget.update_new_report_indicator()
         else:
              self.logger.warning("Could not find profile_info_widget or its update method to update badge.")
+
+    # --- ADDED: Dedicated slot for worker finished ---
+    @Slot(int)
+    def _on_groq_worker_finished(self, history_id: int):
+        """Cleans up the worker reference when the thread finishes."""
+        self.logger.debug(f"Groq worker thread finished for history_id: {history_id}. Removing from tracking dictionary.")
+        # Remove the worker reference from the dictionary
+        removed_worker = self.groq_workers.pop(history_id, None)
+        if removed_worker:
+             # Optional: Explicitly schedule the worker object for deletion
+             # This can sometimes help Python's GC timing issues with Qt objects
+             removed_worker.deleteLater()
+             self.logger.debug(f"Scheduled worker object for deletion for history_id: {history_id}.")
+        else:
+             self.logger.warning(f"Attempted to remove finished worker for history_id {history_id}, but it was not found in the dictionary.")
+    # --- END ADDED SLOT ---
+
+    # --- ADDED: Methods to handle individual feedback visibility ---
+    def _hide_prelim_feedback(self):
+        """Hides the preliminary feedback box and shows the 'Show Preliminary' button."""
+        self.preliminary_feedback_group.hide()
+        self.show_prelim_button.show()
+        self.logger.debug("Preliminary Feedback hidden.")
+        # If both are hidden, hide the main container too
+        if self.finalized_report_group.isHidden():
+             self.feedback_groupbox.hide()
+
+    def _show_prelim_feedback(self):
+        """Shows the preliminary feedback box and hides the 'Show Preliminary' button."""
+        self.feedback_groupbox.show() # Ensure main container is visible
+        self.preliminary_feedback_group.show()
+        self.show_prelim_button.hide()
+        self.logger.debug("Preliminary Feedback shown.")
+
+    def _hide_final_feedback(self):
+        """Hides the finalized report box and shows the 'Show Finalized' button."""
+        self.finalized_report_group.hide()
+        self.show_final_button.show()
+        self.logger.debug("Finalized Report hidden.")
+        # If both are hidden, hide the main container too
+        if self.preliminary_feedback_group.isHidden():
+             self.feedback_groupbox.hide()
+
+    def _show_final_feedback(self):
+        """Shows the finalized report box and hides the 'Show Finalized' button."""
+        self.feedback_groupbox.show() # Ensure main container is visible
+        self.finalized_report_group.show()
+        self.show_final_button.hide()
+        self.logger.debug("Finalized Report shown.")
+    # --- END ADDED METHODS ---
 
 # Example Usage (if run standalone)
 if __name__ == '__main__':
