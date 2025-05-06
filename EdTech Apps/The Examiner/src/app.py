@@ -2,6 +2,7 @@ import logging
 import sys
 import os
 from datetime import datetime
+import threading
 
 # Core services
 from src.core import services
@@ -12,6 +13,7 @@ from src.core.queue_manager import QueueManager
 from src.core.network.sync_service import SyncService
 from src.data.cache.cache_manager import CacheManager
 from src.core.history.user_history_manager import UserHistoryManager
+from src.core.firebase.client import FirebaseClient
 
 # Set up logging
 configure_logging()
@@ -80,6 +82,17 @@ def initialize_app():
     if hasattr(network_monitor, 'start'):
         network_monitor.start()
     
+    # Initialize Firebase client
+    firebase_client = FirebaseClient()
+    services.firebase_client = firebase_client
+    logger.info("Firebase client initialized")
+
+    # Start background sync of question cache to DB
+    logger.info("Starting background sync of question cache to DB...")
+    sync_thread = threading.Thread(target=cache_manager.sync_question_cache_to_db, daemon=True)
+    sync_thread.start()
+    logger.info("Cache-to-DB sync started in background thread.")
+
     logger.info(f"--- Initializing services. ID of 'services' module: {id(services)} ---")
     logger.info("Application initialization complete")
     print(">>> DEBUG: Exiting initialize_app()", file=sys.stderr)

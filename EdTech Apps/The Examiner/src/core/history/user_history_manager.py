@@ -326,3 +326,64 @@ class UserHistoryManager:
             return None
         finally:
             if cursor: cursor.close()
+
+    def get_all_history_details(self, user_id: int) -> list[Dict[str, Any]]:
+        """
+        Fetches all history entries for a user, joined with question details.
+
+        Args:
+            user_id: The ID of the user.
+
+        Returns:
+            A list of dictionaries, each containing details for one history entry.
+            Returns an empty list on error or if no history exists.
+        """
+        conn = self._get_connection()
+        if not conn:
+            logger.error("Cannot get history details: No database connection.")
+            return []
+
+        results = []
+        cursor = None
+        sql = """
+            SELECT
+                ah.history_id,
+                ah.answer_timestamp,
+                ah.cloud_report_received,
+                cq.question_id,
+                cq.subject,
+                cq.level,
+                cq.paper_number,
+                cq.paper_year
+            FROM
+                answer_history ah
+            JOIN
+                cached_questions cq ON ah.cached_question_id = cq.question_id
+            WHERE
+                ah.user_id = ?
+            ORDER BY
+                ah.answer_timestamp DESC;
+            """
+        try:
+            cursor = conn.cursor()
+            # Set row factory to easily convert rows to dictionary-like objects
+            conn.row_factory = sqlite3.Row 
+            cursor = conn.cursor() # Re-create cursor after setting row_factory
+            
+            logger.debug(f"Executing SQL to get all history details for user {user_id}")
+            cursor.execute(sql, (user_id,))
+            rows = cursor.fetchall()
+            
+            # Convert Row objects to dictionaries
+            results = [dict(row) for row in rows] 
+            logger.info(f"Retrieved {len(results)} history entries for user {user_id}")
+
+        except sqlite3.Error as e:
+            logger.error(f"DATABASE ERROR getting all history details for user {user_id}: {e}", exc_info=True)
+            return [] # Return empty list on error
+        finally:
+            # Reset row_factory to default if necessary, or handle appropriately elsewhere
+            conn.row_factory = None 
+            if cursor: cursor.close()
+
+        return results
