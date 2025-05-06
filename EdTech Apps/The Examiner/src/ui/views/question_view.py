@@ -148,11 +148,11 @@ FEEDBACK_STYLE = """
     /* Common styles for labels/text inside sub-groups */
     QGroupBox#PreliminaryFeedbackSubGroup QLabel, QGroupBox#FinalizedReportSubGroup QLabel {{
         background-color: transparent; /* Ensure labels inside have transparent background */
-        color: #1F2937;
+        color: #1F2937; 
     }}
      QGroupBox#PreliminaryFeedbackSubGroup QTextEdit, QGroupBox#FinalizedReportSubGroup QTextEdit {{
         font-size: 13px;
-        border: 1px solid #D1D5DB;
+        border: 1px solid #D1D5DB; 
         border-radius: 4px;
         padding: 4px;
         background-color: white;
@@ -275,15 +275,20 @@ class QuestionView(QWidget):
         self.current_question_data = None # To store the loaded question details
         self.logger = logging.getLogger(__name__)
         self.feedback_worker = None
-        self.waiting_dialog = None # Add instance variable for the dialog
+        self.waiting_dialog = None 
         self.sub_answer_fields: Dict[str, QTextEdit] = {}
         self.last_submitted_answers = None 
         self.last_used_prompt = None 
-        self.groq_workers = {} # <--- ADD THIS INITIALIZATION
+        self.groq_workers = {} 
 
-        # ADD State flags
-        self.preliminary_feedback_available = False
-        self.final_report_available = False
+        # --- ADDED: State flags for feedback generation ---
+        self.preliminary_feedback_generated = False
+        self.finalized_feedback_generated = False
+        # --- END ADDED ---
+
+        # ADD State flags - (These seem redundant now, consider removing if not used elsewhere)
+        # self.preliminary_feedback_available = False
+        # self.final_report_available = False
 
         self._setup_ui()
         self.load_random_question()
@@ -501,10 +506,17 @@ class QuestionView(QWidget):
                         sub_widget = sub_item.widget()
                         if sub_widget: sub_widget.deleteLater()
 
-        # --- Hide feedback from previous question and reset visibility state ---
-        self._hide_prelim_feedback() # Use methods to ensure buttons are shown/hidden correctly
-        self._hide_final_feedback()
-        self.feedback_groupbox.hide() # Hide main container initially
+        # --- Reset Feedback State ---
+        self.preliminary_feedback_generated = False # Reset flag
+        self.finalized_feedback_generated = False   # Reset flag
+
+        self.preliminary_feedback_group.hide() # Hide section
+        self.finalized_report_group.hide()   # Hide section
+        self.feedback_groupbox.hide()        # Hide main container
+
+        self.show_prelim_button.hide() # Explicitly hide button
+        self.show_final_button.hide()  # Explicitly hide button
+        # --- END Reset Feedback State ---
 
         self.submit_button.setEnabled(True)
         self.next_button.setEnabled(False)
@@ -828,6 +840,9 @@ class QuestionView(QWidget):
 
         if eval_results:
             self.logger.info(f"Received local AI feedback: {eval_results}")
+            # --- Set Preliminary Feedback Generated Flag ---
+            self.preliminary_feedback_generated = True
+            # ---
 
             # 1. Store Local results to history database
             try:
@@ -1105,27 +1120,30 @@ class QuestionView(QWidget):
         history_manager = services.user_history_manager
 
         if history_manager:
-            # --- REPLACE PLACEHOLDER ---
-            # Update the database entry with the received report
             success = history_manager.update_with_cloud_report(history_id, cloud_report)
-            # --- END REPLACE PLACEHOLDER ---
 
             if success:
                  self.logger.info(f"Successfully updated answer_history for {history_id} with cloud report via direct call.")
 
-                 # --- Update UI with FINALIZED Cloud Report ---
-                 self.logger.info(f"Updating UI with FINALIZED cloud report for history_id: {history_id}")
+                 # --- Set Flag indicating generation SUCCESS ---
+                 # Set this regardless of whether the user is still viewing the question,
+                 # as the data *was* generated successfully.
+                 self.finalized_feedback_generated = True
+                 self.logger.info(f"Flag finalized_feedback_generated set to True for history_id {history_id} based on successful DB update.")
+                 # ---
+
+                 # --- Update UI only if still relevant ---
+                 self.logger.info(f"Checking if UI should be updated for finalized report (history_id: {history_id})")
                  try:
-                      # Check if this is still the currently displayed question's history
-                      # Avoid updating UI if user navigated away quickly
                       current_qid = self.current_question_data.get('id') if self.current_question_data else None
                       history_qid = history_manager.get_question_id_for_history(history_id) # Needs implementation in UHM
+                      self.logger.debug(f"Check: current_qid={current_qid}, history_qid={history_qid}")
 
                       if history_qid and current_qid == history_qid:
                             self.logger.info(f"Cloud report matches current question {current_qid}. Updating Finalized UI section.")
 
                             # Set Title for the finalized group
-                            self.finalized_report_group.setTitle("Finalized Report (Cloud AI)")
+                            # self.finalized_report_group.setTitle("Finalized Report (Cloud AI)") # Already set potentially
 
                             cloud_grade = cloud_report.get('grade', 'N/A (Cloud)')
                             cloud_rationale = cloud_report.get('rationale', 'N/A (Cloud)')
@@ -1133,28 +1151,36 @@ class QuestionView(QWidget):
 
                             # Update status label
                             self.final_status_label.setText("Status: Analysis Complete")
-                            self.final_status_label.setStyleSheet("font-style: normal; color: #166534; font-weight: bold;") # Green/Bold
+                            self.final_status_label.setStyleSheet("font-style: normal; color: #166534; font-weight: bold;")
 
                             # Update grade and feedback text in the FINALIZED section
                             self.final_grade_label.setText(f"Grade: {cloud_grade}")
 
                             study_topics_display = "Study Topics:\n"
                             if isinstance(cloud_study_topics_obj, dict):
-                                 if 'raw' in cloud_study_topics_obj: study_topics_display += cloud_study_topics_obj['raw']
-                                 elif 'lines' in cloud_study_topics_obj: study_topics_display += "\n".join(f"- {line}" for line in cloud_study_topics_obj['lines'])
-                                 else: study_topics_display += json.dumps(cloud_study_topics_obj, indent=2)
-                            else: study_topics_display += str(cloud_study_topics_obj)
+                                if 'raw' in cloud_study_topics_obj: study_topics_display += cloud_study_topics_obj['raw']
+                                elif 'lines' in cloud_study_topics_obj: study_topics_display += "\n".join(f"- {line}" for line in cloud_study_topics_obj['lines'])
+                                else: study_topics_display += json.dumps(cloud_study_topics_obj, indent=2)
+                            else:
+                                study_topics_display += str(cloud_study_topics_obj)
 
                             full_feedback = f"Rationale:\n{cloud_rationale}\n\n{study_topics_display}"
-                            self.final_feedback_text.setText(full_feedback) # Update finalized text edit
+                            self.final_feedback_text.setText(full_feedback)
 
-                            # Ensure the finalized section is visible
-                            self._show_final_feedback() # Shows box, hides button
-                            self.feedback_groupbox.show() # Ensure main area is visible
+                            # Ensure the finalized section is visible using the method
+                            self._show_final_feedback() # Shows box, hides show button
 
                             self.logger.info(f"Finalized UI section updated successfully for {history_id}.")
+                            # Optional: Automatically hide preliminary once finalized is ready
+                            # self._hide_prelim_feedback()
                       else:
-                           self.logger.info(f"Cloud report received for history_id {history_id}, but user has navigated away from question {history_qid}. UI not updated.")
+                           self.logger.info(f"Cloud report received for history_id {history_id}, but user has navigated away or IDs don't match (Current: {current_qid}, History: {history_qid}). UI not updated, but flag was set.")
+                           # Since UI isn't updated, ensure the "Show" button isn't wrongly displayed
+                           # if the section was previously hidden.
+                           # If the finalized group is hidden, the corresponding show button might
+                           # need to be explicitly hidden here if the flag was just set.
+                           if self.finalized_report_group.isHidden():
+                               self.show_final_button.hide()
 
 
                  except Exception as ui_update_err:
@@ -1164,8 +1190,12 @@ class QuestionView(QWidget):
                  self.update_new_report_indicator() # Update badge count
             else:
                  self.logger.error(f"Failed to update answer_history for {history_id} with cloud report data.")
+                 # Failed DB update, so don't set the flag
+                 self.finalized_feedback_generated = False
         else:
             self.logger.error("UserHistoryManager service not available when Groq result received. Cannot save cloud report to DB.")
+            # Cannot confirm generation, don't set the flag
+            self.finalized_feedback_generated = False
 
     @Slot(int, str)
     def _handle_groq_feedback_error(self, history_id: int, error_message: str):
@@ -1204,11 +1234,14 @@ class QuestionView(QWidget):
 
     # --- ADDED: Methods to handle individual feedback visibility ---
     def _hide_prelim_feedback(self):
-        """Hides the preliminary feedback box and shows the 'Show Preliminary' button."""
+        """Hides the preliminary feedback box and shows the 'Show Preliminary' button *if generated*."""
         self.preliminary_feedback_group.hide()
-        self.show_prelim_button.show()
+        # --- MODIFIED: Only show button if feedback was generated ---
+        if self.preliminary_feedback_generated:
+            self.show_prelim_button.show()
+        # ---
         self.logger.debug("Preliminary Feedback hidden.")
-        # If both are hidden, hide the main container too
+        # If both sections are hidden, hide the main container
         if self.finalized_report_group.isHidden():
              self.feedback_groupbox.hide()
 
@@ -1220,11 +1253,14 @@ class QuestionView(QWidget):
         self.logger.debug("Preliminary Feedback shown.")
 
     def _hide_final_feedback(self):
-        """Hides the finalized report box and shows the 'Show Finalized' button."""
+        """Hides the finalized report box and shows the 'Show Finalized' button *if generated*."""
         self.finalized_report_group.hide()
-        self.show_final_button.show()
+        # --- MODIFIED: Only show button if feedback was generated ---
+        if self.finalized_feedback_generated:
+            self.show_final_button.show()
+        # ---
         self.logger.debug("Finalized Report hidden.")
-        # If both are hidden, hide the main container too
+        # If both sections are hidden, hide the main container
         if self.preliminary_feedback_group.isHidden():
              self.feedback_groupbox.hide()
 
