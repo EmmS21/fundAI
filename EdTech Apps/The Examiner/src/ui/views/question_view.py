@@ -1,8 +1,8 @@
 import logging
 logger = logging.getLogger(__name__)
 
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QScrollArea, QSizePolicy, QDialog, QFrame, QMessageBox, QGroupBox)
-from PySide6.QtGui import QPixmap, QImage, QFont, QGuiApplication
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QScrollArea, QSizePolicy, QDialog, QFrame, QMessageBox, QGroupBox, QSplitter, QListWidget, QListWidgetItem)
+from PySide6.QtGui import QPixmap, QImage, QFont, QGuiApplication, QIcon
 from PySide6.QtCore import Qt, Signal, QUrl, QThread, QStandardPaths, Slot
 from src.data.cache.cache_manager import CacheManager
 import os
@@ -13,6 +13,8 @@ from typing import Dict, Optional, Any
 from src.core import services
 from src.core.network.monitor import NetworkStatus
 from src.core.ai.groq_client import GroqClient
+from ...core.history.user_history_manager import UserHistoryManager
+from datetime import datetime
 
 # --- QSS Styles ---
 # Define styles here for better organization
@@ -482,6 +484,50 @@ class QuestionView(QWidget):
 
         self.main_layout.addWidget(self.image_section_label)
         self.main_layout.addWidget(self.image_links_container) 
+
+        # Add a button to trigger the performance view (example placement)
+        # You might want to place this button more appropriately in your layout
+        self.viewPerformanceButton = QPushButton("View Performance")
+        self.viewPerformanceButton.setIcon(QIcon.fromTheme("view-list-details")) # Example icon
+        self.viewPerformanceButton.clicked.connect(self.showPerformanceView) 
+        # Add this button to your existing layout, e.g., self.mainLayout.addWidget(self.viewPerformanceButton)
+        # For now, I'll assume you add it somewhere visible.
+
+        # Create the performance widget but keep it hidden initially
+        self.performanceWidget = QWidget() 
+        performanceLayout = QHBoxLayout(self.performanceWidget)
+
+        splitter = QSplitter(Qt.Horizontal)
+
+        # Preliminary Reports Section
+        preliminaryFrame = QFrame()
+        preliminaryLayout = QVBoxLayout(preliminaryFrame)
+        preliminaryLabel = QLabel("Preliminary Reports")
+        preliminaryLabel.setStyleSheet("font-weight: bold;")
+        self.preliminaryList = QListWidget()
+        preliminaryLayout.addWidget(preliminaryLabel)
+        preliminaryLayout.addWidget(self.preliminaryList)
+        
+        # Final Reports Section
+        finalFrame = QFrame()
+        finalLayout = QVBoxLayout(finalFrame)
+        finalLabel = QLabel("Final Reports")
+        finalLabel.setStyleSheet("font-weight: bold;")
+        self.finalList = QListWidget()
+        finalLayout.addWidget(finalLabel)
+        finalLayout.addWidget(self.finalList)
+
+        splitter.addWidget(preliminaryFrame)
+        splitter.addWidget(finalFrame)
+        splitter.setSizes([self.width() // 2, self.width() // 2]) # Initial equal split
+
+        performanceLayout.addWidget(splitter)
+        self.performanceWidget.setVisible(False) # Hide initially
+
+        # Add the performance widget to your main layout, perhaps replacing 
+        # or alongside the existing question display area.
+        # Example: self.mainLayout.addWidget(self.performanceWidget) 
+        # You'll need to manage visibility toggling between the question view and performance view.
 
     def load_random_question(self):
         """Fetches and displays a random question from the cache."""
@@ -1271,6 +1317,69 @@ class QuestionView(QWidget):
         self.show_final_button.hide()
         self.logger.debug("Finalized Report shown.")
     # --- END ADDED METHODS ---
+
+    def showPerformanceView(self):
+        """Fetches data and displays the performance history."""
+        self.logger.info("Showing Performance View")
+        # --- Toggle Visibility ---
+        # Hide other widgets (like the question display area) and show the performance widget
+        # Example: self.questionDisplayArea.setVisible(False) 
+        self.performanceWidget.setVisible(True) 
+        # You might need more sophisticated logic to switch views/widgets
+
+        # --- Clear existing lists ---
+        self.preliminaryList.clear()
+        self.finalList.clear()
+
+        # --- Fetch data ---
+        # Assuming user_id is 1 for this desktop app, or get it from a config/profile manager
+        user_id = 1 # Replace with actual user ID retrieval if necessary
+        history_manager = UserHistoryManager() 
+        history_details = history_manager.get_all_history_details(user_id)
+
+        if not history_details:
+            self.logger.warning(f"No history found for user {user_id}")
+            # Optionally display a message in the UI
+            self.preliminaryList.addItem("No history found.")
+            return
+
+        # --- Populate lists ---
+        for item in history_details:
+            # Format display string
+            question_identifier = item.get('question_id', 'N/A') 
+            paper_info = f"{item.get('subject', '')} {item.get('level', '')} - {item.get('paper_number', '')} ({item.get('paper_year', 'N/A')})"
+            
+            timestamp_str = "Unknown time"
+            timestamp_obj = item.get('answer_timestamp')
+            if timestamp_obj:
+                 # Attempt to parse if it's a string, format if it's datetime
+                if isinstance(timestamp_obj, str):
+                    try:
+                        # Adjust format if needed based on how it's stored
+                        timestamp_dt = datetime.fromisoformat(timestamp_obj) 
+                        timestamp_str = timestamp_dt.strftime('%Y-%m-%d %H:%M')
+                    except ValueError:
+                         timestamp_str = timestamp_obj # Keep original string if parse fails
+                elif isinstance(timestamp_obj, datetime):
+                     timestamp_str = timestamp_obj.strftime('%Y-%m-%d %H:%M')
+
+
+            display_text = f"Question: {question_identifier}\nPaper: {paper_info}\nDone: {timestamp_str}"
+            
+            list_item = QListWidgetItem(display_text)
+            # Store history_id for potential future use (e.g., clicking to view details)
+            list_item.setData(Qt.UserRole, item.get('history_id')) 
+
+            if item.get('cloud_report_received'): # Final Report
+                self.finalList.addItem(list_item)
+            else: # Preliminary Report
+                self.preliminaryList.addItem(list_item)
+        
+        self.logger.info(f"Populated performance lists: {self.preliminaryList.count()} preliminary, {self.finalList.count()} final.")
+
+    # You might want a corresponding function to hide the performance view 
+    # and show the main question view again, e.g., hidePerformanceView()
+    # triggered by a 'Back' button or similar.
 
 # Example Usage (if run standalone)
 if __name__ == '__main__':

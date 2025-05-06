@@ -24,6 +24,9 @@ from bs4 import BeautifulSoup
 import mimetypes
 from bson import ObjectId # Make sure this import exists at the top
 import pprint # Import pprint for prettier dictionary logging
+# Import SQLAlchemy components and the specific model
+from src.utils.db import get_db_session # Get session factory
+from src.data.database.models import CachedQuestion # Import the ORM model
 
 
 logger = logging.getLogger(__name__)
@@ -2035,3 +2038,176 @@ class CacheManager:
     def _perform_online_update_check(self, trigger_reason: str):
         # ... (Implementation of this method should already exist) ...
         pass
+
+    # --- CORRECTED SYNC FUNCTION (v3) ---
+    def sync_question_cache_to_db(self):
+        """
+        Scans the JSON question cache and ensures the 'cached_questions'
+        SQLAlchemy table is up-to-date. Inserts new questions and updates
+        existing ones if the JSON file provides more complete data.
+        Includes subtopic and difficulty, excludes paper_id/paper_number.
+        """
+        self.logger.info("Starting robust sync of question cache files to SQLAlchemy DB (v3)...")
+        inserted_count = 0
+        updated_count = 0
+        checked_count = 0
+        skipped_malformed = 0
+        skipped_missing_id = 0
+        skipped_missing_required = 0
+
+        with get_db_session() as session:
+            try:
+                # Ensure table exists - uses the latest model definition if creating
+                try:
+                     CachedQuestion.__table__.create(session.bind, checkfirst=True)
+                     session.commit() # Commit table creation if needed
+                     self.logger.info("Ensured 'cached_questions' table exists.")
+                except Exception as table_err:
+                     self.logger.error(f"Could not explicitly ensure table exists (may be fine if using migrations): {table_err}")
+                     session.rollback() # Rollback potential failed create
+
+                if not os.path.exists(self.QUESTIONS_DIR):
+                    self.logger.warning(f"Question cache directory not found: {self.QUESTIONS_DIR}")
+                    return
+
+                # Scan the cache directory structure
+                for subject_dir in os.listdir(self.QUESTIONS_DIR):
+                    subject_path = os.path.join(self.QUESTIONS_DIR, subject_dir)
+                    if not os.path.isdir(subject_path): continue
+                    subject_name = subject_dir
+
+                    for level_dir in os.listdir(subject_path):
+                        level_path = os.path.join(subject_path, level_dir)
+                        if not os.path.isdir(level_path): continue
+                        # TODO: Map level_dir to DB level_name if necessary
+                        level_name = level_dir
+
+                        for year_dir in os.listdir(level_path):
+                            year_path = os.path.join(level_path, year_dir)
+                            if not os.path.isdir(year_path): continue
+                            year_str = year_dir
+
+                            for filename in os.listdir(year_path):
+                                if filename.endswith(".json"):
+                                    file_path = os.path.join(year_path, filename)
+                                    checked_count += 1
+                                    self.logger.debug(f"Checking file: {file_path}")
+
+                                    # --- Load JSON Data ---
+                                    question_data = None
+                                    try:
+                                        with open(file_path, 'r', encoding='utf-8') as f:
+                                            question_data = json.load(f)
+                                    except json.JSONDecodeError:
+                                        self.logger.warning(f"Skipping malformed JSON: {file_path}")
+                                        skipped_malformed += 1
+                                        continue
+                                    except IOError as e:
+                                        self.logger.error(f"Error reading file {file_path}: {e}")
+                                        continue
+
+                                    # --- Extract potential ID ---
+                                    q_id = question_data.get('id') or question_data.get('_id')
+                                    if not q_id:
+                                        self.logger.warning(f"Skipping file: Missing 'id' or '_id' key in {file_path}")
+                                        skipped_missing_id += 1
+                                        continue
+                                    q_id_str = str(q_id)
+
+                                    # --- Extract Data from JSON (Reflecting New Model) ---
+                                    json_topic = question_data.get('topic')
+                                    json_subtopic = question_data.get('subtopic') # New field
+                                    difficulty_data = question_data.get('difficulty') # Can be dict or str
+                                    json_difficulty_level = None
+                                    if isinstance(difficulty_data, dict):
+                                        json_difficulty_level = difficulty_data.get('level') # Extract level string
+                                    elif isinstance(difficulty_data, str):
+                                        json_difficulty_level = difficulty_data # If it's just a string
+
+                                    json_content = question_data.get('question_text')
+                                    json_marks_raw = question_data.get('marks')
+
+                                    # Convert year and marks carefully
+                                    try:
+                                        json_paper_year = int(year_str)
+                                    except ValueError:
+                                        json_paper_year = None # Mark as invalid/missing
+                                    try:
+                                        json_marks = int(json_marks_raw) if json_marks_raw is not None else None
+                                    except (ValueError, TypeError):
+                                        json_marks = None # Mark as invalid/missing
+
+
+                                    # --- Check if required data is present in JSON ---
+                                    # Removed paper_id/paper_number check
+                                    required_fields_present = all([
+                                        subject_name, level_name, json_content,
+                                        json_marks is not None, json_paper_year is not None
+                                    ])
+
+                                    # --- Query Existing Record ---
+                                    existing_question = session.query(CachedQuestion).filter_by(question_id=q_id_str).first()
+
+                                    if existing_question:
+                                        # --- Update Existing Record ---
+                                        was_updated = False
+                                        # Update topic if current is None and new exists
+                                        if existing_question.topic is None and json_topic:
+                                            existing_question.topic = json_topic
+                                            was_updated = True
+                                        # Update subtopic if current is None and new exists
+                                        if existing_question.subtopic is None and json_subtopic:
+                                            existing_question.subtopic = json_subtopic
+                                            was_updated = True
+                                        # Update difficulty if current is None and new exists
+                                        if existing_question.difficulty is None and json_difficulty_level:
+                                            existing_question.difficulty = json_difficulty_level
+                                            was_updated = True
+                                        # Update others if they were missing/invalid and now valid
+                                        if not existing_question.content and json_content:
+                                            existing_question.content = json_content
+                                            was_updated = True
+                                        if (existing_question.marks == 0 or existing_question.marks is None) and json_marks is not None:
+                                             existing_question.marks = json_marks
+                                             was_updated = True
+
+                                        if was_updated:
+                                            updated_count += 1
+                                            self.logger.info(f"Updated missing fields for question ID {q_id_str}.")
+                                        else:
+                                             self.logger.debug(f"No updates needed for existing question ID {q_id_str}.")
+
+                                    else:
+                                        # --- Insert New Record ---
+                                        if not required_fields_present:
+                                            self.logger.warning(f"Skipping insert for {q_id_str}: Missing required field(s) in JSON {file_path}. Needed: subject, level, content, marks, year.")
+                                            skipped_missing_required += 1
+                                            continue
+
+                                        # Create new object only if all required fields are valid
+                                        now = datetime.now()
+                                        new_question = CachedQuestion(
+                                            question_id=q_id_str,
+                                            paper_year=json_paper_year, # Known to be present now
+                                            subject=subject_name, # Assumed from dir
+                                            level=level_name, # Assumed/mapped from dir
+                                            topic=json_topic, # Optional
+                                            subtopic=json_subtopic, # Optional (new)
+                                            difficulty=json_difficulty_level, # Optional (new)
+                                            content=json_content, # Known to be present now
+                                            marks=json_marks, # Known to be present now
+                                            cached_at=now,
+                                            last_accessed=now
+                                        )
+                                        session.add(new_question)
+                                        inserted_count += 1
+                                        self.logger.info(f"Added new question ID {q_id_str} to session.")
+
+                # Commit the transaction
+                session.commit()
+                self.logger.info(f"Finished sync. Checked: {checked_count}, Inserted: {inserted_count}, Updated: {updated_count}, Skipped (Malformed): {skipped_malformed}, Skipped (No ID): {skipped_missing_id}, Skipped (Missing Required): {skipped_missing_required}")
+
+            except Exception as e:
+                self.logger.error(f"Error during cache sync: {e}", exc_info=True)
+                session.rollback()
+                self.logger.info("Rolled back database changes due to error.")

@@ -10,6 +10,8 @@ from src.data.cache.cache_manager import CacheStatus, CacheProgressStatus, Cache
 import logging
 import json
 from datetime import datetime
+from typing import List, Dict
+from src.data.database.models import CachedQuestion
 
 logger = logging.getLogger(__name__)
 
@@ -420,7 +422,8 @@ class SubjectCard(QWidget):
         view_performance = QPushButton("View performance ▼")
         view_performance.setObjectName("viewPerformance")
         view_performance.setCursor(Qt.PointingHandCursor)
-        view_performance.setStyleSheet("border: none;")  # Explicitly set no border
+        view_performance.setStyleSheet("border: none;")
+        view_performance.clicked.connect(self._show_performance_dropdown)
         
         # Take Test Question button
         take_test_btn = QPushButton("Take Test Question")
@@ -430,7 +433,7 @@ class SubjectCard(QWidget):
         
         # Add buttons to bottom section
         bottom_section.addWidget(view_performance, alignment=Qt.AlignLeft)
-        bottom_section.addStretch()  # This pushes the Take Test button to the right
+        bottom_section.addStretch()
         bottom_section.addWidget(take_test_btn, alignment=Qt.AlignRight)
         
         # Add bottom section to content layout
@@ -880,3 +883,159 @@ class SubjectCard(QWidget):
             
         except Exception as e:
             logger.error(f"Error updating subject levels: {e}")
+
+    def _show_performance_dropdown(self):
+        """
+        Creates and shows a dropdown menu listing past performance reports,
+        filtered by the subject and enabled levels of this card.
+        Fetches data in two steps: basic history, then question details.
+        """
+        logger.debug(f"Showing performance dropdown for {self.subject_name}")
+
+        button = self.findChild(QPushButton, "viewPerformance")
+        if not button:
+            logger.error("Could not find 'viewPerformance' button to show dropdown.")
+            return
+
+        # 1. Get User ID
+        user = UserOperations.get_current_user()
+        if not user:
+            logger.error("Cannot fetch performance history: No current user found.")
+            return
+        user_id = user['id']
+
+        # 2. Fetch Basic History (from answer_history)
+        try:
+            basic_history_list = UserOperations.get_performance_history(user_id)
+            logger.info(f"Fetched {len(basic_history_list)} basic history entries for user {user_id}.")
+        except Exception as e:
+            logger.error(f"Error fetching basic performance history: {e}", exc_info=True)
+            basic_history_list = []
+
+        # 3. Get Question IDs and Fetch Details (from cached_questions via SQLAlchemy)
+        question_details_map: Dict[str, CachedQuestion] = {}
+        if basic_history_list:
+            question_ids_to_fetch = list(set(
+                str(item.get("cached_question_id"))
+                for item in basic_history_list if item.get("cached_question_id")
+            ))
+
+            if question_ids_to_fetch:
+                logger.debug(f"Fetching details for {len(question_ids_to_fetch)} unique question IDs.")
+                try:
+                    # Assuming UserOperations.get_cached_question_details_bulk exists and works
+                    question_details_map = UserOperations.get_cached_question_details_bulk(question_ids_to_fetch)
+                    logger.info(f"Retrieved details for {len(question_details_map)} question IDs.")
+                except Exception as e:
+                    logger.error(f"Error fetching bulk question details: {e}", exc_info=True)
+            else:
+                 logger.warning("Basic history list found, but no cached_question_ids present.")
+
+        # 4. Prepare Menu and Filter Data
+        menu = QMenu(self)
+        self._style_performance_menu(menu) # Apply styling
+
+        enabled_level_keys = [key for key, enabled in self.levels.items() if enabled]
+        enabled_levels_display = {self._get_level_display_name(key) for key in enabled_level_keys}
+        logger.debug(f"Card Subject: '{self.subject_name}', Enabled Levels (Display): {enabled_levels_display}")
+
+        items_added_to_menu = 0
+        if not basic_history_list:
+            logger.info("No basic history found for user.")
+        else:
+            for history_item in basic_history_list:
+                cached_q_id = str(history_item.get("cached_question_id"))
+                question_details = question_details_map.get(cached_q_id)
+
+                if not question_details:
+                    logger.warning(f"Details not found for cached_question_id: {cached_q_id} from history_id: {history_item.get('history_id')}. Skipping.")
+                    continue
+
+                q_subject = question_details.subject
+                q_level = question_details.level
+
+                subject_match = (q_subject == self.subject_name)
+                level_match = (q_level in enabled_levels_display)
+
+                if not (subject_match and level_match):
+                    continue
+
+                # --- Format Display String (Updated) ---
+                try:
+                    timestamp_dt = datetime.fromisoformat(history_item['timestamp'])
+                    formatted_date = timestamp_dt.strftime('%Y-%m-%d %H:%M')
+                except (ValueError, TypeError, KeyError):
+                    formatted_date = "Invalid Date"
+
+                report_status = "Final" if history_item.get('is_final') else "Preliminary"
+
+                # Removed paper_number reference
+                display_text = (f"Year {question_details.paper_year} "
+                                f"({q_level}) - "
+                                f"{formatted_date} - {report_status}")
+
+                action = QAction(display_text, self)
+                # Store combined data if needed
+                # Convert ORM object to dict for setData if needed, or pass IDs
+                action_data = {"history": history_item}
+                if question_details:
+                     # Simple way to make ORM object serializable for setData, might need adjustment
+                     action_data["question"] = {c.name: getattr(question_details, c.name) for c in question_details.__table__.columns}
+                action.setData(action_data)
+                menu.addAction(action)
+                items_added_to_menu += 1
+                logger.debug(f"Added action for history_id {history_item.get('history_id')}")
+
+        if items_added_to_menu == 0:
+             no_history_text = "No history available"
+             if enabled_levels_display:
+                 no_history_text += " for selected levels"
+             else:
+                 no_history_text += " (no levels selected)"
+
+             no_history_action = QAction(no_history_text, self)
+             no_history_action.setEnabled(False)
+             menu.addAction(no_history_action)
+
+        # 5. Show Menu
+        button_pos = button.mapToGlobal(button.rect().bottomLeft())
+        menu.popup(button_pos)
+
+    def _style_performance_menu(self, menu: QMenu):
+         """Applies common styling to the performance dropdown menu."""
+         # Reusing similar style as the 'Take Test' dropdown for consistency
+         menu.setStyleSheet("""
+             QMenu {
+                 background-color: #F9FAFB; /* Lighter background */
+                 border: 1px solid #E5E7EB; /* Soft border */
+                 border-radius: 6px;
+                 padding: 4px;
+                 min-width: 300px; /* Ensure enough width for details */
+             }
+             QMenu::item {
+                 padding: 8px 15px; /* Adjust padding */
+                 background-color: transparent;
+                 color: #374151; /* Darker text */
+                 border-radius: 4px;
+                 margin: 2px;
+             }
+             QMenu::item:selected { /* Hover/selected state */
+                 background-color: #E5E7EB; /* Greyish hover */
+                 color: #1F2937;
+             }
+             QMenu::item:disabled { /* Style for disabled items */
+                 color: #9CA3AF; /* Lighter color for disabled text */
+                 background-color: transparent;
+             }
+             QMenu::separator {
+                 height: 1px;
+                 background: #E5E7EB;
+                 margin: 4px 0px;
+             }
+         """)
+
+    # def _handle_performance_item_click(self, history_item_data: Dict):
+    #     """Handles clicks on an item in the performance history dropdown."""
+    #     # Placeholder: Implement logic to show details for the selected report
+    #     logger.info(f"Performance item clicked: {history_item_data.get('history_id')}")
+    #     # e.g., open a dialog showing the full report details

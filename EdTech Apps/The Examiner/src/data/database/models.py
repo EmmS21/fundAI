@@ -162,12 +162,12 @@ class CachedQuestion(Base):
     __tablename__ = 'cached_questions'
 
     question_id = Column(Text, primary_key=True)
-    paper_id = Column(Text, nullable=False)
     paper_year = Column(Integer, nullable=False)
-    paper_number = Column(Text, nullable=False)
     subject = Column(Text, nullable=False)
     level = Column(Text, nullable=False)
-    topic = Column(Text)
+    topic = Column(Text, nullable=True)
+    subtopic = Column(Text, nullable=True)
+    difficulty = Column(Text, nullable=True)
     content = Column(Text, nullable=False)
     marks = Column(Integer, nullable=False)
     cached_at = Column(DateTime, nullable=False, default=func.now())
@@ -175,3 +175,10 @@ class CachedQuestion(Base):
 
     # Relationship back to responses (optional but can be useful)
     # responses = relationship("QuestionResponse", back_populates="cached_question")
+
+# IMPORTANT: If you are not using a migration tool like Alembic,
+# running the application after this model change might require
+# manually dropping and recreating the 'cached_questions' table
+# for the changes to take effect in the SQLite database file,
+# OR carefully altering the table manually.
+# Base.metadata.create_all(engine) typically won't alter existing tables.

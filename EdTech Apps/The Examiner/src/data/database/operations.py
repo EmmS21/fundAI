@@ -1,14 +1,16 @@
 from sqlalchemy.orm import Session, sessionmaker, joinedload
 from sqlalchemy import create_engine, select
-from .models import User, Subject, UserSubject, ExamResult, PaperCache
+from .models import User, Subject, UserSubject, ExamResult, PaperCache, CachedQuestion
 from src.utils.db import engine, Session, get_db_session
 from src.utils.hardware_identifier import HardwareIdentifier
 from src.core.queue_manager import QueueManager, QueuePriority
+from src.core.history.user_history_manager import UserHistoryManager, DB_PATH as STUDENT_PROFILE_DB_PATH
 from typing import Dict, List, Optional
 from datetime import datetime
 import os
 import tempfile
 import logging
+import sqlite3
 
 # Define logger at the module level (preferred)
 logger = logging.getLogger(__name__)
@@ -421,6 +423,117 @@ class UserOperations:
         with Session() as session:
             subject = session.query(Subject).get(subject_id)
             return subject.name if subject else None
+
+    @staticmethod
+    def get_performance_history(user_id: int) -> List[Dict]:
+        """
+        Fetch performance history for a given user directly from answer_history.
+        NOTE: This version cannot filter by subject/level and lacks detailed paper info
+              due to missing data in cached_questions table.
+
+        Args:
+            user_id: The ID of the current user.
+
+        Returns:
+            A list of dictionaries, each representing a past answer attempt with
+            timestamp and report status. Returns an empty list on error.
+        """
+        logger.debug(f"Fetching *basic* performance history for user {user_id}")
+        history = []
+
+        conn = None
+        try:
+            conn = sqlite3.connect(STUDENT_PROFILE_DB_PATH)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            # Simplified query - only select from answer_history
+            sql = """
+                SELECT
+                    history_id,
+                    answer_timestamp,
+                    cloud_report_received
+                FROM answer_history
+                WHERE user_id = ?
+                ORDER BY answer_timestamp DESC;
+            """
+
+            params = [user_id]
+            logger.debug(f"Executing SQL: {sql} with params: {params}")
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+            logger.info(f"Found {len(rows)} history records for user {user_id}.")
+
+            for row in rows:
+                history.append({
+                    "history_id": row["history_id"],
+                    "timestamp": row["answer_timestamp"],
+                    # Convert DB boolean (0/1) to Python bool
+                    "is_final": bool(row["cloud_report_received"]),
+                    # We cannot reliably get subject/level/paper info here
+                    "subject": "Unknown",
+                    "level": "Unknown",
+                    "paper_year": "N/A",
+                    "paper_number": "N/A",
+                })
+
+        except sqlite3.Error as e:
+            logger.error(f"Database error fetching basic performance history: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"Unexpected error fetching basic performance history: {e}", exc_info=True)
+        finally:
+            if conn:
+                conn.close()
+
+        return history
+
+    @staticmethod
+    def get_cached_question_details_bulk(question_ids: List[str]) -> Dict[str, CachedQuestion]:
+        """
+        Fetches details for multiple cached questions from the main database
+        using SQLAlchemy based on a list of question IDs.
+
+        Args:
+            question_ids: A list of unique question_id strings to retrieve.
+
+        Returns:
+            A dictionary mapping each found question_id (str) to its
+            corresponding CachedQuestion ORM object. Returns an empty dict
+            if no IDs are provided or if none are found.
+        """
+        details_map: Dict[str, CachedQuestion] = {}
+        if not question_ids:
+            logger.debug("No question IDs provided to get_cached_question_details_bulk.")
+            return details_map
+
+        # Ensure IDs are strings, just in case
+        string_ids = [str(qid) for qid in question_ids]
+        logger.debug(f"Fetching cached question details for {len(string_ids)} IDs.")
+
+        try:
+            with get_db_session() as session:
+                # Use the 'in_' operator for efficient bulk fetching
+                # Query returns a list of CachedQuestion objects
+                results = session.query(CachedQuestion)\
+                                 .filter(CachedQuestion.question_id.in_(string_ids))\
+                                 .all()
+
+                # Convert the list of results into a dictionary map for easy lookup
+                for question_obj in results:
+                    details_map[question_obj.question_id] = question_obj
+
+                found_ids = len(details_map)
+                if found_ids < len(string_ids):
+                    logger.warning(f"Found details for {found_ids}/{len(string_ids)} requested question IDs.")
+                else:
+                    logger.info(f"Successfully retrieved details for {found_ids} question IDs.")
+
+        except Exception as e:
+            # Log error, return empty map to avoid crashing caller
+            logger.error(f"Error fetching cached question details: {e}", exc_info=True)
+            return {} # Return empty dict on error
+
+        return details_map
 
 class PaperCacheOperations:
     @staticmethod
