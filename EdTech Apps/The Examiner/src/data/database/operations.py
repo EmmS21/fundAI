@@ -488,51 +488,40 @@ class UserOperations:
         return history
 
     @staticmethod
-    def get_cached_question_details_bulk(question_ids: List[str]) -> Dict[str, CachedQuestion]:
+    def get_cached_question_details_bulk(unique_question_keys: List[str]) -> Dict[str, CachedQuestion]:
         """
         Fetches details for multiple cached questions from the main database
-        using SQLAlchemy based on a list of question IDs.
-
-        Args:
-            question_ids: A list of unique question_id strings to retrieve.
-
-        Returns:
-            A dictionary mapping each found question_id (str) to its
-            corresponding CachedQuestion ORM object. Returns an empty dict
-            if no IDs are provided or if none are found.
+        using SQLAlchemy based on a list of unique_question_keys.
         """
         details_map: Dict[str, CachedQuestion] = {}
-        if not question_ids:
-            logger.debug("No question IDs provided to get_cached_question_details_bulk.")
+        if not unique_question_keys:
+            logger.debug("No unique_question_keys provided to get_cached_question_details_bulk.")
             return details_map
 
-        # Ensure IDs are strings, just in case
-        string_ids = [str(qid) for qid in question_ids]
-        logger.debug(f"Fetching cached question details for {len(string_ids)} IDs.")
+        string_keys = [str(key) for key in unique_question_keys if key is not None] # Filter out Nones before str conversion
+        if not string_keys:
+            logger.debug("All provided unique_question_keys were None.")
+            return details_map
+
+        logger.debug(f"Fetching cached question details for {len(string_keys)} unique keys.")
 
         try:
             with get_db_session() as session:
-                # Use the 'in_' operator for efficient bulk fetching
-                # Query returns a list of CachedQuestion objects
                 results = session.query(CachedQuestion)\
-                                 .filter(CachedQuestion.question_id.in_(string_ids))\
+                                 .filter(CachedQuestion.unique_question_key.in_(string_keys))\
                                  .all()
-
-                # Convert the list of results into a dictionary map for easy lookup
                 for question_obj in results:
-                    details_map[question_obj.question_id] = question_obj
-
+                    details_map[question_obj.unique_question_key] = question_obj
+                
                 found_ids = len(details_map)
-                if found_ids < len(string_ids):
-                    logger.warning(f"Found details for {found_ids}/{len(string_ids)} requested question IDs.")
+                if found_ids < len(string_keys):
+                    logger.warning(f"Found details for {found_ids}/{len(string_keys)} requested question keys. Missing keys might not be in DB or were None.")
                 else:
-                    logger.info(f"Successfully retrieved details for {found_ids} question IDs.")
+                    logger.info(f"Successfully retrieved details for {found_ids} question keys.")
 
         except Exception as e:
-            # Log error, return empty map to avoid crashing caller
             logger.error(f"Error fetching cached question details: {e}", exc_info=True)
             return {} # Return empty dict on error
-
         return details_map
 
 class PaperCacheOperations:
