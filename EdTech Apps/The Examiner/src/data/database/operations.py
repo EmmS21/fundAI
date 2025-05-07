@@ -450,12 +450,30 @@ class UserOperations:
             # Simplified query - only select from answer_history
             sql = """
                 SELECT
-                    history_id,
-                    answer_timestamp,
-                    cloud_report_received
-                FROM answer_history
-                WHERE user_id = ?
-                ORDER BY answer_timestamp DESC;
+                    ah.history_id,
+                    ah.answer_timestamp,
+                    ah.cloud_report_received,
+                    ah.cached_question_id, -- This is now unique_question_key
+                    cq.paper_document_id, -- Keep paper_document_id if needed
+                    cq.question_number_str,
+                    cq.subject,
+                    cq.level,
+                    cq.paper_year,
+                    cq.topic,            -- Added topic
+                    cq.subtopic,         -- Added subtopic
+                    cq.content AS question_content, -- Added question content
+                    cq.marks AS question_marks,     -- Added question marks
+                    ah.user_answer_json, -- Added user's answer
+                    ah.local_ai_grade,   -- Added local AI grade
+                    ah.local_ai_rationale -- Added local AI rationale
+                FROM
+                    answer_history ah
+                JOIN
+                    cached_questions cq ON ah.cached_question_id = cq.unique_question_key
+                WHERE
+                    ah.user_id = ?
+                ORDER BY
+                    ah.answer_timestamp DESC;
             """
 
             params = [user_id]
@@ -467,14 +485,15 @@ class UserOperations:
             for row in rows:
                 history.append({
                     "history_id": row["history_id"],
+                    "cached_question_id": row["cached_question_id"],
                     "timestamp": row["answer_timestamp"],
                     # Convert DB boolean (0/1) to Python bool
                     "is_final": bool(row["cloud_report_received"]),
                     # We cannot reliably get subject/level/paper info here
-                    "subject": "Unknown",
-                    "level": "Unknown",
-                    "paper_year": "N/A",
-                    "paper_number": "N/A",
+                    "subject": row["subject"],
+                    "level": row["level"],
+                    "paper_year": row["paper_year"],
+                    "paper_number": row["question_number_str"],
                 })
 
         except sqlite3.Error as e:
