@@ -882,63 +882,68 @@ class QuestionView(QWidget):
 
         # Store the prompt used for potential cloud sync
         self.last_used_prompt = generated_prompt
-        history_id = None
+        history_id = None # This will now store the ID of the *last* saved history entry in the loop
 
         if eval_results:
             self.logger.info(f"Received local AI feedback: {eval_results}")
-            # --- Set Preliminary Feedback Generated Flag ---
             self.preliminary_feedback_generated = True
-            # ---
 
-            # 1. Store Local results to history database
             try:
-                history_manager = services.user_history_manager # Get the manager
-                # --- Log prerequisite checks ---
+                history_manager = services.user_history_manager
                 self.logger.debug(f"Attempting history storage. History Manager valid: {history_manager is not None}")
                 self.logger.debug(f"Current Question Data valid: {self.current_question_data is not None}")
                 self.logger.debug(f"Last Submitted Answers valid: {self.last_submitted_answers is not None}")
-                # --- End Log ---
 
                 if history_manager and self.current_question_data and self.last_submitted_answers:
-                    # --- Use Default User ID for single-user app ---
                     current_user_id = 1 # Assuming user ID 1
-                    # -----------------------------------------------
+                    paper_document_id = self.current_question_data.get('id') # This is the paper's ID
 
-                    # --- Use the correct key 'id' from the loaded question data ---
-                    cached_question_id = self.current_question_data.get('id')
-                    # -------------------------------------------------------------
-                    self.logger.debug(f"Extracted cached_question_id using key 'id': {cached_question_id}") # Updated log
-
-                    if cached_question_id:
-                         exam_id = self.current_question_data.get('exam_result_id', None)
-                         feedback_dict = eval_results if isinstance(eval_results, dict) else {}
-
-                         # --- Log before calling add_history_entry ---
-                         self.logger.info("Calling add_history_entry with:")
-                         self.logger.info(f"  user_id: {current_user_id}")
-                         self.logger.info(f"  cached_question_id: {cached_question_id}")
-                         self.logger.info(f"  user_answer_dict: {self.last_submitted_answers}")
-                         self.logger.info(f"  local_ai_feedback_dict: {feedback_dict}")
-                         self.logger.info(f"  exam_result_id: {exam_id}")
-                         # --- End Log ---
-
-                         history_id = history_manager.add_history_entry(
-                             user_id=current_user_id,
-                             cached_question_id=cached_question_id,
-                             user_answer_dict=self.last_submitted_answers,
-                             local_ai_feedback_dict=feedback_dict,
-                             exam_result_id=exam_id
-                         )
-                         # Log result of the call
-                         if history_id:
-                              self.logger.info(f"add_history_entry call SUCCEEDED. Returned history_id: {history_id}")
-                         else:
-                              self.logger.error("add_history_entry call FAILED (returned None or 0).")
+                    if not paper_document_id:
+                        self.logger.error("Skipping history storage: Could not extract paper 'id' (paper_document_id) from current_question_data.")
                     else:
-                         # Log reason for not calling
-                         self.logger.error("Skipping history storage: Could not extract 'question_id' from current_question_data.")
+                        successful_saves = 0
+                        # Iterate through each sub-question answered
+                        for sub_question_num_str, user_sub_answer_text in self.last_submitted_answers.items():
+                            unique_question_key = f"{paper_document_id}_{sub_question_num_str}"
+                            
+                            # Prepare the answer dictionary for this single sub-question
+                            single_sub_answer_dict = {sub_question_num_str: user_sub_answer_text}
+
+                            # TODO: Refine AI feedback handling if feedback is per sub-question.
+                            # For now, assume eval_results is general or applies to all parts.
+                            # If eval_results contains per-sub-question feedback, extract it here.
+                            # Example: sub_feedback = eval_results.get(sub_question_num_str, eval_results)
+                            feedback_for_this_sub = eval_results if isinstance(eval_results, dict) else {}
+                            exam_id = self.current_question_data.get('exam_result_id', None) # This is likely for the whole exam/paper attempt
+
+                            self.logger.info(f"Calling add_history_entry for sub-question: {unique_question_key}")
+                            self.logger.info(f"  user_id: {current_user_id}")
+                            self.logger.info(f"  cached_question_id (unique_question_key): {unique_question_key}")
+                            self.logger.info(f"  user_answer_dict (single sub-answer): {single_sub_answer_dict}")
+                            self.logger.info(f"  local_ai_feedback_dict: {feedback_for_this_sub}")
+                            self.logger.info(f"  exam_result_id: {exam_id}")
+
+                            current_history_id = history_manager.add_history_entry(
+                                user_id=current_user_id,
+                                cached_question_id=unique_question_key, # Pass the specific unique_question_key
+                                user_answer_dict=single_sub_answer_dict, # Pass the answer for this sub-question
+                                local_ai_feedback_dict=feedback_for_this_sub, # Pass relevant feedback
+                                exam_result_id=exam_id
+                            )
+
+                            if current_history_id:
+                                self.logger.info(f"add_history_entry SUCCEEDED for {unique_question_key}. Returned history_id: {current_history_id}")
+                                successful_saves += 1
+                                history_id = current_history_id # Keep track of the last one for cloud sync trigger
+                            else:
+                                self.logger.error(f"add_history_entry FAILED for {unique_question_key}.")
+                        
+                        if successful_saves == len(self.last_submitted_answers):
+                            self.logger.info(f"All {successful_saves} sub-question answers saved to history.")
+                        else:
+                            self.logger.warning(f"Only {successful_saves} out of {len(self.last_submitted_answers)} sub-question answers were saved to history.")
+
                 else:
-                     # Log which prerequisite failed
                     missing = []
                     if not history_manager: missing.append("History Manager")
                     if not self.current_question_data: missing.append("Current Question Data")
@@ -950,12 +955,11 @@ class QuestionView(QWidget):
             # --- END: Store results ---
 
             # 2. Trigger Cloud Sync (if local save succeeded AND we have a prompt)
-            if history_id and self.last_used_prompt:
-                 self.trigger_cloud_sync(history_id, self.last_used_prompt) # Pass prompt
-            elif not history_id:
-                 self.logger.warning("Cannot trigger cloud sync because local history save failed.")
-            elif not self.last_used_prompt:
-                 self.logger.warning("Cannot trigger cloud sync because the local prompt was not available.")
+            # This might need adjustment: Do we trigger cloud sync per sub-question or once per paper?
+            # For now, assuming it's triggered based on the last successfully saved sub-question's history_id,
+            # and the prompt is for the whole paper. This might need refinement.
+            if history_id and self.last_used_prompt: # history_id is now the last one from the loop
+                 self.trigger_cloud_sync(history_id, self.last_used_prompt)
 
             # 3. Display LOCAL feedback in UI (Preliminary Section)
             grade = eval_results.get('Grade', 'N/A')
@@ -1182,50 +1186,56 @@ class QuestionView(QWidget):
                  self.logger.info(f"Checking if UI should be updated for finalized report (history_id: {history_id})")
                  try:
                       current_qid = self.current_question_data.get('id') if self.current_question_data else None
-                      history_qid = history_manager.get_question_id_for_history(history_id) # Needs implementation in UHM
-                      self.logger.debug(f"Check: current_qid={current_qid}, history_qid={history_qid}")
+                      history_qid = history_manager.get_question_id_for_history(history_id) # This is the unique_question_key
+                      self.logger.debug(f"Check: current_qid (Paper ID)={current_qid}, history_qid (Unique Key)={history_qid}")
 
-                      if history_qid and current_qid == history_qid:
-                            self.logger.info(f"Cloud report matches current question {current_qid}. Updating Finalized UI section.")
+                      # --- CORRECTED COMPARISON ---
+                      # Check if the paper ID part of the history_qid matches the current paper ID
+                      feedback_paper_id = None
+                      if history_qid and isinstance(history_qid, str) and '_' in history_qid:
+                          # Extract the part before the last underscore
+                          feedback_paper_id = history_qid.rsplit('_', 1)[0]
 
-                            # Set Title for the finalized group
-                            # self.finalized_report_group.setTitle("Finalized Report (Cloud AI)") # Already set potentially
+                      # Compare the extracted paper ID with the current paper ID
+                      if history_qid and current_qid and feedback_paper_id == current_qid: # <--- This is the corrected condition
+                          # --- Start of UI Update Block (THIS BLOCK REMAINS UNCHANGED) ---
+                          self.logger.info(f"Cloud report matches current paper {current_qid}. Updating Finalized UI section for sub-question {history_qid}.")
 
-                            cloud_grade = cloud_report.get('grade', 'N/A (Cloud)')
-                            cloud_rationale = cloud_report.get('rationale', 'N/A (Cloud)')
-                            cloud_study_topics_obj = cloud_report.get('study_topics', {})
+                          # Set Title for the finalized group
+                          # self.finalized_report_group.setTitle("Finalized Report (Cloud AI)") # Already set potentially
 
-                            # Update status label
-                            self.final_status_label.setText("Status: Analysis Complete")
-                            self.final_status_label.setStyleSheet("font-style: normal; color: #166534; font-weight: bold;")
+                          cloud_grade = cloud_report.get('grade', 'N/A (Cloud)')
+                          cloud_rationale = cloud_report.get('rationale', 'N/A (Cloud)')
+                          cloud_study_topics_obj = cloud_report.get('study_topics', {})
 
-                            # Update grade and feedback text in the FINALIZED section
-                            self.final_grade_label.setText(f"Grade: {cloud_grade}")
+                          # Update status label
+                          self.final_status_label.setText("Status: Analysis Complete")
+                          self.final_status_label.setStyleSheet("font-style: normal; color: #166534; font-weight: bold;")
 
-                            study_topics_display = "Study Topics:\n"
-                            if isinstance(cloud_study_topics_obj, dict):
-                                if 'raw' in cloud_study_topics_obj: study_topics_display += cloud_study_topics_obj['raw']
-                                elif 'lines' in cloud_study_topics_obj: study_topics_display += "\n".join(f"- {line}" for line in cloud_study_topics_obj['lines'])
-                                else: study_topics_display += json.dumps(cloud_study_topics_obj, indent=2)
-                            else:
-                                study_topics_display += str(cloud_study_topics_obj)
+                          # Update grade and feedback text in the FINALIZED section
+                          self.final_grade_label.setText(f"Grade: {cloud_grade}")
 
-                            full_feedback = f"Rationale:\n{cloud_rationale}\n\n{study_topics_display}"
-                            self.final_feedback_text.setText(full_feedback)
+                          study_topics_display = "Study Topics:\n"
+                          if isinstance(cloud_study_topics_obj, dict):
+                              if 'raw' in cloud_study_topics_obj: study_topics_display += cloud_study_topics_obj['raw']
+                              elif 'lines' in cloud_study_topics_obj: study_topics_display += "\n".join(f"- {line}" for line in cloud_study_topics_obj['lines'])
+                              else: study_topics_display += json.dumps(cloud_study_topics_obj, indent=2)
+                          else:
+                              study_topics_display += str(cloud_study_topics_obj)
 
-                            # Ensure the finalized section is visible using the method
-                            self._show_final_feedback() # Shows box, hides show button
+                          full_feedback = f"Rationale:\n{cloud_rationale}\n\n{study_topics_display}"
+                          self.final_feedback_text.setText(full_feedback)
 
-                            self.logger.info(f"Finalized UI section updated successfully for {history_id}.")
-                            # Optional: Automatically hide preliminary once finalized is ready
-                            # self._hide_prelim_feedback()
+                          # Ensure the finalized section is visible using the method
+                          self._show_final_feedback() # Shows box, hides show button
+
+                          self.logger.info(f"Finalized UI section updated successfully for {history_id}.")
+                          # Optional: Automatically hide preliminary once finalized is ready
+                          # self._hide_prelim_feedback()
+                          # --- End of UI Update Block ---
                       else:
-                           self.logger.info(f"Cloud report received for history_id {history_id}, but user has navigated away or IDs don't match (Current: {current_qid}, History: {history_qid}). UI not updated, but flag was set.")
-                           # Since UI isn't updated, ensure the "Show" button isn't wrongly displayed
-                           # if the section was previously hidden.
-                           # If the finalized group is hidden, the corresponding show button might
-                           # need to be explicitly hidden here if the flag was just set.
-                           if self.finalized_report_group.isHidden():
+                          self.logger.info(f"Cloud report received for history_id {history_id}, but user has navigated away or IDs don't match (Current: {current_qid}, History: {history_qid}). UI not updated, but flag was set.")
+                          if self.finalized_report_group.isHidden():
                                self.show_final_button.hide()
 
 
