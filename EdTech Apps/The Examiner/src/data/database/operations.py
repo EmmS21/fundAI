@@ -511,13 +511,14 @@ class UserOperations:
         """
         Fetches details for multiple cached questions from the main database
         using SQLAlchemy based on a list of unique_question_keys.
+        Objects are expunged from the session to allow their use after session closure.
         """
         details_map: Dict[str, CachedQuestion] = {}
         if not unique_question_keys:
             logger.debug("No unique_question_keys provided to get_cached_question_details_bulk.")
             return details_map
 
-        string_keys = [str(key) for key in unique_question_keys if key is not None] # Filter out Nones before str conversion
+        string_keys = [str(key) for key in unique_question_keys if key is not None]
         if not string_keys:
             logger.debug("All provided unique_question_keys were None.")
             return details_map
@@ -529,8 +530,17 @@ class UserOperations:
                 results = session.query(CachedQuestion)\
                                  .filter(CachedQuestion.unique_question_key.in_(string_keys))\
                                  .all()
+                
+                temp_results = [] # Store results temporarily before expunging
                 for question_obj in results:
+                    temp_results.append(question_obj)
                     details_map[question_obj.unique_question_key] = question_obj
+                
+                # Expunge all fetched objects from the session *after* iterating
+                # and populating the map, but before the session closes.
+                # This ensures their data is loaded and they can be used detached.
+                if temp_results:
+                    session.expunge_all()
                 
                 found_ids = len(details_map)
                 if found_ids < len(string_keys):
