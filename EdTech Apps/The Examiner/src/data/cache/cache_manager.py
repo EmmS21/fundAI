@@ -2039,175 +2039,166 @@ class CacheManager:
         # ... (Implementation of this method should already exist) ...
         pass
 
-    # --- CORRECTED SYNC FUNCTION (v3) ---
+    # --- MODIFIED SYNC FUNCTION (v3 with v4 Debugging) ---
     def sync_question_cache_to_db(self):
         """
-        Scans the JSON question cache and ensures the 'cached_questions'
-        SQLAlchemy table is up-to-date. Inserts new questions and updates
-        existing ones if the JSON file provides more complete data.
-        Includes subtopic and difficulty, excludes paper_id/paper_number.
+        Scans the JSON question cache files to populate the cached_questions SQLAlchemy table.
+        Each paper JSON contains multiple sub-questions which are stored as individual rows.
         """
-        self.logger.info("Starting robust sync of question cache files to SQLAlchemy DB (v3)...")
+        self.logger.info(">>> SYNC_DB: Starting sync (Paper ID + SubQs)...")
         inserted_count = 0
         updated_count = 0
-        checked_count = 0
-        skipped_malformed = 0
-        skipped_missing_id = 0
-        skipped_missing_required = 0
+        checked_files_count = 0
+        processed_subquestions_count = 0
+        skipped_malformed_paper = 0
+        skipped_missing_paper_id = 0
+        skipped_missing_subq_fields = 0
 
-        with get_db_session() as session:
-            try:
-                # Ensure table exists - uses the latest model definition if creating
+        try:
+            with get_db_session() as session:
+                # Ensuring table exists (won't alter columns)
                 try:
-                     CachedQuestion.__table__.create(session.bind, checkfirst=True)
-                     session.commit() # Commit table creation if needed
-                     self.logger.info("Ensured 'cached_questions' table exists.")
+                    CachedQuestion.__table__.create(session.bind, checkfirst=True)
+                    session.commit()
+                    self.logger.info(">>> SYNC_DB: Ensured 'cached_questions' table exists.")
                 except Exception as table_err:
-                     self.logger.error(f"Could not explicitly ensure table exists (may be fine if using migrations): {table_err}")
-                     session.rollback() # Rollback potential failed create
-
-                if not os.path.exists(self.QUESTIONS_DIR):
-                    self.logger.warning(f"Question cache directory not found: {self.QUESTIONS_DIR}")
+                    self.logger.error(f">>> SYNC_DB: Error ensuring table exists: {table_err}", exc_info=True)
+                    session.rollback()
                     return
 
-                # Scan the cache directory structure
+                if not os.path.exists(self.QUESTIONS_DIR):
+                    self.logger.warning(f">>> SYNC_DB: Question cache directory NOT FOUND: {self.QUESTIONS_DIR}.")
+                    return
+                self.logger.info(f">>> SYNC_DB: Scanning cache directory: {self.QUESTIONS_DIR}")
+
                 for subject_dir in os.listdir(self.QUESTIONS_DIR):
                     subject_path = os.path.join(self.QUESTIONS_DIR, subject_dir)
                     if not os.path.isdir(subject_path): continue
-                    subject_name = subject_dir
+                    subject_name_from_dir = subject_dir
 
                     for level_dir in os.listdir(subject_path):
                         level_path = os.path.join(subject_path, level_dir)
                         if not os.path.isdir(level_path): continue
-                        # TODO: Map level_dir to DB level_name if necessary
-                        level_name = level_dir
+                        level_name_from_dir = level_dir
 
                         for year_dir in os.listdir(level_path):
                             year_path = os.path.join(level_path, year_dir)
                             if not os.path.isdir(year_path): continue
-                            year_str = year_dir
+                            year_from_dir_str = year_dir
+                            try:
+                                paper_year_from_dir = int(year_from_dir_str)
+                            except ValueError:
+                                self.logger.warning(f">>> SYNC_DB: Invalid year directory name '{year_from_dir_str}' in {level_path}. Skipping.")
+                                continue
 
                             for filename in os.listdir(year_path):
                                 if filename.endswith(".json"):
                                     file_path = os.path.join(year_path, filename)
-                                    checked_count += 1
-                                    self.logger.debug(f"Checking file: {file_path}")
-
-                                    # --- Load JSON Data ---
-                                    question_data = None
+                                    self.logger.debug(f">>> SYNC_DB: Processing Paper File: {file_path}")
+                                    checked_files_count += 1
+                                    question_paper_json_data = None
                                     try:
                                         with open(file_path, 'r', encoding='utf-8') as f:
-                                            question_data = json.load(f)
+                                            question_paper_json_data = json.load(f)
                                     except json.JSONDecodeError:
-                                        self.logger.warning(f"Skipping malformed JSON: {file_path}")
-                                        skipped_malformed += 1
+                                        self.logger.warning(f">>> SYNC_DB: Malformed JSON for paper: {file_path}")
+                                        skipped_malformed_paper += 1
                                         continue
                                     except IOError as e:
-                                        self.logger.error(f"Error reading file {file_path}: {e}")
+                                        self.logger.error(f">>> SYNC_DB: IOError reading paper file {file_path}: {e}")
                                         continue
 
-                                    # --- Extract potential ID ---
-                                    q_id = question_data.get('id') or question_data.get('_id')
-                                    if not q_id:
-                                        self.logger.warning(f"Skipping file: Missing 'id' or '_id' key in {file_path}")
-                                        skipped_missing_id += 1
+                                    # --- Extract Paper-Level Data ---
+                                    paper_document_id_from_json = str(question_paper_json_data.get('id') or question_paper_json_data.get('_id'))
+                                    if not paper_document_id_from_json or paper_document_id_from_json == 'None':
+                                        self.logger.warning(f">>> SYNC_DB: Missing 'id' or '_id' for paper in {file_path}.")
+                                        skipped_missing_paper_id += 1
                                         continue
-                                    q_id_str = str(q_id)
 
-                                    # --- Extract Data from JSON (Reflecting New Model) ---
-                                    json_topic = question_data.get('topic')
-                                    json_subtopic = question_data.get('subtopic') # New field
-                                    difficulty_data = question_data.get('difficulty') # Can be dict or str
-                                    json_difficulty_level = None
-                                    if isinstance(difficulty_data, dict):
-                                        json_difficulty_level = difficulty_data.get('level') # Extract level string
-                                    elif isinstance(difficulty_data, str):
-                                        json_difficulty_level = difficulty_data # If it's just a string
+                                    paper_topic_from_json = question_paper_json_data.get('topic')
+                                    paper_subtopic_from_json = question_paper_json_data.get('subtopic')
+                                    paper_difficulty_json_obj = question_paper_json_data.get('difficulty')
+                                    paper_difficulty_level_str = None
+                                    if isinstance(paper_difficulty_json_obj, dict):
+                                        paper_difficulty_level_str = paper_difficulty_json_obj.get('level')
+                                    elif isinstance(paper_difficulty_json_obj, str):
+                                        paper_difficulty_level_str = paper_difficulty_json_obj
+                                    subject_from_json = question_paper_json_data.get('subject', subject_name_from_dir)
+                                    level_from_json = question_paper_json_data.get('level', level_name_from_dir)
 
-                                    json_content = question_data.get('question_text')
-                                    json_marks_raw = question_data.get('marks')
+                                    # --- Iterate through sub_questions ---
+                                    sub_questions_array = question_paper_json_data.get('sub_questions', [])
+                                    if not isinstance(sub_questions_array, list):
+                                         self.logger.warning(f">>> SYNC_DB: 'sub_questions' is not a list in {file_path}. Skipping sub-questions.")
+                                         sub_questions_array = []
 
-                                    # Convert year and marks carefully
-                                    try:
-                                        json_paper_year = int(year_str)
-                                    except ValueError:
-                                        json_paper_year = None # Mark as invalid/missing
-                                    try:
-                                        json_marks = int(json_marks_raw) if json_marks_raw is not None else None
-                                    except (ValueError, TypeError):
-                                        json_marks = None # Mark as invalid/missing
+                                    for sub_q_item_json in sub_questions_array:
+                                        processed_subquestions_count +=1
+                                        q_number_str_from_sub_q = sub_q_item_json.get('sub_number')
+                                        q_content_from_sub_q = sub_q_item_json.get('text')
+                                        q_marks_raw_from_sub_q = sub_q_item_json.get('marks')
 
-
-                                    # --- Check if required data is present in JSON ---
-                                    # Removed paper_id/paper_number check
-                                    required_fields_present = all([
-                                        subject_name, level_name, json_content,
-                                        json_marks is not None, json_paper_year is not None
-                                    ])
-
-                                    # --- Query Existing Record ---
-                                    existing_question = session.query(CachedQuestion).filter_by(question_id=q_id_str).first()
-
-                                    if existing_question:
-                                        # --- Update Existing Record ---
-                                        was_updated = False
-                                        # Update topic if current is None and new exists
-                                        if existing_question.topic is None and json_topic:
-                                            existing_question.topic = json_topic
-                                            was_updated = True
-                                        # Update subtopic if current is None and new exists
-                                        if existing_question.subtopic is None and json_subtopic:
-                                            existing_question.subtopic = json_subtopic
-                                            was_updated = True
-                                        # Update difficulty if current is None and new exists
-                                        if existing_question.difficulty is None and json_difficulty_level:
-                                            existing_question.difficulty = json_difficulty_level
-                                            was_updated = True
-                                        # Update others if they were missing/invalid and now valid
-                                        if not existing_question.content and json_content:
-                                            existing_question.content = json_content
-                                            was_updated = True
-                                        if (existing_question.marks == 0 or existing_question.marks is None) and json_marks is not None:
-                                             existing_question.marks = json_marks
-                                             was_updated = True
-
-                                        if was_updated:
-                                            updated_count += 1
-                                            self.logger.info(f"Updated missing fields for question ID {q_id_str}.")
-                                        else:
-                                             self.logger.debug(f"No updates needed for existing question ID {q_id_str}.")
-
-                                    else:
-                                        # --- Insert New Record ---
-                                        if not required_fields_present:
-                                            self.logger.warning(f"Skipping insert for {q_id_str}: Missing required field(s) in JSON {file_path}. Needed: subject, level, content, marks, year.")
-                                            skipped_missing_required += 1
+                                        if not all([q_number_str_from_sub_q, q_content_from_sub_q, q_marks_raw_from_sub_q is not None]):
+                                            self.logger.warning(f">>> SYNC_DB: Sub-question in {paper_document_id_from_json} (file: {filename}) missing sub_number, text, or marks. Data: {sub_q_item_json}")
+                                            skipped_missing_subq_fields +=1
+                                            continue
+                                        try:
+                                            q_marks_from_sub_q = int(q_marks_raw_from_sub_q)
+                                        except (ValueError, TypeError):
+                                            self.logger.warning(f">>> SYNC_DB: Invalid marks '{q_marks_raw_from_sub_q}' for sub_question {q_number_str_from_sub_q} in {paper_document_id_from_json} (file: {filename}).")
+                                            skipped_missing_subq_fields +=1
                                             continue
 
-                                        # Create new object only if all required fields are valid
-                                        now = datetime.now()
-                                        new_question = CachedQuestion(
-                                            question_id=q_id_str,
-                                            paper_year=json_paper_year, # Known to be present now
-                                            subject=subject_name, # Assumed from dir
-                                            level=level_name, # Assumed/mapped from dir
-                                            topic=json_topic, # Optional
-                                            subtopic=json_subtopic, # Optional (new)
-                                            difficulty=json_difficulty_level, # Optional (new)
-                                            content=json_content, # Known to be present now
-                                            marks=json_marks, # Known to be present now
-                                            cached_at=now,
-                                            last_accessed=now
-                                        )
-                                        session.add(new_question)
-                                        inserted_count += 1
-                                        self.logger.info(f"Added new question ID {q_id_str} to session.")
+                                        current_unique_question_key = f"{paper_document_id_from_json}_{q_number_str_from_sub_q}"
+                                        existing_question_record = session.query(CachedQuestion).filter_by(unique_question_key=current_unique_question_key).first()
 
-                # Commit the transaction
-                session.commit()
-                self.logger.info(f"Finished sync. Checked: {checked_count}, Inserted: {inserted_count}, Updated: {updated_count}, Skipped (Malformed): {skipped_malformed}, Skipped (No ID): {skipped_missing_id}, Skipped (Missing Required): {skipped_missing_required}")
+                                        if existing_question_record:
+                                            updated_this_run = False
+                                            if existing_question_record.content != q_content_from_sub_q:
+                                                existing_question_record.content = q_content_from_sub_q; updated_this_run = True
+                                            if existing_question_record.marks != q_marks_from_sub_q:
+                                                existing_question_record.marks = q_marks_from_sub_q; updated_this_run = True
+                                            if (existing_question_record.topic != paper_topic_from_json and paper_topic_from_json is not None) or \
+                                               (existing_question_record.topic is None and paper_topic_from_json is not None) :
+                                                existing_question_record.topic = paper_topic_from_json; updated_this_run = True
+                                            if (existing_question_record.subtopic != paper_subtopic_from_json and paper_subtopic_from_json is not None) or \
+                                               (existing_question_record.subtopic is None and paper_subtopic_from_json is not None):
+                                                existing_question_record.subtopic = paper_subtopic_from_json; updated_this_run = True
+                                            if (existing_question_record.difficulty != paper_difficulty_level_str and paper_difficulty_level_str is not None) or \
+                                               (existing_question_record.difficulty is None and paper_difficulty_level_str is not None):
+                                                existing_question_record.difficulty = paper_difficulty_level_str; updated_this_run = True
+                                            if existing_question_record.subject != subject_from_json: existing_question_record.subject = subject_from_json; updated_this_run = True
+                                            if existing_question_record.level != level_from_json: existing_question_record.level = level_from_json; updated_this_run = True
+                                            if existing_question_record.paper_year != paper_year_from_dir: existing_question_record.paper_year = paper_year_from_dir; updated_this_run = True
 
-            except Exception as e:
-                self.logger.error(f"Error during cache sync: {e}", exc_info=True)
-                session.rollback()
-                self.logger.info("Rolled back database changes due to error.")
+                                            if updated_this_run:
+                                                existing_question_record.last_accessed = datetime.now()
+                                                updated_count += 1
+                                                self.logger.info(f">>> SYNC_DB_UPDATE: Updated question key {current_unique_question_key}.")
+                                        else:
+                                            now = datetime.now()
+                                            new_question_record = CachedQuestion(
+                                                unique_question_key=current_unique_question_key,
+                                                paper_document_id=paper_document_id_from_json,
+                                                question_number_str=q_number_str_from_sub_q,
+                                                paper_year=paper_year_from_dir,
+                                                subject=subject_from_json,
+                                                level=level_from_json,
+                                                topic=paper_topic_from_json,
+                                                subtopic=paper_subtopic_from_json,
+                                                difficulty=paper_difficulty_level_str,
+                                                content=q_content_from_sub_q,
+                                                marks=q_marks_from_sub_q,
+                                                cached_at=now,
+                                                last_accessed=now
+                                            )
+                                            session.add(new_question_record)
+                                            inserted_count += 1
+                                            self.logger.info(f">>> SYNC_DB_INSERT: Added question key {current_unique_question_key}.")
+
+            # Final commit after all processing
+            session.commit()
+            self.logger.info(f">>> SYNC_DB: Finished sync. Checked Files: {checked_files_count}, Processed SubQs: {processed_subquestions_count}, Inserted: {inserted_count}, Updated: {updated_count}, Skipped (Malformed Paper): {skipped_malformed_paper}, Skipped (No Paper ID): {skipped_missing_paper_id}, Skipped (SubQ w/ Missing Fields): {skipped_missing_subq_fields}")
+
+        except Exception as e:
+            self.logger.error(f">>> SYNC_DB: Critical error during sync: {e}", exc_info=True)

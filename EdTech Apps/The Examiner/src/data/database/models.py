@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, DateTime, Enum, Float, ForeignKey, Table, JSON, Boolean, LargeBinary, Text
+from sqlalchemy import Column, Integer, String, Date, DateTime, Enum, Float, ForeignKey, Table, JSON, Boolean, LargeBinary, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
@@ -99,7 +99,7 @@ class QuestionResponse(Base):
     
     # Link to the specific question in the cache, if this response originated from one.
     # Made nullable=True initially for flexibility, but ideally should be set for cached questions.
-    cached_question_id = Column(Text, ForeignKey('cached_questions.question_id'), nullable=True)
+    cached_question_id = Column(Text, ForeignKey('cached_questions.unique_question_key'), nullable=True)
     
     # Relationships
     exam_result = relationship("ExamResult", back_populates="question_responses")
@@ -161,17 +161,26 @@ class PaperCache(Base):
 class CachedQuestion(Base):
     __tablename__ = 'cached_questions'
 
-    question_id = Column(Text, primary_key=True)
+    # New synthetic primary key for easy linking from answer_history
+    unique_question_key = Column(Text, primary_key=True, nullable=False)
+
+    paper_document_id = Column(Text, nullable=False) # Renamed from question_id
+    question_number_str = Column(Text, nullable=False) # Specific question number, e.g., "1a", "b(i)"
+
     paper_year = Column(Integer, nullable=False)
     subject = Column(Text, nullable=False)
     level = Column(Text, nullable=False)
     topic = Column(Text, nullable=True)
     subtopic = Column(Text, nullable=True)
     difficulty = Column(Text, nullable=True)
-    content = Column(Text, nullable=False)
-    marks = Column(Integer, nullable=False)
+    content = Column(Text, nullable=False) # This will be the text of the specific sub-question
+    marks = Column(Integer, nullable=False) # Marks for the specific sub-question
     cached_at = Column(DateTime, nullable=False, default=func.now())
     last_accessed = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
+
+    # Optional: Define a composite unique constraint for paper_document_id and question_number_str
+    # This ensures that the combination is unique, even though unique_question_key is the PK.
+    __table_args__ = (UniqueConstraint('paper_document_id', 'question_number_str', name='uq_paper_question_number'),)
 
     # Relationship back to responses (optional but can be useful)
     # responses = relationship("QuestionResponse", back_populates="cached_question")
