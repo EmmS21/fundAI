@@ -1,8 +1,9 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, 
                               QPushButton, QLabel, QCheckBox, QFrame,
                               QMenu, QWidgetAction, QToolButton,
-                              QSpacerItem, QSizePolicy, QProgressBar)
-from PySide6.QtCore import Qt, Signal, QObject, QEvent, QTimer, Slot
+                              QSpacerItem, QSizePolicy, QProgressBar,
+                              QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView)
+from PySide6.QtCore import Qt, Signal, QObject, QEvent, QTimer, Slot, QPoint
 from PySide6.QtGui import QCursor, QIcon, QColor, QAction
 from src.data.database.operations import UserOperations
 from src.utils.constants import PRIMARY_COLOR
@@ -139,6 +140,243 @@ class SubjectStatusIndicator(QWidget):
             
         except Exception as e:
             logger.error(f"Error updating status UI: {e}", exc_info=True)
+
+class PerformanceReportPopup(QWidget):
+    report_selected = Signal(int) # Emits history_id when a report is selected
+
+    def __init__(self, preliminary_reports, final_reports, parent=None):
+        super().__init__(parent, Qt.Popup | Qt.FramelessWindowHint) # Style as popup
+        self.preliminary_reports = preliminary_reports
+        self.final_reports = final_reports
+        self.current_view = None # Track which view is active ('preliminary' or 'final')
+
+        self._setup_ui()
+        # Show preliminary reports by default if available, otherwise final
+        if self.preliminary_reports:
+             self._switch_view("preliminary")
+        elif self.final_reports:
+             self._switch_view("final")
+        else:
+             # Handle case with no reports (though the caller might prevent this)
+             pass
+
+        # Handle closing when clicking outside
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.installEventFilter(self)
+        self.setMinimumWidth(450) # Set a reasonable minimum width
+
+
+    def eventFilter(self, source, event):
+         if event.type() == QEvent.WindowDeactivate or \
+           (event.type() == QEvent.MouseButtonPress and not self.rect().contains(event.pos())):
+             self.close()
+             return True
+         return super().eventFilter(source, event)
+
+    def _setup_ui(self):
+        self.setStyleSheet("""
+            QWidget#popupWidget { /* Name the main widget for specific styling */
+                background-color: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 8px;
+            }
+            QPushButton#toggleButton {
+                font-size: 13px;
+                font-weight: 500;
+                color: #4B5563; /* Default text color */
+                background-color: #F3F4F6; /* Default background */
+                border: 1px solid #D1D5DB;
+                padding: 6px 15px;
+                border-radius: 6px;
+                min-height: 28px;
+            }
+            QPushButton#toggleButton:checked {
+                color: #FFFFFF; /* White text when checked */
+                background-color: #A855F7; /* Purple background */
+                border-color: #A855F7;
+            }
+            QPushButton#toggleButton:!checked:hover {
+                 background-color: #E5E7EB; /* Light hover for non-checked */
+                 border-color: #9CA3AF;
+            }
+            QTableWidget {
+                border: none; /* Remove table border */
+                border-top: 1px solid #E5E7EB; /* Separator line */
+                gridline-color: #E5E7EB;
+                font-size: 12px;
+            }
+            QHeaderView::section {
+                background-color: #F9FAFB;
+                padding: 5px;
+                border: none;
+                border-bottom: 1px solid #E5E7EB;
+                font-weight: 500;
+                color: #374151;
+            }
+            QTableWidget::item {
+                padding: 6px 8px; /* Adjust padding */
+                color: #374151;
+            }
+            QTableWidget::item:selected {
+                background-color: #EDE9FE;
+                color: #5B21B6;
+            }
+        """)
+        self.setObjectName("popupWidget") # Set object name for stylesheet
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10) # Margins for the overall popup
+        layout.setSpacing(8) # Spacing between elements
+
+        # --- Toggle Buttons ---
+        toggle_layout = QHBoxLayout()
+        toggle_layout.setSpacing(5) # Spacing between buttons
+
+        self.prelim_button = QPushButton("Preliminary")
+        self.prelim_button.setObjectName("toggleButton")
+        self.prelim_button.setCheckable(True)
+        self.prelim_button.setEnabled(bool(self.preliminary_reports)) # Disable if no reports
+        self.prelim_button.clicked.connect(lambda: self._switch_view("preliminary"))
+
+        self.final_button = QPushButton("Full")
+        self.final_button.setObjectName("toggleButton")
+        self.final_button.setCheckable(True)
+        self.final_button.setEnabled(bool(self.final_reports)) # Disable if no reports
+        self.final_button.clicked.connect(lambda: self._switch_view("final"))
+
+        toggle_layout.addWidget(self.prelim_button)
+        toggle_layout.addWidget(self.final_button)
+        toggle_layout.addStretch() # Push buttons left
+
+        layout.addLayout(toggle_layout)
+
+        # --- Single Table ---
+        self.report_table = self._create_table()
+        layout.addWidget(self.report_table)
+
+    def _create_table(self) -> QTableWidget:
+        table = QTableWidget()
+        table.setColumnCount(3)
+        table.setHorizontalHeaderLabels(["Question #", "Date Answered", "Level"])
+        table.verticalHeader().setVisible(False)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setAlternatingRowColors(True)
+        table.setShowGrid(True) # Show grid lines for clarity
+        table.setWordWrap(False) # Prevent word wrap initially
+        # Enable horizontal scrollbar only when needed
+        table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        header = table.horizontalHeader()
+        # Resize Question# based on content, others fixed or stretch
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents) # Date usually fits
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch) # Level can stretch
+
+        table.itemDoubleClicked.connect(self._on_item_selected)
+        return table
+
+    def _switch_view(self, view_type: str):
+        """Clears and populates the table based on the selected view type."""
+        if view_type == self.current_view: # Prevent reloading same view
+            # Ensure the correct button is checked if clicked again somehow
+            if view_type == "preliminary":
+                self.prelim_button.setChecked(True)
+            elif view_type == "final":
+                self.final_button.setChecked(True)
+            return
+
+        self.current_view = view_type
+        self.report_table.setRowCount(0) # Clear existing rows
+
+        if view_type == "preliminary":
+            self.final_button.setChecked(False) # Uncheck other button
+            self.prelim_button.setChecked(True) # Check this button
+            self._populate_specific_table(self.report_table, self.preliminary_reports)
+        elif view_type == "final":
+            self.prelim_button.setChecked(False) # Uncheck other button
+            self.final_button.setChecked(True) # Check this button
+            self._populate_specific_table(self.report_table, self.final_reports)
+
+        # Adjust layout after populating
+        self._adjust_popup_size()
+
+
+    def _populate_specific_table(self, table: QTableWidget, reports: List[Dict]):
+        table.setRowCount(len(reports))
+        for row_idx, report_data in enumerate(reports):
+            question_details = report_data.get("question", {})
+            history_item = report_data.get("history", {})
+
+            q_num = question_details.get('question_number_str', '?')
+            q_level_key = question_details.get('level', '?')
+            level_display = self._get_level_display_name(q_level_key)
+
+            try:
+                ts_str = history_item.get('timestamp')
+                timestamp_dt = datetime.fromisoformat(ts_str) if ts_str else None
+                formatted_date = timestamp_dt.strftime('%a/%d/%b/%Y %H:%M') if timestamp_dt else "No Date"
+            except (ValueError, TypeError) as e:
+                 logger.warning(f"Error formatting date in popup for history_id {history_item.get('history_id')}: {e}")
+                 formatted_date = "Invalid Date"
+
+            q_num_item = QTableWidgetItem(q_num)
+            date_item = QTableWidgetItem(formatted_date)
+            level_item = QTableWidgetItem(level_display)
+
+            # Add full text as tooltip for Question # column
+            q_num_item.setToolTip(q_num)
+
+            history_id = history_item.get('history_id')
+            if history_id is not None:
+                q_num_item.setData(Qt.ItemDataRole.UserRole, history_id)
+
+            table.setItem(row_idx, 0, q_num_item)
+            table.setItem(row_idx, 1, date_item)
+            table.setItem(row_idx, 2, level_item)
+
+        # Optional: Resize rows after populating if desired, but might slow down for many items
+        # table.resizeRowsToContents()
+        table.resizeColumnsToContents() # Resize columns based on new content
+
+    def _adjust_popup_size(self):
+        """Adjust popup height based on table content."""
+        # Simple height adjustment - might need fine-tuning
+        header_height = self.report_table.horizontalHeader().height()
+        rows_height = sum(self.report_table.rowHeight(i) for i in range(self.report_table.rowCount()))
+        # Add some padding/margins
+        target_table_height = header_height + rows_height + 10
+
+        # Account for toggle button height and layout margins/spacing
+        toggle_height = self.prelim_button.sizeHint().height()
+        layout_margins = self.layout().contentsMargins()
+        layout_spacing = self.layout().spacing()
+        total_height = toggle_height + layout_spacing + target_table_height + layout_margins.top() + layout_margins.bottom()
+
+        max_height = 500 # Set a maximum height
+        self.setFixedHeight(min(total_height, max_height))
+        # Width is handled by minimumWidth and ResizeToContents
+
+
+    def _on_item_selected(self, item: QTableWidgetItem):
+         # Get history_id stored in the first column item
+         history_id_item = item.tableWidget().item(item.row(), 0)
+         history_id = history_id_item.data(Qt.ItemDataRole.UserRole)
+         if history_id is not None:
+             logger.info(f"Report selected: history_id {history_id}")
+             self.report_selected.emit(history_id)
+             self.close()
+         else:
+              logger.warning("Could not retrieve history_id from selected table item.")
+
+    def _get_level_display_name(self, level_key):
+        """Convert level key to display name"""
+        display_names = {
+            'grade_7': 'Grade 7',
+            'o_level': 'O Level',
+            'a_level': 'A Level'
+        }
+        return display_names.get(level_key, str(level_key).replace('_', ' ').title())
 
 class SubjectCard(QWidget):
     deleted = Signal(str)
@@ -886,25 +1124,32 @@ class SubjectCard(QWidget):
 
     def _show_performance_dropdown(self):
         """
-        Creates and shows a dropdown menu listing past performance reports,
-        filtered by the subject and enabled levels of this card.
-        Fetches data in two steps: basic history, then question details.
+        Fetches performance history and displays it in a custom popup table widget,
+        with toggles for preliminary and final reports.
         """
-        logger.debug(f"Showing performance dropdown for {self.subject_name}")
+        # --- This method now creates and shows the PerformanceReportPopup ---
+        # --- The data fetching and filtering logic remains the same as the ---
+        # --- previous version where it prepared final_reports_data and    ---
+        # --- preliminary_reports_data lists.                             ---
+
+        logger.debug(f"Showing performance popup for {self.subject_name}")
 
         button = self.findChild(QPushButton, "viewPerformance")
         if not button:
-            logger.error("Could not find 'viewPerformance' button to show dropdown.")
+            logger.error("Could not find 'viewPerformance' button to show popup.")
             return
 
-        # 1. Get User ID
+        # 1. Get User ID (Improved handling)
         user = UserOperations.get_current_user()
         if not user:
             logger.error("Cannot fetch performance history: No current user found.")
             return
-        user_id = user['id']
+        user_id = user.id if hasattr(user, 'id') else user.get('id') if isinstance(user, dict) else None
+        if not user_id:
+             logger.error("Could not determine user ID.")
+             return
 
-        # 2. Fetch Basic History (from answer_history)
+        # 2. Fetch Basic History
         try:
             basic_history_list = UserOperations.get_performance_history(user_id)
             logger.info(f"Fetched {len(basic_history_list)} basic history entries for user {user_id}.")
@@ -912,130 +1157,90 @@ class SubjectCard(QWidget):
             logger.error(f"Error fetching basic performance history: {e}", exc_info=True)
             basic_history_list = []
 
-        # 3. Get Question IDs and Fetch Details (from cached_questions via SQLAlchemy)
+        # 3. Fetch Question Details
         question_details_map: Dict[str, CachedQuestion] = {}
         if basic_history_list:
-            question_ids_to_fetch = list(set(
-                str(item.get("cached_question_id"))
-                for item in basic_history_list if item.get("cached_question_id")
-            ))
-
+            question_ids_to_fetch = list(set(str(item.get("cached_question_id")) for item in basic_history_list if item.get("cached_question_id")))
             if question_ids_to_fetch:
                 logger.debug(f"Fetching details for {len(question_ids_to_fetch)} unique question IDs.")
                 try:
-                    # Assuming UserOperations.get_cached_question_details_bulk exists and works
                     question_details_map = UserOperations.get_cached_question_details_bulk(question_ids_to_fetch)
                     logger.info(f"Retrieved details for {len(question_details_map)} question IDs.")
                 except Exception as e:
                     logger.error(f"Error fetching bulk question details: {e}", exc_info=True)
+                    question_details_map = {}
             else:
-                 logger.warning("Basic history list found, but no cached_question_ids present.")
+                logger.warning("Basic history list found, but no cached_question_ids present.")
 
-        # 4. Prepare Menu and Filter Data
-        menu = QMenu(self)
-        self._style_performance_menu(menu) # Apply styling
+        # 4. Filter and Process Data for Popup
+        preliminary_reports_data = []
+        final_reports_data = []
+        enabled_level_keys = {key for key, enabled in self.levels.items() if enabled}
+        logger.debug(f"Card Subject: '{self.subject_name}', Enabled Level Keys: {enabled_level_keys}")
 
-        enabled_level_keys = [key for key, enabled in self.levels.items() if enabled]
-        enabled_levels_display = {self._get_level_display_name(key) for key in enabled_level_keys}
-        logger.debug(f"Card Subject: '{self.subject_name}', Enabled Levels (Display): {enabled_levels_display}")
+        for history_item in basic_history_list:
+            cached_q_id = str(history_item.get("cached_question_id"))
+            question_details = question_details_map.get(cached_q_id)
 
-        items_added_to_menu = 0
-        if not basic_history_list:
-            logger.info("No basic history found for user.")
-        else:
-            for history_item in basic_history_list:
-                cached_q_id = str(history_item.get("cached_question_id"))
-                question_details = question_details_map.get(cached_q_id)
+            if not question_details:
+                logger.warning(f"Details not found for cached_question_id: {cached_q_id} from history_id: {history_item.get('history_id')}. Skipping for popup.")
+                continue
 
-                if not question_details:
-                    logger.warning(f"Details not found for cached_question_id: {cached_q_id} from history_id: {history_item.get('history_id')}. Skipping.")
-                    continue
+            # Perform checks (Case-insensitive subject match, key-based level match)
+            q_subject = question_details.subject
+            q_level = question_details.level # Key like 'o_level'
 
-                q_subject = question_details.subject
-                q_level = question_details.level
+            subject_match = (q_subject and q_subject.strip().lower() == self.subject_name.strip().lower())
+            level_match = (q_level in enabled_level_keys)
 
-                subject_match = (q_subject == self.subject_name)
-                level_match = (q_level in enabled_levels_display)
+            if not (subject_match and level_match):
+                continue
 
-                if not (subject_match and level_match):
-                    continue
+            # Combine data for the popup
+            combined_data = {
+                "history": history_item,
+                 # Pass necessary fields instead of full object if expunge isn't enough
+                "question": {
+                    "unique_question_key": question_details.unique_question_key,
+                    "subject": question_details.subject,
+                    "level": question_details.level,
+                    "paper_year": question_details.paper_year,
+                    "question_number_str": question_details.question_number_str,
+                }
+            }
 
-                # --- Format Display String (Updated) ---
-                try:
-                    timestamp_dt = datetime.fromisoformat(history_item['timestamp'])
-                    formatted_date = timestamp_dt.strftime('%Y-%m-%d %H:%M')
-                except (ValueError, TypeError, KeyError):
-                    formatted_date = "Invalid Date"
+            is_final = bool(history_item.get('cloud_report_received'))
+            if is_final:
+                final_reports_data.append(combined_data)
+            else:
+                preliminary_reports_data.append(combined_data)
 
-                report_status = "Final" if history_item.get('is_final') else "Preliminary"
+        # 5. Create and Show Popup
+        if not preliminary_reports_data and not final_reports_data:
+            logger.info("No matching performance reports found for selected levels.")
+            # You could show a brief message via QToolTip or QMessageBox here
+            # Example: QtWidgets.QToolTip.showText(button.mapToGlobal(QtCore.QPoint(0, button.height())), "No reports found for selected levels.", button)
+            return
 
-                # Removed paper_number reference
-                display_text = (f"Year {question_details.paper_year} "
-                                f"({q_level}) - "
-                                f"{formatted_date} - {report_status}")
+        # Sort reports by date (newest first)
+        def sort_key(report):
+            ts_str = report.get("history", {}).get("timestamp")
+            try:
+                return datetime.fromisoformat(ts_str) if ts_str else datetime.min
+            except ValueError:
+                return datetime.min
+        preliminary_reports_data.sort(key=sort_key, reverse=True)
+        final_reports_data.sort(key=sort_key, reverse=True)
 
-                action = QAction(display_text, self)
-                # Store combined data if needed
-                # Convert ORM object to dict for setData if needed, or pass IDs
-                action_data = {"history": history_item}
-                if question_details:
-                     # Simple way to make ORM object serializable for setData, might need adjustment
-                     action_data["question"] = {c.name: getattr(question_details, c.name) for c in question_details.__table__.columns}
-                action.setData(action_data)
-                menu.addAction(action)
-                items_added_to_menu += 1
-                logger.debug(f"Added action for history_id {history_item.get('history_id')}")
+        # --- Instantiate the Popup ---
+        # Store as instance variable to prevent garbage collection if needed
+        self.performance_popup = PerformanceReportPopup(preliminary_reports_data, final_reports_data, self) # Pass self as parent
 
-        if items_added_to_menu == 0:
-             no_history_text = "No history available"
-             if enabled_levels_display:
-                 no_history_text += " for selected levels"
-             else:
-                 no_history_text += " (no levels selected)"
+        # Connect signal (Example)
+        # self.performance_popup.report_selected.connect(self.parent().parent().show_report_view) # Adjust signal connection target as needed
 
-             no_history_action = QAction(no_history_text, self)
-             no_history_action.setEnabled(False)
-             menu.addAction(no_history_action)
-
-        # 5. Show Menu
-        button_pos = button.mapToGlobal(button.rect().bottomLeft())
-        menu.popup(button_pos)
-
-    def _style_performance_menu(self, menu: QMenu):
-         """Applies common styling to the performance dropdown menu."""
-         # Reusing similar style as the 'Take Test' dropdown for consistency
-         menu.setStyleSheet("""
-             QMenu {
-                 background-color: #F9FAFB; /* Lighter background */
-                 border: 1px solid #E5E7EB; /* Soft border */
-                 border-radius: 6px;
-                 padding: 4px;
-                 min-width: 300px; /* Ensure enough width for details */
-             }
-             QMenu::item {
-                 padding: 8px 15px; /* Adjust padding */
-                 background-color: transparent;
-                 color: #374151; /* Darker text */
-                 border-radius: 4px;
-                 margin: 2px;
-             }
-             QMenu::item:selected { /* Hover/selected state */
-                 background-color: #E5E7EB; /* Greyish hover */
-                 color: #1F2937;
-             }
-             QMenu::item:disabled { /* Style for disabled items */
-                 color: #9CA3AF; /* Lighter color for disabled text */
-                 background-color: transparent;
-             }
-             QMenu::separator {
-                 height: 1px;
-                 background: #E5E7EB;
-                 margin: 4px 0px;
-             }
-         """)
-
-    # def _handle_performance_item_click(self, history_item_data: Dict):
-    #     """Handles clicks on an item in the performance history dropdown."""
-    #     # Placeholder: Implement logic to show details for the selected report
-    #     logger.info(f"Performance item clicked: {history_item_data.get('history_id')}")
-    #     # e.g., open a dialog showing the full report details
+        # Position and show
+        button_pos = button.mapToGlobal(QPoint(0, button.height())) # Use QPoint directly
+        self.performance_popup.move(button_pos)
+        self.performance_popup.show()
+        self.performance_popup.setFocus()
