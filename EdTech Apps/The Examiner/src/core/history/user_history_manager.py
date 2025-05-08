@@ -205,9 +205,82 @@ class UserHistoryManager:
         return True # Placeholder
 
     def update_with_cloud_report(self, history_id: int, cloud_report_dict: Dict[str, Any]) -> bool:
-        # TODO: Implement SQL UPDATE for cloud_report_received, timestamp, and cloud_ai_... fields
-        logger.info(f"Placeholder: Update history entry {history_id} with cloud report.")
-        return True # Placeholder
+        """
+        Updates an existing answer_history entry with data from a received cloud report.
+
+        Args:
+            history_id: The ID of the history entry to update.
+            cloud_report_dict: A dictionary containing the parsed cloud report data
+                               (e.g., {'grade': ..., 'rationale': ..., 'study_topics': ...}).
+
+        Returns:
+            True if the update was successful, False otherwise.
+        """
+        conn = self._get_connection()
+        if not conn:
+            logger.error(f"Cannot update history {history_id} with cloud report: No database connection.")
+            return False
+
+        # Prepare data from the cloud report dictionary
+        now_timestamp = datetime.now()
+        cloud_grade = cloud_report_dict.get('grade')
+        cloud_rationale = cloud_report_dict.get('rationale')
+        cloud_study_topics = cloud_report_dict.get('study_topics')
+        # Serialize study topics to JSON, handle None or various structures
+        cloud_study_topics_json = None
+        try:
+            if cloud_study_topics is not None:
+                cloud_study_topics_json = json.dumps(cloud_study_topics)
+            else:
+                cloud_study_topics_json = json.dumps(None) # Explicitly store JSON null
+        except TypeError as json_err:
+             logger.error(f"Could not serialize cloud study topics for history_id {history_id}: {json_err}. Storing null.")
+             cloud_study_topics_json = json.dumps(None)
+
+
+        sql = """
+            UPDATE answer_history
+            SET
+                cloud_report_received = ?,
+                cloud_report_received_timestamp = ?,
+                cloud_ai_grade = ?,
+                cloud_ai_rationale = ?,
+                cloud_ai_study_topics_json = ?
+            WHERE
+                history_id = ?;
+        """
+        params = (
+            True,                   
+            now_timestamp,          
+            cloud_grade,            
+            cloud_rationale,        
+            cloud_study_topics_json,
+            history_id              
+        )
+
+        success = False
+        with self._lock: 
+            cursor = None
+            try:
+                cursor = conn.cursor()
+                cursor.execute(sql, params)
+                # Check if any row was actually updated
+                if cursor.rowcount > 0:
+                    conn.commit()
+                    logger.info(f"Successfully updated answer_history entry {history_id} with cloud report data.")
+                    success = True
+                else:
+                    logger.warning(f"Attempted to update history_id {history_id} with cloud report, but no matching row was found.")
+                    success = False # Indicate failure if no row matched
+
+            except sqlite3.Error as e:
+                logger.error(f"Failed to UPDATE answer_history for {history_id} with cloud report: {e}", exc_info=True)
+                conn.rollback() # Rollback on error
+                success = False
+            finally:
+                 if cursor: cursor.close()
+
+        return success
 
     def get_history_for_user(self, user_id: int) -> list:
         # TODO: Implement SQL SELECT query
