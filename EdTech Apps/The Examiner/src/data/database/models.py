@@ -185,6 +185,26 @@ class CachedQuestion(Base):
     # Relationship back to responses (optional but can be useful)
     # responses = relationship("QuestionResponse", back_populates="cached_question")
 
+class CachedAnswer(Base):
+    __tablename__ = 'cached_answers'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    cached_question_unique_key = Column(Text, ForeignKey('cached_questions.unique_question_key'), nullable=False, index=True)
+    
+    # Store the specific sub-answer object as JSON
+    answer_content = Column(JSON, nullable=False) 
+    
+    answer_source_tag = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    cached_question = relationship("CachedQuestion") # This relationship is fine
+
+    __table_args__ = (UniqueConstraint('cached_question_unique_key', name='uq_cached_question_answer'),)
+
+    def __repr__(self):
+        return f"<CachedAnswer(q_key='{self.cached_question_unique_key}', source='{self.answer_source_tag}')>"
+
 # IMPORTANT: If you are not using a migration tool like Alembic,
 # running the application after this model change might require
 # manually dropping and recreating the 'cached_questions' table
