@@ -11,6 +11,7 @@ import os
 import tempfile
 import logging
 import sqlite3
+import json
 
 # Define logger at the module level (preferred)
 logger = logging.getLogger(__name__)
@@ -505,6 +506,101 @@ class UserOperations:
                 conn.close()
 
         return history
+
+    @staticmethod
+    def get_single_report_item_details(history_id_to_find: int) -> Optional[Dict]:
+        """
+        Fetches detailed information for a single report item (answered question)
+        from the answer_history and cached_questions tables.
+        """
+        logger.debug(f"Fetching single report item details for history_id {history_id_to_find}")
+        report_item = None
+        conn = None
+        try:
+            conn = sqlite3.connect(STUDENT_PROFILE_DB_PATH)
+            conn.row_factory = sqlite3.Row # Use sqlite3.Row to access columns by name
+            cursor = conn.cursor()
+
+            # Simplified SQL: Removed cq.answer_data as its existence is unclear
+            sql = """
+                SELECT
+                    ah.history_id,
+                    ah.user_id,
+                    ah.answer_timestamp,
+                    ah.cloud_report_received,
+                    ah.cached_question_id,
+                    ah.user_answer_json,
+                    ah.local_ai_grade,
+                    ah.local_ai_rationale,
+                    cq.question_number_str,
+                    cq.subject,
+                    cq.level,
+                    cq.paper_year,
+                    cq.content AS question_text,
+                    cq.marks AS question_total_marks
+                FROM
+                    answer_history ah
+                JOIN
+                    cached_questions cq ON ah.cached_question_id = cq.unique_question_key
+                WHERE
+                    ah.history_id = ?;
+            """
+            cursor.execute(sql, [history_id_to_find])
+            row = cursor.fetchone()
+
+            if row:
+                report_item = {
+                    "history_id": row["history_id"],
+                    "user_id": row["user_id"],
+                    "timestamp": row["answer_timestamp"],
+                    "is_final": bool(row["cloud_report_received"]),
+                    "cached_question_id": row["cached_question_id"],
+                    "user_answer": json.loads(row["user_answer_json"]) if row["user_answer_json"] else None, # Parse JSON
+                    "ai_grade": row["local_ai_grade"], # This could be the score
+                    "ai_feedback": row["local_ai_rationale"],
+                    "question_text": row["question_text"],
+                    "question_total_marks": row["question_total_marks"],
+                    "subject": row["subject"],
+                    "level": row["level"],
+                    "paper_year": row["paper_year"],
+                    "paper_number": row["question_number_str"],
+                    "correct_answer": "N/A" # Set to N/A as answer_data column is uncertain
+                }
+                logger.info(f"Found report item for history_id {history_id_to_find}: {report_item['cached_question_id']}")
+            else:
+                logger.warning(f"No report item found for history_id {history_id_to_find}")
+
+        except sqlite3.Error as e:
+            logger.error(f"Database error fetching single report item for history_id {history_id_to_find}: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"Unexpected error fetching single report item for history_id {history_id_to_find}: {e}", exc_info=True)
+        finally:
+            if conn:
+                conn.close()
+        return report_item
+
+    @staticmethod
+    def _extract_correct_answer(answer_data_json: Optional[str]) -> str:
+        """
+        Helper to extract a displayable correct answer from the answer_data JSON.
+        This is a placeholder and needs to be adapted based on the actual structure of answer_data.
+        """
+        # This function is currently not used if answer_data is not being fetched.
+        # Kept for potential future use if answer_data source is clarified.
+        if not answer_data_json:
+            return "N/A"
+        try:
+            data = json.loads(answer_data_json)
+            # Example: Adjust based on your answer_data structure
+            if isinstance(data, dict) and "solution" in data:
+                return str(data["solution"])
+            elif isinstance(data, list) and len(data) > 0 and "answer" in data[0]: # if it's a list of parts
+                return str(data[0]["answer"])
+            return "Answer format not recognized." # Fallback
+        except json.JSONDecodeError:
+            return "Invalid answer format."
+        except Exception:
+            return "Error processing answer."
 
     @staticmethod
     def get_cached_question_details_bulk(unique_question_keys: List[str]) -> Dict[str, CachedQuestion]:

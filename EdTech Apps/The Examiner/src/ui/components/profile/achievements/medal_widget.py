@@ -31,9 +31,9 @@ class MedalWidget(QWidget):
         layout.setSpacing(5)
         
         # Count label
-        count_label = QLabel(str(self.count))
-        count_label.setMinimumSize(20, 20) 
-        count_label.setStyleSheet("""
+        self.count_label = QLabel(str(self.count))
+        self.count_label.setMinimumSize(20, 20) 
+        self.count_label.setStyleSheet("""
             QLabel {
                 color: black;
                 font-size: 16px;
@@ -41,20 +41,28 @@ class MedalWidget(QWidget):
                 padding: 2px;  
             }
         """)
-        count_label.setAlignment(Qt.AlignCenter)
+        self.count_label.setAlignment(Qt.AlignCenter)
         
         # Medal type label
-        type_label = QLabel(self.medal_type.capitalize())
-        type_label.setStyleSheet("""
+        self.type_label = QLabel(self.medal_type.capitalize())
+        self.type_label.setStyleSheet("""
             QLabel {
                 color: #666666;
                 font-size: 12px;
             }
         """)
-        type_label.setAlignment(Qt.AlignCenter)
+        self.type_label.setAlignment(Qt.AlignCenter)
         
-        layout.addWidget(count_label)
-        layout.addWidget(type_label)
+        layout.addWidget(self.count_label)
+        layout.addWidget(self.type_label)
+
+    def update_display_text(self, text: str):
+        if hasattr(self, 'count_label'):
+            self.count_label.setText(text)
+        else:
+            # Fallback or log if count_label somehow not initialized
+            # This case should ideally not happen if _setup_ui is always called in __init__
+            pass 
 
     def paintEvent(self, event):
         painter = QPainter(self)

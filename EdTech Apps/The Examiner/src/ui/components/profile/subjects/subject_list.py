@@ -9,6 +9,7 @@ class SubjectList(QWidget):
     level_changed = Signal(str, dict)  # Forward level changes to parent
     subject_removed = Signal(str)  # Forward subject removal to parent
     test_requested = Signal(str, str)
+    report_view_requested = Signal(int) 
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -24,6 +25,7 @@ class SubjectList(QWidget):
         card = SubjectCard(subject_name, levels)
         card.deleted.connect(self._on_subject_removed)
         card.levels_changed.connect(self.level_changed.emit)
+        card.report_view_requested.connect(self.report_view_requested.emit) 
 
         try:
             logger.info(f"[SubjectList] Attempting connect for {subject_name}...")

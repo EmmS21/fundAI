@@ -12,6 +12,7 @@ class SubjectSelector(QWidget):
     subject_added = Signal(str)  
     subject_removed = Signal(str)
     test_requested = Signal(str, str)
+    report_view_requested = Signal(int)
     
     def __init__(self, user_data):
         super().__init__()
@@ -32,6 +33,7 @@ class SubjectSelector(QWidget):
         self.subject_list = SubjectList()
         self.subject_list.subject_removed.connect(self._on_subject_removed)  # Connect the signal
         self.subject_list.test_requested.connect(self.on_card_test_requested)
+        self.subject_list.report_view_requested.connect(self.report_view_requested.emit)
         layout.addWidget(self.subject_list)
         
         # Create the popup after subject list
@@ -82,8 +84,6 @@ class SubjectSelector(QWidget):
     
     def _on_subject_selected(self, subject):
         """Handle a subject selection from the popup"""
-        # Add subject to the database using add_subject_for_user
-        # Default all levels to False initially - they can be toggled later
         result = UserOperations.add_subject_for_user(
             subject_name=subject,
             grade_7=False,
