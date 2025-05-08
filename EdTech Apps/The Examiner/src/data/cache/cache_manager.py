@@ -27,6 +27,7 @@ import pprint # Import pprint for prettier dictionary logging
 # Import SQLAlchemy components and the specific model
 from src.utils.db import get_db_session # Get session factory
 from src.data.database.models import CachedQuestion # Import the ORM model
+from src.data.database.models import CachedAnswer # Ensure models are imported
 
 
 logger = logging.getLogger(__name__)
@@ -55,10 +56,11 @@ class CacheManager:
     _instance = None
     
     # Storage paths
-    CACHE_DIR = os.path.join("src", "data", "cache")
-    METADATA_DIR = os.path.join(CACHE_DIR, "metadata")
-    ASSETS_DIR = os.path.join(CACHE_DIR, "assets")
-    QUESTIONS_DIR = os.path.join(CACHE_DIR, "questions")
+    CACHE_BASE_DIR = os.path.join("src", "data", "cache")
+    METADATA_DIR = os.path.join(CACHE_BASE_DIR, "metadata")
+    ASSETS_DIR = os.path.join(CACHE_BASE_DIR, "assets")
+    QUESTIONS_DIR = os.path.join(CACHE_BASE_DIR, "questions")
+    ANSWERS_DIR = os.path.join(CACHE_BASE_DIR, "answers")
     
     # Cache settings
     MAX_CACHE_SIZE_MB = 500  
@@ -99,6 +101,7 @@ class CacheManager:
         os.makedirs(self.METADATA_DIR, exist_ok=True)
         os.makedirs(self.ASSETS_DIR, exist_ok=True)
         os.makedirs(self.QUESTIONS_DIR, exist_ok=True)
+        os.makedirs(self.ANSWERS_DIR, exist_ok=True)
         
         # Initialize other attributes BEFORE potentially calling methods that use them
         self.mongodb_client = MongoDBClient()
@@ -260,44 +263,35 @@ class CacheManager:
                 time.sleep(300)  # Longer delay after error
     
     def _check_for_updates(self):
-        """Check if there are updates available for the cached content"""
-        logger.info("Checking for cache updates...")
-        
+        """Check if there are updates available for the cached content."""
+        self.logger.info("Checking for cache updates...")
+        needs_db_sync = False # Flag to track if any updates were queued
+
         try:
             # Check current MongoDB connection
             mongo_client = MongoDBClient()
             connected = mongo_client.connected and mongo_client.initialized
-            logger.info(f"MongoDB connection result: {connected}")
-            
             if not connected:
-                logger.warning("MongoDB not connected, skipping cache update check")
+                self.logger.warning("MongoDB not connected, skipping cache update check")
                 return
                 
-            logger.info("MongoDB connected, checking for new content...")
+            self.logger.info("MongoDB connected, checking for new content...")
             
-            # No need to import again, already imported at top of file
             user = UserOperations.get_current_user()
-            
-            # If no user found, we can't determine what to cache
             if not user:
-                logger.warning("No user found, skipping cache update check")
+                self.logger.warning("No user found, skipping cache update check")
                 return
                 
-            # Get subjects enabled by the user
             subjects = UserOperations.get_user_subjects()
-            
             if not subjects:
-                logger.warning("No subjects found for user, skipping cache update check")
+                self.logger.warning("No subjects found for user, skipping cache update check")
                 return
                 
             # Process each subject
             for subject in subjects:
-                # Get the subject name directly from the dictionary
                 subject_name = subject['name']
+                self.logger.debug(f"Checking updates for subject: {subject_name} (ID: {subject['subject_id']})")
                 
-                logger.debug(f"Checking updates for subject: {subject_name} (ID: {subject['subject_id']})")
-                
-                # Access levels from the dictionary
                 levels = subject['levels']
                 enabled_levels = {
                     'grade_7': levels.get('grade_7', False),
@@ -305,28 +299,34 @@ class CacheManager:
                     'a_level': levels.get('a_level', False)
                 }
                 
-                # Get only enabled levels
                 for level_key, enabled in enabled_levels.items():
-                    if not enabled:
-                        continue
+                    if not enabled: continue
                         
-                    # Convert level key to MongoDB format
                     mongo_level = self._convert_level_to_mongo_format(level_key)
-                    
-                    # Get last update time for this subject/level
                     last_update = self._get_subject_last_updated(subject_name, level_key)
                     
-                    # Skip if updated recently (only check max once per hour)
-                    if last_update and (time.time() - last_update < 3600):  # 1 hour
-                        logger.debug(f"Subject {subject_name}/{level_key} recently updated, skipping")
-                        continue
+                    # Simplified check: Always queue if checking (or add back timestamp logic if needed)
+                    # if last_update and (time.time() - last_update < 3600):
+                    #     self.logger.debug(f"Subject {subject_name}/{level_key} recently updated, skipping")
+                    #     continue
                         
-                    # Queue this subject for update
-                    logger.info(f"Queuing update check for {subject_name}/{level_key}")
-                    self._queue_questions_for_caching(subject_name, level_key, mongo_level)
+                    self.logger.info(f"Queueing update check for {subject_name}/{level_key}")
+                    # Assume _queue_questions_for_caching updates local JSONs for questions and answers
+                    self._queue_questions_for_caching(subject_name, level_key, mongo_level) 
+                    needs_db_sync = True # Mark that updates were processed, DB sync needed
             
+            # --- ADDED DB SYNC CALL ---
+            # After checking all subjects/levels and potentially updating local JSON files,
+            # trigger the sync from local JSONs to the main database.
+            if needs_db_sync:
+                self.logger.info("Local cache files potentially updated, initiating sync to database...")
+                self.sync_all_local_cache_to_db()
+            else:
+                 self.logger.info("No new content queued for local caching, skipping database sync.")
+            # --- END ADDED DB SYNC CALL ---
+
         except Exception as e:
-            logger.error(f"Error checking for updates: {e}", exc_info=True)
+            self.logger.error(f"Error checking for updates: {e}", exc_info=True)
     
     def _verify_subscription(self) -> str:
         """
@@ -736,7 +736,7 @@ class CacheManager:
             safe_subject = self._safe_filename(subject)
             safe_level = self._safe_filename(level_key)
             questions_base_dir = os.path.join(self.QUESTIONS_DIR, safe_subject, safe_level)
-            answers_base_dir = os.path.join(self.CACHE_DIR, "answers", safe_subject, safe_level)
+            answers_base_dir = os.path.join(self.ANSWERS_DIR, safe_subject, safe_level)
             os.makedirs(questions_base_dir, exist_ok=True)
             os.makedirs(answers_base_dir, exist_ok=True)
 
@@ -1934,7 +1934,7 @@ class CacheManager:
                     self.logger.debug(f"Calculated base_level_dir (containing year folders): {base_level_dir}") # Log base level dir
 
                     # Construct path into the parallel 'answers' directory
-                    answers_base_dir_candidate = base_level_dir.replace(self.QUESTIONS_DIR, os.path.join(self.CACHE_DIR, "answers"), 1)
+                    answers_base_dir_candidate = base_level_dir.replace(self.QUESTIONS_DIR, os.path.join(self.ANSWERS_DIR, "answers"), 1)
                     self.logger.debug(f"Candidate answers_base_dir (after replace): {answers_base_dir_candidate}") # Log candidate answer base
 
                     # Check if replacement worked, otherwise construct manually (safer)
@@ -2036,8 +2036,12 @@ class CacheManager:
             self.logger.info(f"Network status changed to {status}. Cache updates paused if running.")
 
     def _perform_online_update_check(self, trigger_reason: str):
-        # ... (Implementation of this method should already exist) ...
-        pass
+        self.logger.info(f"Performing online update check, triggered by: {trigger_reason}")
+        # This method should now primarily focus on triggering the check
+        # The actual work (downloading and syncing) happens in _check_for_updates
+        self._check_for_updates()
+        
+        # REMOVED from here: self.sync_all_local_cache_to_db() 
 
     # --- MODIFIED SYNC FUNCTION (v3 with v4 Debugging) ---
     def sync_question_cache_to_db(self):
@@ -2202,3 +2206,146 @@ class CacheManager:
 
         except Exception as e:
             self.logger.error(f">>> SYNC_DB: Critical error during sync: {e}", exc_info=True)
+
+    def sync_answers_to_db(self):
+        """
+        Scans the local answers cache directory (data/cache/answers) and syncs 
+        individual sub-answers to the 'cached_answers' table in the main database.
+        Relies on corresponding question JSON files to link via paper_document_id.
+        """
+        self.logger.info(">>> SYNC_ANSWERS_DB: Starting answer sync to database...")
+        checked_answer_files = 0
+        processed_sub_answers = 0
+        inserted_answers = 0
+        updated_answers = 0
+        skipped_answers_no_question_file = 0
+        skipped_answers_no_paper_id = 0
+        skipped_answers_other_error = 0
+
+        if not os.path.exists(self.ANSWERS_DIR):
+            self.logger.warning(f">>> SYNC_ANSWERS_DB: Answers directory does not exist: {self.ANSWERS_DIR}")
+            return
+
+        with get_db_session() as session:
+            try:
+                for subject_name in os.listdir(self.ANSWERS_DIR):
+                    subject_path = os.path.join(self.ANSWERS_DIR, subject_name)
+                    if not os.path.isdir(subject_path): continue
+
+                    for level_name in os.listdir(subject_path):
+                        level_path = os.path.join(subject_path, level_name)
+                        if not os.path.isdir(level_path): continue
+
+                        for year_name in os.listdir(level_path):
+                            year_path = os.path.join(level_path, year_name)
+                            if not os.path.isdir(year_path): continue
+
+                            for answer_filename in os.listdir(year_path):
+                                if not answer_filename.endswith(".json"): continue
+                                
+                                checked_answer_files += 1
+                                answer_filepath = os.path.join(year_path, answer_filename)
+                                # Main question number from answer filename (e.g., "1" from "1.json")
+                                main_question_number_str_from_ans_file = answer_filename[:-5] 
+
+                                # Construct path to the corresponding main question file
+                                # Use the main question number here for the lookup
+                                corresponding_question_filepath = os.path.join(
+                                    self.QUESTIONS_DIR, subject_name, level_name, year_name,
+                                    f"{main_question_number_str_from_ans_file}.json" 
+                                )
+
+                                if not os.path.exists(corresponding_question_filepath):
+                                    self.logger.warning(f">>> SYNC_ANSWERS_DB: Corresponding question file not found for answer {answer_filepath} at {corresponding_question_filepath}. Skipping.")
+                                    skipped_answers_no_question_file += 1
+                                    continue
+                                
+                                try:
+                                    # Get paper_document_id from the question file
+                                    with open(corresponding_question_filepath, 'r', encoding='utf-8') as qf:
+                                        question_data_from_file = json.load(qf)
+                                    paper_document_id = question_data_from_file.get("id")
+                                    if not paper_document_id:
+                                        self.logger.warning(f">>> SYNC_ANSWERS_DB: 'id' (paper_document_id) not found in question file {corresponding_question_filepath}. Skipping answer file {answer_filepath}.")
+                                        skipped_answers_no_paper_id += 1
+                                        continue
+
+                                    # Read the answer file which contains sub-answers
+                                    with open(answer_filepath, 'r', encoding='utf-8') as af:
+                                        full_answer_data_from_file = json.load(af)
+                                    
+                                    # Iterate through sub-answers within the answer file
+                                    sub_answer_list = []
+                                    if isinstance(full_answer_data_from_file.get("answers"), list) and len(full_answer_data_from_file["answers"]) > 0:
+                                         # Assuming the structure shown in the example 1.json
+                                         sub_answer_list = full_answer_data_from_file["answers"][0].get("sub_answers", [])
+                                    
+                                    if not sub_answer_list:
+                                        self.logger.warning(f">>> SYNC_ANSWERS_DB: No 'sub_answers' array found or empty in {answer_filepath}. Skipping.")
+                                        skipped_answers_other_error += 1
+                                        continue
+
+                                    for sub_answer_obj in sub_answer_list:
+                                        if not isinstance(sub_answer_obj, dict): continue
+
+                                        sub_number = sub_answer_obj.get("sub_number") # e.g., "a(i)"
+                                        if not sub_number:
+                                            self.logger.warning(f">>> SYNC_ANSWERS_DB: Missing 'sub_number' in sub-answer within {answer_filepath}. Sub-answer data: {sub_answer_obj}")
+                                            skipped_answers_other_error += 1
+                                            continue
+
+                                        processed_sub_answers += 1
+                                        # Construct the specific unique key for this sub-answer
+                                        unique_question_key = f"{paper_document_id}_{sub_number}"
+                                        
+                                        # Find existing or create new CachedAnswer entry
+                                        existing_answer = session.query(CachedAnswer).filter_by(cached_question_unique_key=unique_question_key).first()
+
+                                        # The content to store is the sub_answer object itself
+                                        answer_content_to_store = sub_answer_obj 
+
+                                        if existing_answer:
+                                            if existing_answer.answer_content != answer_content_to_store:
+                                                existing_answer.answer_content = answer_content_to_store
+                                                existing_answer.updated_at = datetime.now()
+                                                # existing_answer.answer_source_tag = "filesystem_sync_vY" 
+                                                updated_answers += 1
+                                                self.logger.debug(f">>> SYNC_ANSWERS_DB_UPDATE: Updated answer for Q_Key {unique_question_key}")
+                                        else:
+                                            new_answer = CachedAnswer(
+                                                cached_question_unique_key=unique_question_key,
+                                                answer_content=answer_content_to_store,
+                                                # answer_source_tag="filesystem_sync_vY", 
+                                                created_at=datetime.now(),
+                                                updated_at=datetime.now()
+                                            )
+                                            session.add(new_answer)
+                                            inserted_answers += 1
+                                            self.logger.debug(f">>> SYNC_ANSWERS_DB_INSERT: Added answer for Q_Key {unique_question_key}")
+
+                                except json.JSONDecodeError as e:
+                                    self.logger.error(f">>> SYNC_ANSWERS_DB: Error decoding JSON from {answer_filepath} or {corresponding_question_filepath}: {e}")
+                                    skipped_answers_other_error += 1
+                                except Exception as e:
+                                    self.logger.error(f">>> SYNC_ANSWERS_DB: Error processing answer file {answer_filepath} or its question file: {e}", exc_info=True)
+                                    skipped_answers_other_error += 1
+                
+                session.commit() # Commit changes after processing all files
+                self.logger.info(f">>> SYNC_ANSWERS_DB: Finished answer sync. Checked Files: {checked_answer_files}, Processed Sub-Answers: {processed_sub_answers}, Inserted: {inserted_answers}, Updated: {updated_answers}, Skipped (No Q-File): {skipped_answers_no_question_file}, Skipped (No PaperID): {skipped_answers_no_paper_id}, Skipped (Other): {skipped_answers_other_error}")
+
+            except Exception as e:
+                session.rollback()
+                self.logger.error(f">>> SYNC_ANSWERS_DB: Major error during answer sync transaction: {e}", exc_info=True)
+            finally:
+                self.logger.info(">>> SYNC_ANSWERS_DB: Answer sync process attempt finished.")
+
+    def sync_all_local_cache_to_db(self):
+        """Coordinates syncing all relevant local cache data to the main database."""
+        self.logger.info(">>> SYNC_ALL_TO_DB: Starting full local cache to DB sync...")
+        try:
+            self.sync_question_cache_to_db() # Sync questions first
+            self.sync_answers_to_db()      # Then sync answers
+        except Exception as e:
+             self.logger.error(f">>> SYNC_ALL_TO_DB: Error during sync process: {e}", exc_info=True)
+        finally:
+             self.logger.info(">>> SYNC_ALL_TO_DB: Full local cache to DB sync finished.")
