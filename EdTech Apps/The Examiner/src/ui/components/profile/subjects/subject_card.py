@@ -1127,95 +1127,94 @@ class SubjectCard(QWidget):
         Fetches performance history and displays it in a custom popup table widget,
         with toggles for preliminary and final reports.
         """
-        # --- This method now creates and shows the PerformanceReportPopup ---
-        # --- The data fetching and filtering logic remains the same as the ---
-        # --- previous version where it prepared final_reports_data and    ---
-        # --- preliminary_reports_data lists.                             ---
-
-        logger.debug(f"Showing performance popup for {self.subject_name}")
+        logger.debug(f"--- Showing performance popup for {self.subject_name} ---")
 
         button = self.findChild(QPushButton, "viewPerformance")
         if not button:
             logger.error("Could not find 'viewPerformance' button to show popup.")
             return
 
-        # 1. Get User ID (Improved handling)
+        # 1. Get User ID
         user = UserOperations.get_current_user()
         if not user:
             logger.error("Cannot fetch performance history: No current user found.")
             return
-        user_id = user.id if hasattr(user, 'id') else user.get('id') if isinstance(user, dict) else None
+        user_id = user.get('id')
         if not user_id:
              logger.error("Could not determine user ID.")
              return
+        logger.debug(f"User ID: {user_id}")
 
-        # 2. Fetch Basic History
+        # 2. Fetch Combined History + Basic Question Details
+        # get_performance_history now returns dicts with necessary info from the join
         try:
             basic_history_list = UserOperations.get_performance_history(user_id)
-            logger.info(f"Fetched {len(basic_history_list)} basic history entries for user {user_id}.")
+            logger.info(f"Fetched {len(basic_history_list)} history entries for user {user_id}.")
         except Exception as e:
-            logger.error(f"Error fetching basic performance history: {e}", exc_info=True)
+            logger.error(f"Error fetching performance history: {e}", exc_info=True)
             basic_history_list = []
 
-        # 3. Fetch Question Details
-        question_details_map: Dict[str, CachedQuestion] = {}
-        if basic_history_list:
-            question_ids_to_fetch = list(set(str(item.get("cached_question_id")) for item in basic_history_list if item.get("cached_question_id")))
-            if question_ids_to_fetch:
-                logger.debug(f"Fetching details for {len(question_ids_to_fetch)} unique question IDs.")
-                try:
-                    question_details_map = UserOperations.get_cached_question_details_bulk(question_ids_to_fetch)
-                    logger.info(f"Retrieved details for {len(question_details_map)} question IDs.")
-                except Exception as e:
-                    logger.error(f"Error fetching bulk question details: {e}", exc_info=True)
-                    question_details_map = {}
-            else:
-                logger.warning("Basic history list found, but no cached_question_ids present.")
-
-        # 4. Filter and Process Data for Popup
+        # 3. Filter and Process Data for Popup
         preliminary_reports_data = []
         final_reports_data = []
         enabled_level_keys = {key for key, enabled in self.levels.items() if enabled}
-        logger.debug(f"Card Subject: '{self.subject_name}', Enabled Level Keys: {enabled_level_keys}")
+        logger.debug(f"Card Subject: '{self.subject_name}', Enabled Level Keys on card: {enabled_level_keys}")
 
         for history_item in basic_history_list:
-            cached_q_id = str(history_item.get("cached_question_id"))
-            question_details = question_details_map.get(cached_q_id)
+            history_id = history_item.get('history_id', 'N/A')
+            
+            # Get subject and level directly from the history_item 
+            # (fetched via the JOIN in get_performance_history)
+            q_subject = history_item.get("subject") 
+            q_level = history_item.get("level") # Key like 'o_level'
 
-            if not question_details:
-                logger.warning(f"Details not found for cached_question_id: {cached_q_id} from history_id: {history_item.get('history_id')}. Skipping for popup.")
-                continue
+            if not q_subject or not q_level:
+                 logger.warning(f"Skipping history_id {history_id} due to missing subject ('{q_subject}') or level ('{q_level}') from get_performance_history result.")
+                 continue
 
             # Perform checks (Case-insensitive subject match, key-based level match)
-            q_subject = question_details.subject
-            q_level = question_details.level # Key like 'o_level'
-
-            subject_match = (q_subject and q_subject.strip().lower() == self.subject_name.strip().lower())
+            subject_match = (q_subject.strip().lower() == self.subject_name.strip().lower())
             level_match = (q_level in enabled_level_keys)
+            
+            logger.debug(f"Processing history_id: {history_id}, Subject='{q_subject}', Level='{q_level}' -> Subject Match: {subject_match}, Level Match: {level_match}")
 
             if not (subject_match and level_match):
+                # logger.debug(f"  Skipping history_id {history_id} due to subject/level mismatch.") # Optional verbose log
                 continue
 
-            # Combine data for the popup
+            # Use is_final directly from history_item (derived from cloud_report_received)
+            is_final = history_item.get('is_final', False) 
+            
+            # Create combined data for the popup using only history_item fields
+            # The 'question' sub-dict now uses data already present in history_item
             combined_data = {
-                "history": history_item,
-                 # Pass necessary fields instead of full object if expunge isn't enough
-                "question": {
-                    "unique_question_key": question_details.unique_question_key,
-                    "subject": question_details.subject,
-                    "level": question_details.level,
-                    "paper_year": question_details.paper_year,
-                    "question_number_str": question_details.question_number_str,
+                "history": { # Keep history separate if PerformanceReportPopup expects it
+                     "history_id": history_id,
+                     "timestamp": history_item.get("timestamp"),
+                     # Add other relevant history fields if needed by the popup
+                },
+                "question": { # Populate 'question' info from history_item
+                    "unique_question_key": history_item.get("cached_question_id"),
+                    "subject": q_subject,
+                    "level": q_level,
+                    "paper_year": history_item.get("paper_year"),
+                    "question_number_str": history_item.get("paper_number"), # Using key from get_performance_history
                 }
             }
+            
+            logger.debug(f"  history_id: {history_id}, is_final: {is_final}")
 
-            is_final = bool(history_item.get('cloud_report_received'))
             if is_final:
                 final_reports_data.append(combined_data)
+                logger.debug(f"  Added history_id {history_id} to final_reports_data.")
             else:
                 preliminary_reports_data.append(combined_data)
+                logger.debug(f"  Added history_id {history_id} to preliminary_reports_data.")
 
-        # 5. Create and Show Popup
+        logger.debug(f"Total preliminary reports for popup: {len(preliminary_reports_data)}")
+        logger.debug(f"Total final reports for popup: {len(final_reports_data)}")
+
+        # 5. Create and Show Popup (No changes needed here)
         if not preliminary_reports_data and not final_reports_data:
             logger.info("No matching performance reports found for selected levels.")
             # You could show a brief message via QToolTip or QMessageBox here
