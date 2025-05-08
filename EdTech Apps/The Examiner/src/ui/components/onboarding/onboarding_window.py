@@ -11,7 +11,7 @@ class OnboardingWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Student Profile Setup")
-        self.setFixedSize(800, 600)
+        self.setFixedSize(1200, 800)
         
         # Set window background to white
         self.setStyleSheet("""

@@ -273,7 +273,7 @@ class PerformanceReportPopup(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents) # Date usually fits
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch) # Level can stretch
 
-        table.itemDoubleClicked.connect(self._on_item_selected)
+        table.itemClicked.connect(self._on_item_selected)
         return table
 
     def _switch_view(self, view_type: str):
@@ -382,6 +382,7 @@ class SubjectCard(QWidget):
     deleted = Signal(str)
     levels_changed = Signal(str, dict)  # Emits subject name and level changes
     start_test_requested = Signal(str, str)  # NEW SIGNAL: (subject_name, level_key)
+    report_view_requested = Signal(int) # ADDED: Signal to request viewing a report by history_id
     
     def __init__(self, subject_name, levels=None, parent=None):
         super().__init__(parent)
@@ -1231,15 +1232,18 @@ class SubjectCard(QWidget):
         preliminary_reports_data.sort(key=sort_key, reverse=True)
         final_reports_data.sort(key=sort_key, reverse=True)
 
-        # --- Instantiate the Popup ---
-        # Store as instance variable to prevent garbage collection if needed
         self.performance_popup = PerformanceReportPopup(preliminary_reports_data, final_reports_data, self) # Pass self as parent
 
-        # Connect signal (Example)
-        # self.performance_popup.report_selected.connect(self.parent().parent().show_report_view) # Adjust signal connection target as needed
+        self.performance_popup.report_selected.connect(self._on_report_selected_from_popup) # ADDED
 
         # Position and show
         button_pos = button.mapToGlobal(QPoint(0, button.height())) # Use QPoint directly
         self.performance_popup.move(button_pos)
         self.performance_popup.show()
         self.performance_popup.setFocus()
+
+    @Slot(int)
+    def _on_report_selected_from_popup(self, history_id: int):
+        """Handles the report_selected signal from PerformanceReportPopup."""
+        logger.info(f"SubjectCard: Report selected with history_id {history_id}, emitting report_view_requested.")
+        self.report_view_requested.emit(history_id)

@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 class ProfileInfoWidget(QWidget):
     test_requested = Signal(str, str)
+    report_view_requested = Signal(int)
 
     def __init__(self, user_data):
         super().__init__()
@@ -674,7 +675,8 @@ class ProfileInfoWidget(QWidget):
         # Connect subject signals
         self.subject_selector.subject_added.connect(self._on_subject_added)
         self.subject_selector.subject_removed.connect(self._on_subject_removed)
-        self.subject_selector.test_requested.connect(self.on_selector_test_requested)
+        self.subject_selector.test_requested.connect(self.test_requested.emit)
+        self.subject_selector.report_view_requested.connect(self.report_view_requested.emit)
         
         # Add to main layout
         self.layout().addWidget(self.subjects_container)

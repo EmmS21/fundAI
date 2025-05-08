@@ -7,6 +7,7 @@ from .components.profile.profile_header import ProfileHeader
 from .components.profile.achievements.achievement_widget import AchievementWidget
 from .components.profile.profile_info_widget import ProfileInfoWidget
 from .views.question_view import QuestionView # Import the QuestionView
+from .views.report_view import ReportView # ADDED: Import ReportView
 from src.core import services
 
 logger = logging.getLogger(__name__) # Setup logger for this module
@@ -16,7 +17,7 @@ class MainWindow(QMainWindow):
     def __init__(self, user=None):
         super().__init__()
         self.setWindowTitle("The Examiner") # Changed title
-        self.setFixedSize(800, 600) # Kept fixed size for now
+        self.setFixedSize(1200, 800) # Kept fixed size for now
 
         # --- Use provided user or get current user ---
         # It's better to do this once, rather than potentially multiple times
@@ -64,6 +65,8 @@ class MainWindow(QMainWindow):
         # Store it as an attribute to access its signal
         self.profile_info_widget = ProfileInfoWidget(self.user)
         profile_content_layout.addWidget(self.profile_info_widget)
+        self.profile_info_widget.test_requested.connect(self.show_question_view)
+        self.profile_info_widget.report_view_requested.connect(self.show_report_view)
 
         # Add stretch to push everything to the top within the content container
         profile_content_layout.addStretch()
@@ -80,9 +83,14 @@ class MainWindow(QMainWindow):
         # --- Store Question View instance ---
         self.question_view_instance = None # To keep track of the current question view
 
+        # --- ADDED: Setup Report View ---
+        self.report_view_instance = ReportView(self) # Create instance
+        self.stacked_widget.addWidget(self.report_view_instance) # Add to stack
+        self.report_view_instance.back_requested.connect(self.show_profile_view) # Connect back signal
+
         # --- Connect Signals ---
         # Connect the signal bubbled up from ProfileInfoWidget
-        self.profile_info_widget.test_requested.connect(self.show_question_view)
+        # self.profile_info_widget.test_requested.connect(self.show_question_view) # Moved up for clarity
 
     @Slot(str, str)
     def show_question_view(self, subject_name, level_key):
@@ -127,3 +135,14 @@ class MainWindow(QMainWindow):
              self.stacked_widget.removeWidget(self.question_view_instance)
              self.question_view_instance.deleteLater()
              self.question_view_instance = None # Clear the reference
+        
+
+    @Slot(int)
+    def show_report_view(self, history_id: int):
+        """Switches to the ReportView and loads the specified report."""
+        logger.info(f"Switching to Report View for history_id {history_id}")
+        if self.report_view_instance:
+            self.report_view_instance.load_report(history_id)
+            self.stacked_widget.setCurrentWidget(self.report_view_instance)
+        else:
+            logger.error("ReportView instance not available.")
