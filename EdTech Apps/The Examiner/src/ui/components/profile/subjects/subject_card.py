@@ -13,6 +13,7 @@ import json
 from datetime import datetime
 from typing import List, Dict
 from src.data.database.models import CachedQuestion
+from src.core import services
 
 logger = logging.getLogger(__name__)
 
@@ -657,6 +658,25 @@ class SubjectCard(QWidget):
         # Bottom section with buttons
         bottom_section = QHBoxLayout()
         
+        # ADDED: New Reports Badge
+        self.new_reports_badge_label = QLabel("") # Initially empty
+        self.new_reports_badge_label.setObjectName("newReportsBadgeLabel")
+        self.new_reports_badge_label.setStyleSheet("""
+            QLabel#newReportsBadgeLabel {
+                font-size: 11px;
+                color: #3730A3; /* Tailwind indigo-800 */
+                font-weight: bold;
+                padding: 3px 6px;
+                background-color: #A5B4FC; /* Tailwind indigo-300 */
+                border: 1px solid #818CF8; /* Tailwind indigo-400 */
+                border-radius: 8px;
+                margin-right: 8px; /* Space before view performance button */
+            }
+        """)
+        self.new_reports_badge_label.setVisible(False) # Hide if count is 0
+        bottom_section.addWidget(self.new_reports_badge_label, alignment=Qt.AlignLeft | Qt.AlignVCenter)
+        # --- END ADDED ---
+
         # View performance button
         view_performance = QPushButton("View performance ▼")
         view_performance.setObjectName("viewPerformance")
@@ -683,6 +703,8 @@ class SubjectCard(QWidget):
         
         # Update the header status after setup
         QTimer.singleShot(100, self._update_header_status)
+        # ADDED: Initial update for the new reports badge
+        QTimer.singleShot(150, self.update_new_reports_badge)
     
     def _on_level_changed(self, level: str, checked: bool):
         """Handle checkbox state changes"""
@@ -706,6 +728,8 @@ class SubjectCard(QWidget):
         
         # Update header status
         self._update_header_status()
+        # ADDED: Update new reports badge when levels change
+        self.update_new_reports_badge()
     
     def _update_header_status(self):
         """Update the header status indicator with the combined status of all enabled levels"""
@@ -1049,7 +1073,6 @@ class SubjectCard(QWidget):
             )
             
             # Trigger content sync for enabled levels
-            from src.core import services
             for level in enabled_levels:
                 # Convert level to MongoDB format
                 mongo_level = self._convert_level_to_mongo_format(level)
@@ -1247,3 +1270,31 @@ class SubjectCard(QWidget):
         """Handles the report_selected signal from PerformanceReportPopup."""
         logger.info(f"SubjectCard: Report selected with history_id {history_id}, emitting report_view_requested.")
         self.report_view_requested.emit(history_id)
+
+    def update_new_reports_badge(self):
+        """Updates the new reports badge for this subject card."""
+        if not hasattr(self, 'new_reports_badge_label'):
+            logger.warning(f"SubjectCard {self.subject_name}: update_new_reports_badge called before label exists.")
+            return
+
+        total_new_reports = 0
+        if services.user_history_manager:
+            enabled_level_keys = [key for key, enabled in self.levels.items() if enabled]
+            if not enabled_level_keys: 
+                total_new_reports = services.user_history_manager.get_new_report_count(subject_name=self.subject_name)
+            else:
+                for level_key in enabled_level_keys:
+                    total_new_reports += services.user_history_manager.get_new_report_count(
+                        subject_name=self.subject_name,
+                        level_key=level_key
+                    )
+        else:
+            logger.error(f"UserHistoryManager service not available for SubjectCard {self.subject_name}.")
+
+        if total_new_reports > 0:
+            self.new_reports_badge_label.setText(f"{total_new_reports} New Final Report{'s' if total_new_reports > 1 else ''}")
+            self.new_reports_badge_label.setVisible(True)
+        else:
+            self.new_reports_badge_label.setVisible(False)
+        
+        logger.debug(f"SubjectCard {self.subject_name}: New reports badge updated. Count: {total_new_reports}")

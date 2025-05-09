@@ -37,7 +37,19 @@ class SubjectList(QWidget):
 
         self.layout.insertWidget(0, card)
         card.show()
+        card.update_new_reports_badge()
     
+    def refresh_all_subject_card_badges(self):
+        """Iterates through all SubjectCard widgets and updates their new report badges."""
+        logger.debug("SubjectList: Refreshing all subject card badges.")
+        for i in range(self.layout.count()):
+            widget = self.layout.itemAt(i).widget()
+            if isinstance(widget, SubjectCard):
+                logger.debug(f"  Updating badge for card: {widget.subject_name}")
+                widget.update_new_reports_badge()
+            elif widget is not None:
+                logger.warning(f"  Found a non-SubjectCard widget in SubjectList layout: {type(widget)}")
+
     @Slot(str)
     def _on_subject_removed(self, subject_name):
         """Handle subject removal"""

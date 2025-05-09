@@ -1107,6 +1107,15 @@ class QuestionView(QWidget):
             self.logger.error(f"Unexpected error creating image popup for {image_path}: {e}", exc_info=True)
             QMessageBox.critical(self, "Popup Error", f"An unexpected error occurred while trying to display the image:\n{e}")
 
+        # --- ADDED: Placeholder for new report indicator, now more concrete ---
+        # This method will be called to signal MainWindow to update its badge
+        # No direct UI update here, just signaling/calling MainWindow's method
+        main_window = self.window()
+        if hasattr(main_window, 'refresh_new_reports_badge'):
+            main_window.refresh_new_reports_badge()
+        else:
+            logger.warning("QuestionView: Could not find refresh_new_reports_badge on main_window to update badge.")
+
     def trigger_cloud_sync(self, history_id: int, local_prompt: str):
         """Checks network and either triggers immediate Groq call or queues."""
         self.logger.info(f"Triggering cloud sync process for history_id: {history_id}")
@@ -1259,18 +1268,19 @@ class QuestionView(QWidget):
         self.logger.error(f"GroqFeedbackWorker reported error for history_id {history_id}: {error_message}")
         # Optional: Add logic here, like marking DB entry as failed direct sync
 
-    def update_new_report_indicator(self):
-        """Placeholder: Signal or call method to update the UI badge."""
-        self.logger.info("Placeholder: Update UI indicator for new reports.")
-        # Find the profile widget and call its update method
-        # This might involve traversing parent widgets or using signals/slots
-        # Example (highly dependent on your exact UI structure):
-        main_window = self.window() # Get the top-level window
-        if hasattr(main_window, 'profile_info_widget') and hasattr(main_window.profile_info_widget, 'update_new_report_indicator'):
-             self.logger.debug("Calling update_new_report_indicator on main window's profile widget.")
-             main_window.profile_info_widget.update_new_report_indicator()
+
+    def update_new_report_indicator(self): # RENAMED/REPURPOSED
+        """Signals the main window to refresh the new reports badge on subject cards."""
+        self.logger.info("QuestionView: Signaling main window to update new report indicators on subject cards.")
+        main_window = self.window()
+        if main_window and hasattr(main_window, 'profile_info_widget') and \
+           main_window.profile_info_widget and \
+           hasattr(main_window.profile_info_widget, 'subject_selector') and \
+           main_window.profile_info_widget.subject_selector:
+            logger.debug("Calling refresh_badges on main_window.profile_info_widget.subject_selector.")
+            main_window.profile_info_widget.subject_selector.refresh_badges()
         else:
-             self.logger.warning("Could not find profile_info_widget or its update method to update badge.")
+            logger.warning("Could not find main_window.profile_info_widget.subject_selector to update badges.")
 
     # --- ADDED: Dedicated slot for worker finished ---
     @Slot(int)
