@@ -3,7 +3,7 @@ import sqlite3
 import json
 import os
 from datetime import datetime
-from typing import Dict, Optional, Any, Tuple
+from typing import Dict, Optional, Any, Tuple, List
 import threading
 import sys 
 import re
@@ -195,9 +195,21 @@ class UserHistoryManager:
 
     # --- Placeholder methods for future cloud sync features ---
     def mark_as_queued_for_cloud(self, history_id: int) -> bool:
-        # TODO: Implement SQL UPDATE for cloud_sync_queued
-        logger.info(f"Placeholder: Mark history entry {history_id} as queued for cloud.")
-        return True # Placeholder
+        """Marks a history entry as having been queued for cloud sync by setting cloud_sync_queued to TRUE."""
+        conn = self._get_connection()
+        if not conn:
+            logger.error(f"Cannot mark history_id {history_id} as queued: No database connection.")
+            return False
+
+        # We are NOT setting a cloud_sync_queue_timestamp as per your decision.
+        sql = """
+            UPDATE answer_history
+            SET cloud_sync_queued = TRUE
+            WHERE history_id = ?;
+        """
+        params = (history_id,) # SQLite expects a tuple for parameters
+        
+        return self._execute_update(sql, params)
 
     def mark_as_sent_to_cloud(self, history_id: int) -> bool:
         # TODO: Implement SQL UPDATE for cloud_sync_sent_timestamp
@@ -390,30 +402,69 @@ class UserHistoryManager:
             if cursor: cursor.close()
 
 
-    def get_unsynced_history_ids(self, limit: int = 10) -> list[int]:
-        """Gets IDs of history entries that haven't been successfully synced yet."""
-        # (Implementation as previously proposed)
+    def get_pending_cloud_analysis_items(self, limit: int = 10) -> List[Tuple[int, str]]:
+        """
+        Gets history_id and cached_question_id for entries that need cloud report generation.
+        Filters out items already marked as cloud_sync_queued or already processed (cloud_report_received = TRUE).
+        """
         conn = self._get_connection()
-        if not conn: return []
+        if not conn:
+            logger.error("Cannot get pending cloud analysis items: No database connection.")
+            return []
+        
+        items: List[Tuple[int, str]] = [] # Ensure type hint for clarity
         cursor = None
-        ids = []
         try:
             cursor = conn.cursor()
+            # Select history_id and cached_question_id for items not yet processed 
+            # AND not yet marked as queued by the SyncService's proactive check.
             sql = """
-                SELECT history_id FROM answer_history
-                WHERE cloud_report_received = FALSE
+                SELECT history_id, cached_question_id 
+                FROM answer_history
+                WHERE cloud_report_received = FALSE 
+                  AND (cloud_sync_queued = FALSE OR cloud_sync_queued IS NULL)
                 ORDER BY answer_timestamp ASC
-                LIMIT ?
+                LIMIT ?;
             """
             cursor.execute(sql, (limit,))
-            results = cursor.fetchall()
-            ids = [row[0] for row in results]
-            logger.info(f"Found {len(ids)} unsynced history entries.")
+            results = cursor.fetchall() # This will be a list of tuples
+            if results:
+                items = results
+            logger.info(f"Found {len(items)} pending items for cloud analysis (history_id, cached_question_id).")
         except sqlite3.Error as e:
-            logger.error(f"DATABASE ERROR getting unsynced history IDs: {e}", exc_info=True)
+            logger.error(f"DATABASE ERROR getting pending cloud analysis items: {e}", exc_info=True)
+            items = [] # Ensure empty list on error
         finally:
-            if cursor: cursor.close()
-        return ids
+            if cursor:
+                cursor.close()
+        return items
+
+    def get_user_answer_json(self, history_id: int) -> Optional[str]:
+        """Retrieves the user_answer_json for a given history_id."""
+        conn = self._get_connection()
+        if not conn:
+            logger.error(f"Cannot get user answer for history_id {history_id}: No database connection.")
+            return None
+        
+        cursor = None
+        user_answer_json: Optional[str] = None
+        try:
+            cursor = conn.cursor()
+            sql = "SELECT user_answer_json FROM answer_history WHERE history_id = ?;"
+            cursor.execute(sql, (history_id,))
+            result = cursor.fetchone()
+            if result:
+                user_answer_json = result[0]
+                logger.debug(f"Retrieved user_answer_json for history_id {history_id}.")
+            else:
+                logger.warning(f"No history entry found for history_id {history_id} when fetching user_answer_json.")
+        except sqlite3.Error as e:
+            logger.error(f"DATABASE ERROR getting user_answer_json for history_id {history_id}: {e}", exc_info=True)
+            user_answer_json = None # Ensure None on error
+        finally:
+            if cursor:
+                cursor.close()
+        return user_answer_json
 
     def get_new_report_count(self, subject_name: Optional[str] = None, level_key: Optional[str] = None) -> int:
         """
@@ -432,44 +483,38 @@ class UserHistoryManager:
         try:
             cursor = conn.cursor()
             
-            # Base part of the query selects from answer_history (aliased as ah)
+            # NEW SQL CONSTRUCTION FOR TASK 4.A:
             base_sql = """
                 SELECT COUNT(DISTINCT ah.history_id) 
                 FROM answer_history ah
             """
-            # join_sql will be empty unless filtering by subject/level
-            join_sql = ""
-            # Common conditions for unviewed, received reports
+            join_sql = ""  # Will be populated if filtering by subject/level
             where_clauses = [
                 "ah.cloud_report_received = TRUE",
                 "ah.cloud_report_viewed_timestamp IS NULL"
             ]
-            params = [] # Parameters for the SQL query
+            params = [] # To hold values for parameterized query
 
-            # If a subject_name is provided, we need to filter
             if subject_name:
-                # Add a JOIN with the cached_questions table (aliased as cq)
-                # This join is on the foreign key relationship between answer_history and cached_questions
+                # Add JOIN with cached_questions if subject_name is provided
                 join_sql = " JOIN cached_questions cq ON ah.cached_question_id = cq.unique_question_key "
                 
-                # Add condition to filter by subject name
                 where_clauses.append("cq.subject = ?")
                 params.append(subject_name)
                 
-                # If a level_key is also provided, add condition to filter by level
-                if level_key: 
+                if level_key: # Add level filter only if subject is also specified
                     where_clauses.append("cq.level = ?")
                     params.append(level_key)
             
-            # Construct the final SQL query
+            # Combine the SQL parts
             sql = base_sql + join_sql + " WHERE " + " AND ".join(where_clauses) + ";"
             
             logger.debug(f"Executing SQL for new report count: {sql} with params: {params}")
-            cursor.execute(sql, tuple(params)) # Execute with the built parameters
+            cursor.execute(sql, tuple(params)) # Use parameterized query
             result = cursor.fetchone()
-            count = result[0] if result else 0 # Get the count
+            count = result[0] if result else 0
             
-            # Update log message to be more informative
+            # MODIFIED: More detailed logging
             log_message = f"Found {count} new, unviewed cloud reports"
             if subject_name:
                 log_message += f" for subject '{subject_name}'"
@@ -479,7 +524,7 @@ class UserHistoryManager:
             
         except sqlite3.Error as e:
             logger.error(f"DATABASE ERROR getting new report count: {e}", exc_info=True)
-            count = 0 # Ensure count is 0 on error
+            count = 0
         finally:
             if cursor:
                 cursor.close()
@@ -562,3 +607,30 @@ class UserHistoryManager:
             if cursor: cursor.close()
 
         return results
+
+    def is_cloud_report_received(self, history_id: int) -> bool: # Ensure this method from Task 5 is present
+        """Checks if the cloud report for a given history_id has been received."""
+        conn = self._get_connection()
+        if not conn:
+            logger.error(f"Cannot check if cloud report received for history_id {history_id}: No database connection.")
+            return False 
+
+        cursor = None
+        is_received = False
+        try:
+            cursor = conn.cursor()
+            sql = "SELECT cloud_report_received FROM answer_history WHERE history_id = ?;"
+            cursor.execute(sql, (history_id,))
+            result = cursor.fetchone()
+            if result:
+                is_received = bool(result[0]) 
+            else:
+                logger.warning(f"No history entry found for history_id {history_id} when checking if cloud report received.")
+        except sqlite3.Error as e:
+            logger.error(f"DATABASE ERROR checking if cloud report received for history_id {history_id}: {e}", exc_info=True)
+        finally:
+            if cursor:
+                cursor.close()
+        
+        logger.debug(f"Cloud report received status for history_id {history_id}: {is_received}")
+        return is_received
