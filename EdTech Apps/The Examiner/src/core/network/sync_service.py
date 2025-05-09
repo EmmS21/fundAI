@@ -13,6 +13,7 @@ from enum import Enum
 import json
 from src.core.ai.groq_client import GroqClient
 from src.core.ai.marker import run_ai_evaluation
+import pprint
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -150,7 +151,7 @@ class SyncService:
         # Group items by type
         items_by_type = {}
         for item in items:
-            item_type = item.item_type
+            item_type = item.type
             if item_type not in items_by_type:
                 items_by_type[item_type] = []
             items_by_type[item_type].append(item)
@@ -197,20 +198,20 @@ class SyncService:
             True if successful, False otherwise
         """
         try:
-            if item.item_type == 'user_data':
+            if item.type == 'user_data':
                 self._sync_with_retry(self._sync_user_data, item)
-            elif item.item_type == 'exam_result':
+            elif item.type == 'exam_result':
                 self._sync_with_retry(self._sync_exam_result, item)
-            elif item.item_type == 'question_response':
+            elif item.type == 'question_response':
                 self._sync_with_retry(self._sync_question_response, item)
-            elif item.item_type == 'question':
+            elif item.type == 'question':
                 self._sync_with_retry(self._sync_question, item)
-            elif item.item_type == 'system_metrics':
+            elif item.type == 'system_metrics':
                 self._sync_with_retry(self._sync_system_metrics, item)
-            elif item.item_type == 'cloud_analysis_request':
+            elif item.type == 'cloud_analysis_request':
                 self._sync_with_retry(self._sync_cloud_analysis_request, item)
             else:
-                logger.warning(f"Unknown item type: {item.item_type}")
+                logger.warning(f"Unknown item type: {item.type}")
                 self._queue_manager.mark_failed(item.id)
                 return False
             return True
@@ -773,29 +774,21 @@ class SyncService:
                 student_answer_dict = json.loads(student_answer_json)
 
                 if question_data_dict and student_answer_dict and correct_answer_dict:
-                    # We need to pass data to run_ai_evaluation in the format it expects.
-                    # It typically takes the main question text, details about sub-questions (if any),
-                    # the student's answers (structured), and correct answer data.
-                    # The `question_data_dict` from CacheManager should already be structured
-                    # similarly to how it's loaded in QuestionView.
-                    # `correct_answer_dict` is also the direct content.
+
+                    logger.debug(f"SyncService: Data for run_ai_evaluation (history_id: {history_id}):")
+                    logger.debug(f"  question_data_dict: {pprint.pformat(question_data_dict)}")
+                    logger.debug(f"  correct_answer_dict: {pprint.pformat(correct_answer_dict)}")
+                    logger.debug(f"  student_answer_dict: {pprint.pformat(student_answer_dict)}")
+                    logger.debug(f"  current_marks: {question_data_dict.get('marks')}")
+                    # --- END DETAILED LOGGING ---
                     
-                    # Assuming run_ai_evaluation expects the main question data, 
-                    # correct answer, student's answer dict, and marks.
-                    # The `question_data_dict` should have 'content' and 'marks'.
-                    # The `correct_answer_dict` is from `get_correct_answer_details`
-                    # The `student_answer_dict` is from `get_user_answer_json`
-                    
-                    # This call is ONLY to get the `generated_prompt`. The `evaluation_results` are ignored here.
-                    # If `run_ai_evaluation` has side effects or is too heavy,
-                    # consider extracting its prompt-building logic into a separate utility.
                     logger.debug(f"SyncService: Reconstructing prompt for history_id {history_id} using question_key {cached_question_key}")
 
                     _ , prompt_for_groq = run_ai_evaluation(
-                        question_data=question_data_dict, # This is the dict from CachedQuestion
-                        correct_answer_data=correct_answer_dict, # This is the dict from CachedAnswer
-                        user_answer=student_answer_dict, # Dict of user's answers
-                        marks=question_data_dict.get('marks') # Marks from the question
+                        question_data=question_data_dict,
+                        correct_answer_data=correct_answer_dict,
+                        user_answer=student_answer_dict,
+                        marks=question_data_dict.get('marks')
                     )
 
                     if prompt_for_groq:
