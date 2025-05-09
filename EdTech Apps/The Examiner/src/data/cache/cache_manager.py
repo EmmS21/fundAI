@@ -1968,10 +1968,35 @@ class CacheManager:
                                 # <<< --- LOGGING ADDED: Raw Answer Object from File --- >>>
                                 self.logger.debug(f"Successfully loaded RAW answer object from file ({answer_file_path}):\n{pprint.pformat(correct_answer_data)}")
                                 # <<< --- END LOGGING ADDED --- >>>
-                                self.logger.debug(f"Successfully loaded JSON from answer file. Type: {type(correct_answer_data)}")
+                                # self.logger.debug(f"Successfully loaded JSON from answer file. Type: {type(correct_answer_data)}") # Old log
+
+                                # --- MODIFICATION START ---
+                                if isinstance(correct_answer_data, dict):
+                                    # Assuming correct_answer_data is the dict for a single part's answer scheme
+                                    # Wrap it into the structure expected by run_ai_evaluation
+                                    correct_answer_data = {
+                                        "answers": [
+                                            {
+                                                "sub_answers": [correct_answer_data]
+                                            }
+                                        ]
+                                    }
+                                    self.logger.info(f"Successfully loaded and WRAPPED answer data for {answer_ref} into expected AI structure.")
+                                    self.logger.debug(f"Wrapped correct_answer_data structure: {pprint.pformat(correct_answer_data)}")
+                                elif isinstance(correct_answer_data, list):
+                                    # If the JSON file ALREADY contains a list, assume it's the list for the "answers" key
+                                    correct_answer_data = {"answers": correct_answer_data}
+                                    self.logger.info(f"Successfully loaded answer data (list) for {answer_ref} and wrapped in 'answers' key.")
+                                    self.logger.debug(f"Wrapped correct_answer_data structure: {pprint.pformat(correct_answer_data)}")
+                                else:
+                                    self.logger.warning(f"Loaded answer data for {answer_ref} is not a dict or list as expected. Type: {type(correct_answer_data)}")
+                                    correct_answer_data = None # Ensure it's None if not parsable
+                                # --- MODIFICATION END ---
+
                             self.logger.info(f"Successfully loaded answer data for {answer_ref}")
                          else:
                             self.logger.warning(f"Answer file referenced by {answer_ref} was NOT FOUND at the calculated path: {answer_file_path}")
+                            correct_answer_data = None # Ensure it's None
                     else:
                          self.logger.error("Could not construct path to answers directory.")
 
@@ -2349,3 +2374,135 @@ class CacheManager:
              self.logger.error(f">>> SYNC_ALL_TO_DB: Error during sync process: {e}", exc_info=True)
         finally:
              self.logger.info(">>> SYNC_ALL_TO_DB: Full local cache to DB sync finished.")
+
+    # --- NEW METHODS FOR TASK 5.2 ---
+    def get_question_details_by_key(self, unique_question_key: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves full question details from the 'cached_questions' table 
+        using its unique_question_key.
+        This method uses SQLAlchemy to interact with student_profile.db.
+        Returns a dictionary of the question's attributes or None if not found.
+        """
+        logger.debug(f"CacheManager: Attempting to fetch question details for key: {unique_question_key}")
+        try:
+            with get_db_session() as session: # Uses SQLAlchemy session for student_profile.db
+                question_orm = session.query(CachedQuestion).filter(CachedQuestion.unique_question_key == unique_question_key).first()
+                if question_orm:
+                    # Convert ORM object to dictionary. Add all fields that run_ai_evaluation might need.
+                    question_data = {
+                        "unique_question_key": question_orm.unique_question_key,
+                        "paper_document_id": question_orm.paper_document_id,
+                        "question_number_str": question_orm.question_number_str,
+                        "paper_year": question_orm.paper_year,
+                        "subject": question_orm.subject,
+                        "level": question_orm.level,
+                        "topic": question_orm.topic,
+                        "subtopic": question_orm.subtopic,
+                        "difficulty": question_orm.difficulty,
+                        "content": question_orm.content, 
+                        "marks": question_orm.marks,
+                        # IMPORTANT: If your run_ai_evaluation or prompt builder needs other fields
+                        # from the CachedQuestion model (like parsed sub_questions, image data if stored differently),
+                        # ensure they are included here.
+                        # For example, if 'content' itself is a JSON string with sub-questions:
+                        # "parsed_content": json.loads(question_orm.content) if question_orm.content else None 
+                    }
+                    logger.info(f"CacheManager: Found question details for key: {unique_question_key}")
+                    return question_data
+                else:
+                    logger.warning(f"CacheManager: No question found in 'cached_questions' for key: {unique_question_key}")
+                    return None
+        except Exception as e:
+            logger.error(f"CacheManager: Error fetching question details for key {unique_question_key} from DB: {e}", exc_info=True)
+            return None
+
+    def get_correct_answer_details(self, unique_question_key: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves correct answer details from the 'cached_answers' table
+        using the unique_question_key of the question.
+        This method uses SQLAlchemy to interact with student_profile.db.
+        Returns the 'answer_content' dictionary or None if not found.
+        """
+        logger.debug(f"CacheManager: Attempting to fetch correct answer for question key: {unique_question_key}")
+        try:
+            with get_db_session() as session: # Uses SQLAlchemy session for student_profile.db
+                answer_orm = session.query(CachedAnswer).filter(CachedAnswer.cached_question_unique_key == unique_question_key).first()
+                if answer_orm:
+                    # answer_content is expected to be a JSON/dict field
+                    logger.info(f"CacheManager: Found correct answer for question key: {unique_question_key}")
+                    return answer_orm.answer_content 
+                else:
+                    logger.warning(f"CacheManager: No correct answer found in 'cached_answers' for question key: {unique_question_key}")
+                    return None
+        except Exception as e:
+            logger.error(f"CacheManager: Error fetching correct answer for question key {unique_question_key} from DB: {e}", exc_info=True)
+            return None
+
+    def get_question_data_for_ai(self, unique_question_key: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves question data from the 'cached_questions' table, formatted for run_ai_evaluation.
+        Ensures 'question_text' and 'marks' keys are present as expected.
+        """
+        logger.debug(f"CacheManager: Getting AI-formatted question data for key: {unique_question_key}")
+        try:
+            with get_db_session() as session:
+                question_orm = session.query(CachedQuestion).filter(CachedQuestion.unique_question_key == unique_question_key).first()
+                if question_orm:
+                    question_data = {
+                        "question_text": question_orm.content or "",  # Expected by run_ai_evaluation
+                        "sub_questions": [], # Expected by run_ai_evaluation, populate if applicable
+                        "marks": question_orm.marks, # Expected by run_ai_evaluation
+                        # Pass along other potentially useful data from the ORM object
+                        "unique_question_key": question_orm.unique_question_key,
+                        "subject": question_orm.subject,
+                        "level": question_orm.level,
+                        "topic": question_orm.topic,
+                        "subtopic": question_orm.subtopic,
+                        "paper_year": question_orm.paper_year,
+                        "paper_document_id": question_orm.paper_document_id,
+                        "question_number_str": question_orm.question_number_str
+                    }
+                    logger.info(f"CacheManager: Found question data for AI for key: {unique_question_key}")
+                    return question_data
+                else:
+                    logger.warning(f"CacheManager: No question found in 'cached_questions' for key: {unique_question_key}")
+                    return None
+        except Exception as e:
+            logger.error(f"CacheManager: Error fetching question data for AI (key {unique_question_key}): {e}", exc_info=True)
+            return None
+
+    def get_correct_answer_data_for_ai(self, unique_question_key: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves correct answer data from 'cached_answers' table.
+        The 'answer_content' from DB is expected to be a dict representing a single answer part 
+        (e.g., {"sub_number": "b(ii)", "text": "...", "marks": ..., "marking_notes": ...}).
+        This method wraps it into the structure run_ai_evaluation expects: {'answers': [{'sub_answers': [that_dict]}]}
+        """
+        logger.debug(f"CacheManager: Getting AI-formatted correct answer for question key: {unique_question_key}")
+        try:
+            with get_db_session() as session:
+                answer_orm = session.query(CachedAnswer).filter(CachedAnswer.cached_question_unique_key == unique_question_key).first()
+                if answer_orm and isinstance(answer_orm.answer_content, dict):
+                    # The answer_content IS the single sub_answer dict
+                    single_sub_answer_detail = answer_orm.answer_content
+                    
+                    # run_ai_evaluation expects: correct_answer_data['answers'][0]['sub_answers'][0] to be this dict
+                    formatted_correct_answer = {
+                        "answers": [  # List of main "answer parts" (usually just one for a single cached_answer)
+                            {
+                                "sub_answers": [single_sub_answer_detail] # The actual scheme for the sub-part
+                            }
+                        ]
+                    }
+                    logger.info(f"CacheManager: Found and formatted correct answer data for AI for key: {unique_question_key}")
+                    return formatted_correct_answer
+                elif answer_orm:
+                    logger.warning(f"CacheManager: Correct answer content for key {unique_question_key} is not a dict as expected: {answer_orm.answer_content}")
+                    return None
+                else:
+                    logger.warning(f"CacheManager: No correct answer found in 'cached_answers' for key: {unique_question_key}")
+                    return None
+        except Exception as e:
+            logger.error(f"CacheManager: Error fetching correct answer data for AI (key {unique_question_key}): {e}", exc_info=True)
+            return None
+    # --- END NEW METHODS FOR TASK 5.2 ---

@@ -1117,18 +1117,34 @@ class QuestionView(QWidget):
             logger.warning("QuestionView: Could not find refresh_new_reports_badge on main_window to update badge.")
 
     def trigger_cloud_sync(self, history_id: int, local_prompt: str):
-        """Checks network and either triggers immediate Groq call or queues."""
-        self.logger.info(f"Triggering cloud sync process for history_id: {history_id}")
-        if not local_prompt:
-             self.logger.error(f"Cannot trigger cloud sync for {history_id}: Local prompt is missing.")
-             return
+        """Checks network and either triggers immediate Groq call or queues.
+        Prevents action if cloud report is already received for the history_id.
+        """
+        self.logger.info(f"Cloud sync process triggered for history_id: {history_id}")
 
+        if not local_prompt:
+            self.logger.error(f"Cannot trigger cloud sync for {history_id}: Local prompt is missing.")
+            return
+
+        # --- Check if report already received ---
+        # This is the new logic block added at the beginning of the method.
+        if services.user_history_manager:
+            if services.user_history_manager.is_cloud_report_received(history_id):
+                self.logger.info(f"Cloud report for history_id {history_id} has already been received. Skipping cloud sync trigger.")
+                return 
+        else:
+            self.logger.error("UserHistoryManager service not available. Cannot check report status before triggering cloud sync.")
+            # Decide if we should proceed or not. For safety, let's not proceed if we can't check.
+            return
+        # --- End of new logic block ---
+
+        # The rest of the method logic (network check, worker, queueing) follows:
         network_monitor = services.network_monitor
         sync_service = services.sync_service
-        history_manager = services.user_history_manager
+        history_manager = services.user_history_manager # Already likely used or can be UserHistoryManager from services
 
-        if not history_manager:
-             self.logger.error("UserHistoryManager not available. Cannot mark status or process fully.")
+        if not history_manager: # This check might already exist or be good to have
+             self.logger.error("UserHistoryManager not available in trigger_cloud_sync. Cannot mark status or process fully.")
              # Decide if we should still attempt queueing/worker start without DB updates
              # For now, let's proceed but log the limitation
 
@@ -1136,39 +1152,29 @@ class QuestionView(QWidget):
         if network_monitor and network_monitor.get_status() == NetworkStatus.ONLINE:
             self.logger.info("Network ONLINE. Attempting immediate Groq analysis.")
 
-            # --- Ensure Worker Management is Correct ---
-            # Check if a worker for this ID is already running (safety)
             if history_id in self.groq_workers and self.groq_workers[history_id].isRunning():
                  self.logger.warning(f"Groq worker for history_id {history_id} is already running. Skipping.")
                  return
 
-            # Create the worker
             worker = GroqFeedbackWorker(
                 history_id=history_id,
                 local_prompt=local_prompt
             )
-            # Connect signals BEFORE adding to dict or starting
             worker.feedback_ready.connect(self._handle_groq_feedback_result)
             worker.feedback_error.connect(self._handle_groq_feedback_error)
-            # Connect finished signal to remove worker from the tracking dict
-            # Using a direct lambda is standard and should work fine here.
             worker.finished.connect(lambda hid=history_id: self._on_groq_worker_finished(hid))
 
-            # Add worker to dictionary BEFORE starting the thread
             self.groq_workers[history_id] = worker
             self.logger.debug(f"Added Groq worker for {history_id} to tracking dictionary.")
-
-            # Start the thread
             worker.start()
             self.logger.debug(f"Groq worker for {history_id} started.")
-            # --- End Worker Management Verification ---
 
         elif sync_service:
             self.logger.info("Network OFFLINE or status unknown. Queueing request via SyncService.")
-            # Pass prompt to queueing method
             queued = sync_service.queue_cloud_analysis(history_id, local_prompt)
             if not queued:
                  self.logger.error(f"Failed to queue cloud analysis request for history_id: {history_id}")
+
         else:
             self.logger.error("Cannot queue offline request: SyncService unavailable.")
 

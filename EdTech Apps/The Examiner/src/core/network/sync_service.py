@@ -12,6 +12,7 @@ from src.core import services
 from enum import Enum
 import json
 from src.core.ai.groq_client import GroqClient
+from src.core.ai.marker import run_ai_evaluation
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -98,31 +99,39 @@ class SyncService:
             logger.info("Network is offline, sync operations paused")
 
     def _sync_worker(self):
-        """Background thread to process sync queue"""
+        """Background thread to process sync queue and proactively queue pending reports."""
         while self._running:
             if self._network_monitor.get_status() != NetworkStatus.ONLINE:
-                # Sleep and check again if network is offline
-                time.sleep(5)
+                time.sleep(5) # Wait for network
                 continue
+            
+            # --- ADDED: Proactive check for pending reports ---
+            # This should ideally run when the queue is empty or at intervals,
+            # to avoid constant DB polling if the queue is busy.
+            # For simplicity, let's try to run it if the queue is empty.
+            if not self._queue_manager.has_pending_items(): # Check if queue is empty
+                logger.info("SyncService: Queue is empty, checking for pending reports in DB to queue.")
+                self._check_and_queue_pending_reports()
+            # --- END ADDED ---
                 
-            # Get adaptive batch size based on connection quality
             adaptive_batch_size = self._network_monitor.get_recommended_batch_size(self.BATCH_SIZE)
-                
-            # Process batches first
-            batch_ids = self.get_pending_batch_ids()
+            
+            batch_ids = self.get_pending_batch_ids() # This should ideally be self._queue_manager.get_pending_batch_ids()
             if batch_ids:
-                # Only process up to adaptive_batch_size batches at a time
                 for batch_id in batch_ids[:adaptive_batch_size]:
                     self._process_batch(batch_id)
-                continue
+                # If batches were processed, continue to prioritize batch processing in the next iteration
+                time.sleep(0.1) # Small delay to yield
+                continue 
                 
-            # Then process individual items
             item = self._queue_manager.get_next_item()
             if item:
                 self._process_item(item)
             else:
-                # No items in queue, sleep and check again
-                time.sleep(1)
+                # No items in queue, and no pending items found by _check_and_queue_pending_reports
+                # Or, _check_and_queue_pending_reports itself is now adding to the queue,
+                # so get_next_item() might pick them up in subsequent iterations.
+                time.sleep(1) 
 
     def _process_batch(self, batch_id: str):
         """
@@ -730,3 +739,84 @@ class SyncService:
         except Exception as e:
             logger.error(f"Failed to add cloud analysis request to queue for history_id {history_id}: {e}", exc_info=True)
             return False
+
+    def _check_and_queue_pending_reports(self, limit: int = 5):
+        """
+        Checks for preliminary reports in the database that haven't been queued
+        for cloud analysis, reconstructs their prompts, and queues them.
+        """
+        logger.info("SyncService: Checking for pending reports to queue for cloud analysis...")
+        if not services.user_history_manager or not services.cache_manager:
+            logger.error("SyncService: UserHistoryManager or CacheManager not available. Cannot check for pending reports.")
+            return
+
+        try:
+            pending_items = services.user_history_manager.get_pending_cloud_analysis_items(limit=limit)
+            if not pending_items:
+                logger.info("SyncService: No pending reports found in DB to queue.")
+                return
+
+            logger.info(f"SyncService: Found {len(pending_items)} pending reports to process for queueing.")
+            queued_count = 0
+
+            for history_id, cached_question_key in pending_items:
+                logger.debug(f"SyncService: Processing pending history_id: {history_id}, cached_question_key: {cached_question_key}")
+
+                question_data_dict = services.cache_manager.get_question_details_by_key(cached_question_key)
+                student_answer_json = services.user_history_manager.get_user_answer_json(history_id)
+                correct_answer_dict = services.cache_manager.get_correct_answer_details(cached_question_key)
+
+                if not student_answer_json:
+                    logger.warning(f"SyncService: Missing student_answer_json for history_id {history_id}. Skipping.")
+                    continue
+                
+                student_answer_dict = json.loads(student_answer_json)
+
+                if question_data_dict and student_answer_dict and correct_answer_dict:
+                    # We need to pass data to run_ai_evaluation in the format it expects.
+                    # It typically takes the main question text, details about sub-questions (if any),
+                    # the student's answers (structured), and correct answer data.
+                    # The `question_data_dict` from CacheManager should already be structured
+                    # similarly to how it's loaded in QuestionView.
+                    # `correct_answer_dict` is also the direct content.
+                    
+                    # Assuming run_ai_evaluation expects the main question data, 
+                    # correct answer, student's answer dict, and marks.
+                    # The `question_data_dict` should have 'content' and 'marks'.
+                    # The `correct_answer_dict` is from `get_correct_answer_details`
+                    # The `student_answer_dict` is from `get_user_answer_json`
+                    
+                    # This call is ONLY to get the `generated_prompt`. The `evaluation_results` are ignored here.
+                    # If `run_ai_evaluation` has side effects or is too heavy,
+                    # consider extracting its prompt-building logic into a separate utility.
+                    logger.debug(f"SyncService: Reconstructing prompt for history_id {history_id} using question_key {cached_question_key}")
+
+                    _ , prompt_for_groq = run_ai_evaluation(
+                        question_data=question_data_dict, # This is the dict from CachedQuestion
+                        correct_answer_data=correct_answer_dict, # This is the dict from CachedAnswer
+                        user_answer=student_answer_dict, # Dict of user's answers
+                        marks=question_data_dict.get('marks') # Marks from the question
+                    )
+
+                    if prompt_for_groq:
+                        logger.info(f"SyncService: Successfully reconstructed prompt for history_id {history_id}.")
+                        if self.queue_cloud_analysis(history_id, prompt_for_groq):
+                            queued_count += 1
+                            # Mark as queued in DB to prevent re-fetching by this method
+                            # before QueueManager processes it.
+                            services.user_history_manager.mark_as_queued_for_cloud(history_id)
+                        else:
+                            logger.error(f"SyncService: Failed to queue cloud analysis for history_id {history_id} after reconstructing prompt.")
+                    else:
+                        logger.warning(f"SyncService: Failed to reconstruct prompt for history_id {history_id}. Necessary data might be missing or run_ai_evaluation failed.")
+                else:
+                    logger.warning(f"SyncService: Missing some data components for history_id {history_id}. "
+                                   f"QuestionData: {bool(question_data_dict)}, "
+                                   f"StudentAnswer: {bool(student_answer_dict)}, "
+                                   f"CorrectAnswer: {bool(correct_answer_dict)}. Skipping.")
+            
+            if queued_count > 0:
+                logger.info(f"SyncService: Queued {queued_count} pending reports for cloud analysis.")
+
+        except Exception as e:
+            logger.error(f"SyncService: Error in _check_and_queue_pending_reports: {e}", exc_info=True)
