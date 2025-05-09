@@ -282,6 +282,58 @@ class UserHistoryManager:
 
         return success
 
+    def mark_report_as_viewed(self, history_id: int) -> bool:
+        """
+        Marks a specific cloud report as viewed by setting the viewed timestamp.
+
+        Args:
+            history_id: The ID of the history entry to mark as viewed.
+
+        Returns:
+            True if the update was successful and a row was affected, False otherwise.
+        """
+        conn = self._get_connection()
+        if not conn:
+            logger.error(f"Cannot mark report as viewed for history_id {history_id}: No database connection.")
+            return False
+
+        now_timestamp = datetime.now()
+        sql = """
+            UPDATE answer_history
+            SET
+                cloud_report_viewed_timestamp = ?
+            WHERE
+                history_id = ?;
+        """
+        params = (
+            now_timestamp,
+            history_id
+        )
+
+        success = False
+        with self._lock:
+            cursor = None
+            try:
+                cursor = conn.cursor()
+                cursor.execute(sql, params)
+                if cursor.rowcount > 0:
+                    conn.commit()
+                    logger.info(f"Successfully marked report as viewed for history_id {history_id}.")
+                    success = True
+                else:
+                    logger.warning(f"Attempted to mark report as viewed for history_id {history_id}, but no matching row was found (it might have already been marked or history_id is invalid).")
+                    # No commit needed if no rows affected, and no rollback needed as it's not an error state for the DB.
+                    success = False 
+            except sqlite3.Error as e:
+                logger.error(f"Database error while marking report as viewed for history_id {history_id}: {e}", exc_info=True)
+                if conn: # Check if conn is still valid before rollback
+                    conn.rollback()
+                success = False
+            finally:
+                if cursor:
+                    cursor.close()
+        return success
+
     def get_history_for_user(self, user_id: int) -> list:
         # TODO: Implement SQL SELECT query
         logger.info(f"Placeholder: Get history for user {user_id}.")
@@ -363,24 +415,74 @@ class UserHistoryManager:
             if cursor: cursor.close()
         return ids
 
-    def get_new_report_count(self) -> int:
-        """Gets the count of received cloud reports."""
-        # (Implementation as previously proposed)
+    def get_new_report_count(self, subject_name: Optional[str] = None, level_key: Optional[str] = None) -> int:
+        """
+        Gets the count of received cloud reports that have not yet been viewed.
+        Can be filtered by subject and/or level.
+        If subject_name is None, counts all unviewed reports (maintaining previous general functionality if needed).
+        If subject_name is provided, level_key can also be provided for more specific filtering.
+        """
         conn = self._get_connection()
-        if not conn: return 0
+        if not conn:
+            logger.error("Cannot get new report count: No database connection.")
+            return 0
+        
         cursor = None
         count = 0
         try:
             cursor = conn.cursor()
-            sql = "SELECT COUNT(*) FROM answer_history WHERE cloud_report_received = TRUE" # Add refinement later if needed (e.g., viewed flag)
-            cursor.execute(sql)
+            
+            # Base part of the query selects from answer_history (aliased as ah)
+            base_sql = """
+                SELECT COUNT(DISTINCT ah.history_id) 
+                FROM answer_history ah
+            """
+            # join_sql will be empty unless filtering by subject/level
+            join_sql = ""
+            # Common conditions for unviewed, received reports
+            where_clauses = [
+                "ah.cloud_report_received = TRUE",
+                "ah.cloud_report_viewed_timestamp IS NULL"
+            ]
+            params = [] # Parameters for the SQL query
+
+            # If a subject_name is provided, we need to filter
+            if subject_name:
+                # Add a JOIN with the cached_questions table (aliased as cq)
+                # This join is on the foreign key relationship between answer_history and cached_questions
+                join_sql = " JOIN cached_questions cq ON ah.cached_question_id = cq.unique_question_key "
+                
+                # Add condition to filter by subject name
+                where_clauses.append("cq.subject = ?")
+                params.append(subject_name)
+                
+                # If a level_key is also provided, add condition to filter by level
+                if level_key: 
+                    where_clauses.append("cq.level = ?")
+                    params.append(level_key)
+            
+            # Construct the final SQL query
+            sql = base_sql + join_sql + " WHERE " + " AND ".join(where_clauses) + ";"
+            
+            logger.debug(f"Executing SQL for new report count: {sql} with params: {params}")
+            cursor.execute(sql, tuple(params)) # Execute with the built parameters
             result = cursor.fetchone()
-            count = result[0] if result else 0
-            logger.debug(f"Found {count} new cloud reports.")
+            count = result[0] if result else 0 # Get the count
+            
+            # Update log message to be more informative
+            log_message = f"Found {count} new, unviewed cloud reports"
+            if subject_name:
+                log_message += f" for subject '{subject_name}'"
+                if level_key:
+                    log_message += f", level '{level_key}'"
+            logger.debug(log_message + ".")
+            
         except sqlite3.Error as e:
             logger.error(f"DATABASE ERROR getting new report count: {e}", exc_info=True)
+            count = 0 # Ensure count is 0 on error
         finally:
-            if cursor: cursor.close()
+            if cursor:
+                cursor.close()
         return count
 
     def get_question_id_for_history(self, history_id: int) -> Optional[str]:

@@ -11,6 +11,8 @@ from src.data.database.models import User, ExamResult, QuestionResponse
 import json # Add for parsing user_answer_json
 from datetime import datetime # Add for parsing timestamp
 
+from src.core import services # <<<< ADD THIS IMPORT
+
 logger = logging.getLogger(__name__)
 
 class QuestionNumberCircle(QWidget):
@@ -353,7 +355,24 @@ class ReportView(QWidget):
             self._update_medal(0)
             return
 
-        # --- Populate Header ---
+
+        if services.user_history_manager:
+            logger.debug(f"Attempting to mark report {response_id} as viewed.")
+            marked_as_viewed = services.user_history_manager.mark_report_as_viewed(response_id) 
+            if marked_as_viewed: 
+                logger.info(f"Report {response_id} marked as viewed. Requesting badge update.")
+                main_window = self.window()
+                if main_window and hasattr(main_window, 'profile_info_widget') and \
+                   main_window.profile_info_widget and \
+                   hasattr(main_window.profile_info_widget, 'subject_selector') and \
+                   main_window.profile_info_widget.subject_selector:
+                    main_window.profile_info_widget.subject_selector.refresh_badges()
+                else:
+                    logger.warning("ReportView: Could not find path to refresh subject card badges after marking as viewed.")
+        else:
+            logger.error("UserHistoryManager service not available. Cannot mark report as viewed.")
+        # --- End mark as viewed ---
+
         self.student_name_label.setText(f"Student: {current_user_data.get('full_name', 'N/A')}")
         try:
             exam_dt = datetime.fromisoformat(report_item_details.get("timestamp", ""))

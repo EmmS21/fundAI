@@ -53,6 +53,9 @@ class SubjectSelector(QWidget):
                             'a_level': user_subject.a_level
                         }
                         self.subject_list.add_subject(subject_name, levels)
+        
+        # ADDED: Refresh badges after initial loading of subjects
+        self.refresh_badges()
     
     def _get_available_subjects(self):
         """Get list of subjects that haven't been selected yet"""
@@ -215,6 +218,14 @@ class SubjectSelector(QWidget):
         # Keep the INFO log here for when it *does* work
         logger.info(f"SubjectSelector received test request for {subject_name}/{level_key}, emitting signal.")
         self.test_requested.emit(subject_name, level_key)
+
+    def refresh_badges(self):
+        """Refreshes the new report badges on all subject cards via SubjectList."""
+        logger.debug("SubjectSelector: Requesting SubjectList to refresh all badges.")
+        if hasattr(self, 'subject_list') and self.subject_list:
+            self.subject_list.refresh_all_subject_card_badges()
+        else:
+            logger.warning("SubjectSelector: subject_list not available to refresh badges.")
 
 class SubjectPopup(QFrame):
     subject_selected = Signal(str)

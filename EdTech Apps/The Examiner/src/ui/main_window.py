@@ -1,7 +1,7 @@
 import logging # Add logging import
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
                               QScrollArea, QStackedWidget) # Add QStackedWidget
-from PySide6.QtCore import Slot # Add Slot
+from PySide6.QtCore import Slot, QTimer # Add Slot and QTimer
 from src.data.database.operations import UserOperations
 from .components.profile.profile_header import ProfileHeader
 from .components.profile.achievements.achievement_widget import AchievementWidget
@@ -54,8 +54,8 @@ class MainWindow(QMainWindow):
         profile_content_layout.setSpacing(15) # Add some spacing
 
         # Add profile header
-        profile_header = ProfileHeader(self.user)
-        profile_content_layout.addWidget(profile_header)
+        self.profile_header = ProfileHeader(self.user)
+        profile_content_layout.addWidget(self.profile_header)
 
         # Add achievement widget
         achievement_widget = AchievementWidget(self.user)
@@ -91,6 +91,10 @@ class MainWindow(QMainWindow):
         # --- Connect Signals ---
         # Connect the signal bubbled up from ProfileInfoWidget
         # self.profile_info_widget.test_requested.connect(self.show_question_view) # Moved up for clarity
+
+        # Initial update of the new reports badge when MainWindow is created
+        # Ensure profile_info_widget and its subject_selector are ready
+        QTimer.singleShot(200, self.refresh_new_reports_badge) # Delay slightly if needed for setup
 
     @Slot(str, str)
     def show_question_view(self, subject_name, level_key):
@@ -129,6 +133,9 @@ class MainWindow(QMainWindow):
         # Set the current widget back to the main profile page
         self.stacked_widget.setCurrentWidget(self.profile_page_widget)
 
+        # Refresh the badge when profile view is shown
+        self.refresh_new_reports_badge()
+
         # Optional: Clean up the question view instance after switching back
         if self.question_view_instance:
              logger.debug("Removing QuestionView instance after returning to profile.")
@@ -146,3 +153,12 @@ class MainWindow(QMainWindow):
             self.stacked_widget.setCurrentWidget(self.report_view_instance)
         else:
             logger.error("ReportView instance not available.")
+
+    def refresh_new_reports_badge(self):
+        """Tells the SubjectSelector (via ProfileInfoWidget) to update its subject card badges."""
+        if hasattr(self, 'profile_info_widget') and self.profile_info_widget and \
+           hasattr(self.profile_info_widget, 'subject_selector') and self.profile_info_widget.subject_selector:
+            logger.debug("MainWindow: Requesting SubjectSelector to refresh new reports badges.")
+            self.profile_info_widget.subject_selector.refresh_badges()
+        else:
+            logger.warning("MainWindow: profile_info_widget or its subject_selector not available to refresh badges.")
