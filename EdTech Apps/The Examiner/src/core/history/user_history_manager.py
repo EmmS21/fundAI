@@ -2,7 +2,7 @@ import logging
 import sqlite3
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional, Any, Tuple, List
 import threading
 import sys 
@@ -634,3 +634,133 @@ class UserHistoryManager:
         
         logger.debug(f"Cloud report received status for history_id {history_id}: {is_received}")
         return is_received
+
+    def get_all_student_activity_for_sync(self, user_id: int) -> List[Dict[str, Any]]:
+        """
+        Fetches all student activity (questions, answers, reports, grades)
+        for a given user, formatted for Firebase sync.
+
+        Args:
+            user_id: The ID of the user.
+
+        Returns:
+            A list of dictionaries, where each dictionary represents an answered question
+            with its associated data. Returns an empty list on error or if no history.
+        """
+        conn = self._get_connection()
+        if not conn:
+            logger.error(f"Cannot get student activity for sync (user {user_id}): No database connection.")
+            return []
+
+        sql = """
+            SELECT
+                history_id, 
+                cached_question_id,
+                answer_timestamp,
+                user_answer_json,
+                local_ai_grade,
+                local_ai_rationale,
+                local_ai_study_topics_json,
+                cloud_report_received,
+                cloud_ai_grade,
+                cloud_ai_rationale,
+                cloud_ai_study_topics_json
+            FROM
+                answer_history
+            WHERE
+                user_id = ?
+            ORDER BY
+                answer_timestamp ASC; 
+        """
+
+        activities = []
+        cursor = None
+        try:
+            original_row_factory = conn.row_factory
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            logger.debug(f"Executing SQL to get all student activity for sync for user {user_id}")
+            cursor.execute(sql, (user_id,))
+            rows = cursor.fetchall()
+
+            for row in rows:
+                try:
+                    user_answer = None
+                    if row["user_answer_json"]:
+                        try:
+                            user_answer = json.loads(row["user_answer_json"])
+                        except json.JSONDecodeError:
+                            logger.warning(f"Could not parse user_answer_json for history_id {row['history_id']}: {row['user_answer_json']}")
+                            user_answer = row["user_answer_json"] 
+
+                    preliminary_report = {}
+                    if row["local_ai_grade"] or row["local_ai_rationale"] or row["local_ai_study_topics_json"]:
+                        preliminary_report["grade"] = row["local_ai_grade"]
+                        preliminary_report["rationale"] = row["local_ai_rationale"]
+                        study_topics_prelim = None
+                        if row["local_ai_study_topics_json"]:
+                            try:
+                                study_topics_prelim = json.loads(row["local_ai_study_topics_json"])
+                            except json.JSONDecodeError:
+                                logger.warning(f"Could not parse local_ai_study_topics_json for history_id {row['history_id']}")
+                                study_topics_prelim = {"raw": row["local_ai_study_topics_json"]}
+                        preliminary_report["study_topics"] = study_topics_prelim
+
+                    full_report = None
+                    if row["cloud_report_received"]:
+                        full_report = {}
+                        full_report["grade"] = row["cloud_ai_grade"]
+                        full_report["rationale"] = row["cloud_ai_rationale"]
+                        study_topics_full = None
+                        if row["cloud_ai_study_topics_json"]:
+                            try:
+                                study_topics_full = json.loads(row["cloud_ai_study_topics_json"])
+                            except json.JSONDecodeError:
+                                logger.warning(f"Could not parse cloud_ai_study_topics_json for history_id {row['history_id']}")
+                                study_topics_full = {"raw": row["cloud_ai_study_topics_json"]}
+                        full_report["study_topics"] = study_topics_full
+                    
+                    grade = row["cloud_ai_grade"] if row["cloud_report_received"] and row["cloud_ai_grade"] is not None else row["local_ai_grade"]
+                    submission_timestamp_str = row["answer_timestamp"]
+                    submission_timestamp_dt = None
+                    if isinstance(submission_timestamp_str, str):
+                        try:
+                            submission_timestamp_dt = datetime.fromisoformat(submission_timestamp_str)
+                        except ValueError:
+                            try: 
+                                submission_timestamp_dt = datetime.strptime(submission_timestamp_str, '%Y-%m-%d %H:%M:%S.%f')
+                            except ValueError:
+                                logger.error(f"Could not parse answer_timestamp for history_id {row['history_id']}: {submission_timestamp_str}")
+                                submission_timestamp_dt = datetime.now() 
+                    elif isinstance(submission_timestamp_str, datetime):
+                        submission_timestamp_dt = submission_timestamp_str
+                    else: 
+                         submission_timestamp_dt = datetime.now()
+
+
+                    activity_entry = {
+                        "questionID": row["cached_question_id"],
+                        "userAnswer": user_answer, 
+                        "preliminaryReport": preliminary_report if preliminary_report else None,
+                        "fullReport": full_report, 
+                        "grade": grade,
+                        "submissionTimestamp": submission_timestamp_dt 
+                    }
+                    activities.append(activity_entry)
+
+                except Exception as e:
+                    logger.error(f"Error processing history row (history_id {row['history_id'] if row else 'Unknown'}) for sync: {e}", exc_info=True)
+
+            logger.info(f"Retrieved and processed {len(activities)} student activities for sync for user {user_id}")
+
+        except sqlite3.Error as e:
+            logger.error(f"DATABASE ERROR getting student activities for sync (user {user_id}): {e}", exc_info=True)
+            return [] 
+        finally:
+            if conn:
+                conn.row_factory = original_row_factory
+            if cursor:
+                cursor.close()
+
+        return activities

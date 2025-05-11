@@ -2,7 +2,7 @@ import logging
 import requests
 import json
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 from src.utils.secure_storage import SecureStorage
 from src.utils.hardware_identifier import HardwareIdentifier
@@ -513,3 +513,263 @@ class FirebaseClient:
         except Exception as e:
             logger.error(f"Error initializing subscription: {e}")
             return False
+
+    def _get_examiner_report_doc_path_by_hardware_id(self, hardware_id: str) -> Optional[str]:
+        """
+        Finds the document path (e.g., projects/.../documents/examiner-reports/documentId)
+        for an examiner-report based on hardware_id using Firestore REST API.
+        Returns the full document path if found, else None.
+        """
+        self._ensure_authenticated()
+
+        doc_path = f"{self.firestore_base_url}/examiner-reports/{hardware_id}"
+
+        headers = {
+            "Authorization": f"Bearer {self.id_token}",
+            "Content-Type": "application/json"
+        }
+        try:
+            response = requests.get(doc_path, headers=headers)
+            if response.status_code == 200:
+                return doc_path 
+            elif response.status_code == 404:
+                return None 
+            else:
+                response.raise_for_status() 
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error checking for examiner-report document by hardware_id {hardware_id}: {e}")
+            return None
+
+    def get_examiner_report(self, hardware_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves an examiner-report document from Firestore by hardware_id.
+        Assumes hardware_id is the document ID in the 'examiner-reports' collection.
+        """
+        self._ensure_authenticated()
+        doc_path = f"{self.firestore_base_url}/examiner-reports/{hardware_id}"
+        headers = {
+            "Authorization": f"Bearer {self.id_token}",
+            "Content-Type": "application/json"
+        }
+        try:
+            response = requests.get(doc_path, headers=headers)
+            if response.status_code == 200:
+                return response.json() 
+            elif response.status_code == 404:
+                return None
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error getting examiner-report for hardware_id {hardware_id}: {e}")
+            return None
+
+    def create_examiner_report(self, hardware_id: str, report_data: Dict[str, Any]) -> bool:
+        """
+        Creates a new document in the 'examiner-reports' collection.
+        The document ID will be the hardware_id.
+        report_data should be in the format expected by Firestore REST API's 'fields'.
+        """
+        self._ensure_authenticated()
+        url = f"{self.firestore_base_url}/examiner-reports?documentId={hardware_id}"
+        headers = {
+            "Authorization": f"Bearer {self.id_token}",
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            response = requests.post(url, headers=headers, json=report_data)
+            if response.status_code == 200: 
+                logger.info(f"Successfully created examiner-report for hardware_id {hardware_id}")
+                return True
+            else:
+                logger.error(f"Failed to create examiner-report for {hardware_id}: {response.status_code} - {response.text}")
+                response.raise_for_status() 
+                return False
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error creating examiner-report for hardware_id {hardware_id}: {e}")
+            return False
+
+    def update_examiner_report(self, hardware_id: str, updates: Dict[str, Any], new_answered_questions: Optional[List[Dict[str, Any]]] = None) -> bool:
+        """
+        Updates an existing document in 'examiner-reports' using PATCH.
+        'updates' contains fields to update directly (e.g., lastSyncTimestamp).
+        'new_answered_questions' is a list of new question entries to append to the 'answeredQuestions' array.
+        All data within 'updates' and 'new_answered_questions' must be Firestore REST API formatted values.
+        e.g. updates = {"lastSyncTimestamp": {"timestampValue": "ISO_STRING"}}
+             new_answered_questions = [{"mapValue": {"fields": {"questionID": {"stringValue": "q1"}}}}]
+        """
+        self._ensure_authenticated()
+        doc_path = f"examiner-reports/{hardware_id}"         
+        url = f"{self.firestore_base_url}/{doc_path}"
+        headers = {
+            "Authorization": f"Bearer {self.id_token}",
+            "Content-Type": "application/json"
+        }
+
+        document_content = {"fields": {}}
+        update_mask_paths = []
+
+        for key, value_object in updates.items():
+            document_content["fields"][key] = value_object
+            update_mask_paths.append(key)
+        
+        payload: Dict[str, Any] = {}
+        if document_content["fields"]:
+             payload["document"] = document_content
+        patch_body: Dict[str, Any] = {"fields": {}} 
+        transforms = []
+
+        for key, value_object in updates.items():
+            patch_body["fields"][key] = value_object
+        if new_answered_questions:
+            transforms.append({
+                "fieldPath": "answeredQuestions",
+                "appendMissingElements": {
+                    "values": new_answered_questions 
+                }
+            })
+        
+        if not patch_body["fields"] and not transforms:
+            logger.info("No updates or new questions to sync for examiner_report.")
+            return True 
+
+        final_payload = {}
+        if patch_body["fields"]:
+            final_payload = patch_body["fields"] 
+
+        if transforms:
+            final_payload["writes"] = [{ 
+                "update": {
+                    "name": f"projects/{self.project_id}/databases/(default)/documents/{doc_path}",
+                },
+                "transform": {
+                    "document": f"projects/{self.project_id}/databases/(default)/documents/{doc_path}",
+                    "fieldTransforms": transforms
+                }
+            }]
+
+        commit_url = f"https://firestore.googleapis.com/v1/projects/{self.project_id}/databases/(default)/documents:commit"        
+        commit_payload_writes = []        
+        if updates: 
+            update_fields_data = {}
+            update_mask = []
+            for key, value_object in updates.items():
+                update_fields_data[key] = value_object
+                update_mask.append(key)
+
+            commit_payload_writes.append({
+                "update": {
+                    "name": f"projects/{self.project_id}/databases/(default)/documents/{doc_path}",
+                    "fields": update_fields_data
+                },
+                "updateMask": {"fieldPaths": update_mask} 
+            })
+
+        if new_answered_questions:
+            commit_payload_writes.append({
+                "transform": {
+                    "document": f"projects/{self.project_id}/databases/(default)/documents/{doc_path}",
+                    "fieldTransforms": [{
+                        "fieldPath": "answeredQuestions",
+                        "appendMissingElements": {
+                            "values": new_answered_questions
+                        }
+                    }]
+                }
+            })
+
+        if not commit_payload_writes:
+            logger.info("No updates or new questions specified for examiner_report.")
+            return True
+
+        final_commit_payload = {"writes": commit_payload_writes}
+
+        try:
+            response = requests.post(commit_url, headers=headers, json=final_commit_payload)
+            
+            if response.status_code == 200:
+                logger.info(f"Successfully updated/transformed examiner-report for hardware_id {hardware_id} via commit.")
+                return True
+            else:
+                logger.error(f"Failed to update examiner-report for {hardware_id} via commit: {response.status_code} - {response.text}")
+                return False
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error updating examiner-report for hardware_id {hardware_id} via commit: {e}")
+            return False
+
+    def _to_firestore_value(self, py_value: Any) -> Dict[str, Any]:
+        if isinstance(py_value, str):
+            return {"stringValue": py_value}
+        elif isinstance(py_value, bool):
+            return {"booleanValue": py_value}
+        elif isinstance(py_value, int):
+            return {"integerValue": str(py_value)} 
+        elif isinstance(py_value, float):
+            return {"doubleValue": py_value}
+        elif isinstance(py_value, datetime):
+            return {"timestampValue": py_value.isoformat("T") + "Z"}
+        elif py_value is None:
+            return {"nullValue": None}
+        elif isinstance(py_value, list):
+            return {"arrayValue": {"values": [self._to_firestore_value(v) for v in py_value]}}
+        elif isinstance(py_value, dict):
+            return {"mapValue": {"fields": {k: self._to_firestore_value(v) for k, v in py_value.items()}}}
+        else:
+            logger.warning(f"Unsupported type for Firestore conversion: {type(py_value)}. Storing as string.")
+            return {"stringValue": str(py_value)}
+
+    def _firestore_doc_to_dict(self, firestore_doc: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not firestore_doc or 'fields' not in firestore_doc:
+            return None
+        
+        py_dict = {}
+        for key, firestore_value in firestore_doc['fields'].items():
+            if 'stringValue' in firestore_value:
+                py_dict[key] = firestore_value['stringValue']
+            elif 'booleanValue' in firestore_value:
+                py_dict[key] = firestore_value['booleanValue']
+            elif 'integerValue' in firestore_value:
+                py_dict[key] = int(firestore_value['integerValue'])
+            elif 'doubleValue' in firestore_value:
+                py_dict[key] = firestore_value['doubleValue']
+            elif 'timestampValue' in firestore_value:
+                try:
+                    ts_str = firestore_value['timestampValue']
+                    if ts_str.endswith('Z'):
+                        ts_str = ts_str[:-1] + '+00:00'
+                    py_dict[key] = datetime.fromisoformat(ts_str)
+                except ValueError:
+                    py_dict[key] = firestore_value['timestampValue']
+            elif 'nullValue' in firestore_value:
+                py_dict[key] = None
+            elif 'arrayValue' in firestore_value:
+                values = firestore_value['arrayValue'].get('values', [])
+                py_dict[key] = [self._firestore_value_to_py(v) for v in values]
+            elif 'mapValue' in firestore_value:
+                py_dict[key] = self._firestore_doc_to_dict(firestore_value['mapValue']) 
+        return py_dict
+
+    def _firestore_value_to_py(self, firestore_value: Dict[str, Any]) -> Any:
+        if 'stringValue' in firestore_value:
+            return firestore_value['stringValue']
+        elif 'booleanValue' in firestore_value:
+            return firestore_value['booleanValue']
+        elif 'integerValue' in firestore_value:
+            return int(firestore_value['integerValue'])
+        elif 'doubleValue' in firestore_value:
+            return firestore_value['doubleValue']
+        elif 'timestampValue' in firestore_value:
+            try:
+                ts_str = firestore_value['timestampValue']
+                if ts_str.endswith('Z'):
+                    ts_str = ts_str[:-1] + '+00:00'
+                return datetime.fromisoformat(ts_str)
+            except ValueError:
+                return firestore_value['timestampValue']
+        elif 'nullValue' in firestore_value:
+            return None
+        elif 'arrayValue' in firestore_value:
+            values = firestore_value['arrayValue'].get('values', [])
+            return [self._firestore_value_to_py(v) for v in values]
+        elif 'mapValue' in firestore_value:
+            return self._firestore_doc_to_dict({"fields": firestore_value['mapValue'].get('fields', {})})
+        return None 

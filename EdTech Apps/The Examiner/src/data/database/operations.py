@@ -513,28 +513,32 @@ class UserOperations:
         Fetches detailed information for a single report item (answered question)
         from the answer_history (SQLite) and cached_questions (SQLite join),
         and also fetches the correct answer from cached_answers (main DB).
+        It now returns distinct fields for local and cloud AI feedback.
         """
         logger.debug(f"Fetching single report item details for history_id {history_id_to_find}")
-        report_item = None
+        report_item_dict: Optional[Dict] = None # Initialize to ensure it's a Dict or None
         conn_sqlite = None 
         
         try:
-            # Step 1: Fetch from answer_history (SQLite) and basic question info from joined cached_questions (SQLite)
-            conn_sqlite = sqlite3.connect(STUDENT_PROFILE_DB_PATH) # Path to your student_profile.db
+            conn_sqlite = sqlite3.connect(STUDENT_PROFILE_DB_PATH)
             conn_sqlite.row_factory = sqlite3.Row 
             cursor = conn_sqlite.cursor()
 
-            # CORRECTED: Ensure ALL required fields are selected from both tables
             sql_history = """
                 SELECT
                     ah.history_id, 
                     ah.user_id, 
                     ah.answer_timestamp, 
-                    ah.cloud_report_received,      -- RESTORED
+                    ah.cloud_report_received,
+                    ah.cloud_report_viewed_timestamp, -- Added for UI logic if needed
                     ah.cached_question_id, 
                     ah.user_answer_json, 
-                    ah.local_ai_grade,             -- RESTORED
-                    ah.local_ai_rationale,         -- RESTORED
+                    ah.local_ai_grade,
+                    ah.local_ai_rationale,
+                    ah.local_ai_study_topics_json, -- Added
+                    ah.cloud_ai_grade,             -- Added
+                    ah.cloud_ai_rationale,         -- Added
+                    ah.cloud_ai_study_topics_json, -- Added
                     cq.question_number_str, 
                     cq.subject AS cq_subject,       
                     cq.level AS cq_level,           
@@ -549,25 +553,54 @@ class UserOperations:
             row = cursor.fetchone()
 
             if row:
-                # Populate the dictionary correctly with ALL fetched fields
-                report_item = {
+                user_answer = None
+                try:
+                    if row["user_answer_json"]:
+                        user_answer = json.loads(row["user_answer_json"])
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse user_answer_json for history_id {history_id_to_find}")
+
+                local_ai_study_topics = None
+                try:
+                    if row["local_ai_study_topics_json"]:
+                        local_ai_study_topics = json.loads(row["local_ai_study_topics_json"])
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse local_ai_study_topics_json for history_id {history_id_to_find}")
+                
+                cloud_ai_study_topics = None
+                try:
+                    if row["cloud_ai_study_topics_json"]:
+                        cloud_ai_study_topics = json.loads(row["cloud_ai_study_topics_json"])
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse cloud_ai_study_topics_json for history_id {history_id_to_find}")
+
+                report_item_dict = {
                     "history_id": row["history_id"], 
                     "user_id": row["user_id"],
                     "timestamp": row["answer_timestamp"], 
-                    "is_final": bool(row["cloud_report_received"]), # Uses cloud_report_received
                     "cached_question_id": row["cached_question_id"], 
-                    "user_answer": json.loads(row["user_answer_json"]) if row["user_answer_json"] else None,
-                    "ai_grade": row["local_ai_grade"], # Uses local_ai_grade
-                    "ai_feedback": row["local_ai_rationale"], # Uses local_ai_rationale
+                    "user_answer": user_answer,
                     "question_text": row["question_text"], 
                     "question_total_marks": row["question_total_marks"],
                     "subject": row["cq_subject"], 
                     "level": row["cq_level"], 
                     "paper_year": row["cq_paper_year"], 
                     "paper_number": row["question_number_str"], 
+                    
+                    "has_local_report_data": bool(row["local_ai_grade"] is not None or row["local_ai_rationale"] is not None),
+                    "local_ai_grade": row["local_ai_grade"],
+                    "local_ai_rationale": row["local_ai_rationale"],
+                    "local_ai_study_topics": local_ai_study_topics,
+
+                    "has_cloud_report": bool(row["cloud_report_received"]),
+                    "cloud_report_viewed_timestamp": row["cloud_report_viewed_timestamp"],
+                    "cloud_ai_grade": row["cloud_ai_grade"],
+                    "cloud_ai_rationale": row["cloud_ai_rationale"],
+                    "cloud_ai_study_topics": cloud_ai_study_topics,
+                    
                     "correct_answer": "N/A" # Default, updated in Step 2
                 }
-                logger.info(f"Found base report item for history_id {history_id_to_find} (Q_Key: {report_item['cached_question_id']}) from SQLite.")
+                logger.info(f"Found base report item for history_id {history_id_to_find} (Q_Key: {report_item_dict['cached_question_id']}) from SQLite.")
             else:
                 logger.warning(f"No base report item found in answer_history for H_ID {history_id_to_find}")
                 return None
@@ -581,30 +614,34 @@ class UserOperations:
             if conn_sqlite:
                 conn_sqlite.close()
 
-        if not report_item:
+        if not report_item_dict:
             return None
 
         # Step 2: Fetch correct answer from cached_answers table (main SQLAlchmey DB)
         try:
             with get_db_session() as session_main_db: 
                 cached_answer_entry = session_main_db.query(CachedAnswer).filter(
-                    CachedAnswer.cached_question_unique_key == report_item["cached_question_id"]
+                    CachedAnswer.cached_question_unique_key == report_item_dict["cached_question_id"]
                 ).first()
 
                 if cached_answer_entry and cached_answer_entry.answer_content:
                     answer_obj = cached_answer_entry.answer_content 
+                    # Ensure answer_obj (which is already a dict from JSON) is correctly handled
                     if isinstance(answer_obj, dict) and "text" in answer_obj:
-                         report_item["correct_answer"] = str(answer_obj["text"]) 
-                    else:
-                         logger.warning(f"Correct answer object for Q_Key {report_item['cached_question_id']} has unexpected structure: {answer_obj}. Displaying as string.")
-                         report_item["correct_answer"] = json.dumps(answer_obj) 
-                    logger.info(f"Found correct answer for Q_Key {report_item['cached_question_id']} from main DB.")
+                         report_item_dict["correct_answer"] = str(answer_obj["text"]) 
+                    else: # If it's a dict but not the expected structure, or not a dict
+                         logger.warning(f"Correct answer content for Q_Key {report_item_dict['cached_question_id']} has unexpected structure or type: {type(answer_obj)}. Displaying as JSON string.")
+                         try:
+                             report_item_dict["correct_answer"] = json.dumps(answer_obj)
+                         except TypeError:
+                             report_item_dict["correct_answer"] = str(answer_obj) # Fallback to string conversion
+                    logger.info(f"Found correct answer for Q_Key {report_item_dict['cached_question_id']} from main DB.")
                 else:
-                    logger.warning(f"No correct answer found in cached_answers for Q_Key {report_item['cached_question_id']}")
+                    logger.warning(f"No correct answer found in cached_answers for Q_Key {report_item_dict['cached_question_id']}")
         except Exception as e:
-            logger.error(f"Error fetching correct answer from main DB for Q_Key {report_item['cached_question_id']}: {e}", exc_info=True)
+            logger.error(f"Error fetching correct answer from main DB for Q_Key {report_item_dict['cached_question_id']}: {e}", exc_info=True)
         
-        return report_item
+        return report_item_dict
 
     @staticmethod
     def _extract_correct_answer(answer_data_json: Optional[str]) -> str:

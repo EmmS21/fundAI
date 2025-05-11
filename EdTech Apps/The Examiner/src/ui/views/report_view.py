@@ -1,7 +1,7 @@
 import logging
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea,
                                QFrame, QPushButton, QProgressBar, QSpacerItem, QSizePolicy,
-                               QGraphicsOpacityEffect)
+                               QGraphicsOpacityEffect, QCheckBox)
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtGui import QPainter, QColor, QBrush, QPen, QFont
 
@@ -10,6 +10,7 @@ from src.data.database.operations import UserOperations
 from src.data.database.models import User, ExamResult, QuestionResponse 
 import json # Add for parsing user_answer_json
 from datetime import datetime # Add for parsing timestamp
+from typing import Optional, Dict
 
 from src.core import services # <<<< ADD THIS IMPORT
 
@@ -119,6 +120,8 @@ class ReportView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet("background-color: #F3F4F6;")
+        self.current_report_data: Optional[Dict] = None # To store all fetched data
+        self.current_view_type = 'final' # Default to 'final', can be 'preliminary'
 
         self.main_scroll_area = QScrollArea(self)
         self.main_scroll_area.setWidgetResizable(True)
@@ -156,6 +159,31 @@ class ReportView(QWidget):
         self.back_button.clicked.connect(self.back_requested.emit)
         
         top_nav_layout.addWidget(self.back_button, 0, Qt.AlignLeft)
+        
+        # ADDED: Toggle for Preliminary/Final Report
+        self.report_type_toggle_checkbox = QCheckBox("Show Preliminary Report")
+        self.report_type_toggle_checkbox.setStyleSheet("""
+            QCheckBox {
+                font-size: 13px;
+                color: #4B5563;
+                spacing: 5px;
+                padding: 6px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+            }
+            QCheckBox::indicator:unchecked {
+                image: url(src/ui/assets/icons/checkbox_unchecked.svg); /* Replace with your icon path */
+            }
+            QCheckBox::indicator:checked {
+                image: url(src/ui/assets/icons/checkbox_checked.svg); /* Replace with your icon path */
+            }
+        """)
+        self.report_type_toggle_checkbox.setVisible(False) # Initially hidden, shown if both reports exist
+        self.report_type_toggle_checkbox.toggled.connect(self._on_report_type_toggled)
+        top_nav_layout.addWidget(self.report_type_toggle_checkbox, 0, Qt.AlignRight) # Add to the right
+
         top_nav_layout.addStretch(1) 
         content_layout.addLayout(top_nav_layout) 
 
@@ -259,6 +287,19 @@ class ReportView(QWidget):
         score_section_layout.addWidget(self.medal_display_area, 1) 
         content_layout.addWidget(score_section_frame)
 
+        # ADDED: Study Topics Section (initially empty)
+        self.study_topics_title_label = QLabel("Key Study Topics & Guiding Questions:")
+        self.study_topics_title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #1F2937; margin-top: 15px;")
+        self.study_topics_title_label.setVisible(False)
+        content_layout.addWidget(self.study_topics_title_label)
+
+        self.study_topics_content_label = QLabel("")
+        self.study_topics_content_label.setWordWrap(True)
+        self.study_topics_content_label.setStyleSheet("font-size: 14px; color: #4B5563; background-color: #F9FAFB; padding: 10px; border-radius: 4px; margin-top: 5px;")
+        self.study_topics_content_label.setVisible(False)
+        self.study_topics_content_label.setTextInteractionFlags(Qt.TextSelectableByMouse) # Allow text selection
+        content_layout.addWidget(self.study_topics_content_label)
+
         # --- Questions & Answers Title ---
         self.qa_title_label = QLabel("Questions & Answers")
         self.qa_title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #1F2937; margin-top: 10px;")
@@ -338,11 +379,10 @@ class ReportView(QWidget):
     def load_report(self, response_id: int): # response_id is the history_id
         logger.info(f"ReportView: Loading report for history_id {response_id}")
         
-        # Get the detailed report item for the given history_id
-        report_item_details = UserOperations.get_single_report_item_details(response_id)
-        current_user_data = UserOperations.get_current_user() # Get current user separately
+        self.current_report_data = UserOperations.get_single_report_item_details(response_id)
+        current_user_data = UserOperations.get_current_user()
 
-        if not report_item_details or not current_user_data:
+        if not self.current_report_data or not current_user_data:
             logger.error(f"Could not load full report data for history_id {response_id}")
             self._clear_layout(self.qa_layout)
             error_label = QLabel("Could not load report details.")
@@ -353,94 +393,218 @@ class ReportView(QWidget):
             self.score_percentage_label.setText("-")
             self.score_progress_bar.setValue(0)
             self._update_medal(0)
+            self.report_type_toggle_checkbox.setVisible(False)
+            self.study_topics_title_label.setVisible(False)
+            self.study_topics_content_label.setVisible(False)
             return
 
-
-        if services.user_history_manager:
-            logger.debug(f"Attempting to mark report {response_id} as viewed.")
-            marked_as_viewed = services.user_history_manager.mark_report_as_viewed(response_id) 
-            if marked_as_viewed: 
-                logger.info(f"Report {response_id} marked as viewed. Requesting badge update.")
-                main_window = self.window()
-                if main_window and hasattr(main_window, 'profile_info_widget') and \
-                   main_window.profile_info_widget and \
-                   hasattr(main_window.profile_info_widget, 'subject_selector') and \
-                   main_window.profile_info_widget.subject_selector:
-                    main_window.profile_info_widget.subject_selector.refresh_badges()
-                else:
-                    logger.warning("ReportView: Could not find path to refresh subject card badges after marking as viewed.")
-        else:
-            logger.error("UserHistoryManager service not available. Cannot mark report as viewed.")
-        # --- End mark as viewed ---
+        # Mark as viewed (if cloud report and not yet viewed)
+        if self.current_report_data.get("has_cloud_report") and not self.current_report_data.get("cloud_report_viewed_timestamp"):
+            if services.user_history_manager:
+                logger.debug(f"Attempting to mark report {response_id} as viewed.")
+                marked_as_viewed = services.user_history_manager.mark_report_as_viewed(response_id) 
+                if marked_as_viewed: 
+                    logger.info(f"Report {response_id} marked as viewed. Requesting badge update.")
+                    main_window = self.window()
+                    if main_window and hasattr(main_window, 'profile_info_widget') and \
+                       main_window.profile_info_widget and \
+                       hasattr(main_window.profile_info_widget, 'subject_selector') and \
+                       main_window.profile_info_widget.subject_selector:
+                        main_window.profile_info_widget.subject_selector.refresh_badges()
+                    else:
+                        logger.warning("ReportView: Could not find path to refresh subject card badges after marking as viewed.")
+            else:
+                logger.error("UserHistoryManager service not available. Cannot mark report as viewed.")
 
         self.student_name_label.setText(f"Student: {current_user_data.get('full_name', 'N/A')}")
         try:
-            exam_dt = datetime.fromisoformat(report_item_details.get("timestamp", ""))
+            exam_dt = datetime.fromisoformat(self.current_report_data.get("timestamp", ""))
             self.exam_date_label.setText(f"Date: {exam_dt.strftime('%B %d, %Y %I:%M %p')}")
-        except ValueError:
+        except (ValueError, TypeError):
             self.exam_date_label.setText(f"Date: N/A")
         
-        # ADDED: Set Report Status Label
-        is_final_report = report_item_details.get("is_final", False)
-        if is_final_report:
-            self.report_status_label.setText("Status: Final Report")
-            self.report_status_label.setStyleSheet("font-size: 14px; color: #10B981; font-weight: bold;") # Green for final
-        else:
-            self.report_status_label.setText("Status: Preliminary Report")
-            self.report_status_label.setStyleSheet("font-size: 14px; color: #F59E0B; font-weight: bold;") # Amber for preliminary
+        # Determine default view type and manage toggle visibility
+        can_show_preliminary = self.current_report_data.get("has_local_report_data", False)
+        can_show_final = self.current_report_data.get("has_cloud_report", False)
+
+        if can_show_final and can_show_preliminary:
+            self.report_type_toggle_checkbox.setVisible(True)
+            # Default to showing final if available, ensure checkbox reflects this
+            self.current_view_type = 'final'
+            self.report_type_toggle_checkbox.setChecked(False) # Unchecked = Show Final Report
+            self.report_type_toggle_checkbox.setText("Show Preliminary Insights")
+        elif can_show_final:
+            self.current_view_type = 'final'
+            self.report_type_toggle_checkbox.setVisible(False)
+        elif can_show_preliminary:
+            self.current_view_type = 'preliminary'
+            self.report_type_toggle_checkbox.setVisible(False)
+        else: # No data for either
+            self.current_view_type = 'none'
+            self.report_type_toggle_checkbox.setVisible(False)
+            # Display error or clear fields if no data type is available (already handled by initial check)
+            # For safety, explicitly call populate with 'none' or handle clearing here.
+            self._populate_report_display() # Will show N/A if no data
+            return
+            
+        self._populate_report_display()
+
+    def _on_report_type_toggled(self, checked: bool):
+        if checked: # Checkbox is checked, meaning user wants to see Preliminary
+            self.current_view_type = 'preliminary'
+            self.report_type_toggle_checkbox.setText("Show Full Report")
+        else: # Checkbox is unchecked, meaning user wants to see Final
+            self.current_view_type = 'final'
+            self.report_type_toggle_checkbox.setText("Show Preliminary Insights")
+        self._populate_report_display()
+
+    def _format_study_topics(self, topics_data: Optional[Dict]) -> str:
+        if not topics_data:
+            return "No specific study topics provided."
+
+        content = []
+        if isinstance(topics_data, dict): # New structured format
+            if topics_data.get("specific_topics"):
+                content.append("<b>Specific Topics:</b>")
+                content.extend([f"• {topic}" for topic in topics_data["specific_topics"]])
+            if topics_data.get("guiding_questions"):
+                if content: content.append("<br>") # Add space if there were previous topics
+                content.append("<b>Guiding Questions:</b>")
+                content.extend([f"• {q}" for q in topics_data["guiding_questions"]])
+            if topics_data.get("search_terms"):
+                if content: content.append("<br>")
+                content.append("<b>Google Search Terms:</b>")
+                content.extend([f"• {s}" for s in topics_data["search_terms"]])
+            if topics_data.get("raw") and not (topics_data.get("specific_topics") or topics_data.get("guiding_questions") or topics_data.get("search_terms")):
+                # Only show raw if no structured data was parsed
+                content.append("<b>Further Details:</b>")
+                content.append(topics_data["raw"])
+        elif isinstance(topics_data, str): # Fallback for old raw string format
+             content.append("<b>Further Details:</b>")
+             content.append(topics_data)
 
 
-        # --- Populate Score (from the single question's AI grade and total marks) ---
-        score = report_item_details.get("ai_grade", 0.0)
-        if not isinstance(score, (int, float)): # Ensure score is numeric
+        return "<br>".join(content) if content else "No specific study topics provided."
+
+
+    def _populate_report_display(self):
+        if not self.current_report_data:
+            # This case should ideally be caught by load_report earlier
+            logger.warning("Attempted to populate report display with no data.")
+            self.report_status_label.setText("Status: Error Loading Data")
+            # Clear other fields...
+            self.score_percentage_label.setText("-")
+            self.score_progress_bar.setValue(0)
+            self._update_medal(0)
+            self._clear_layout(self.qa_layout)
+            self.qa_layout.addWidget(QLabel("Report data unavailable."))
+            self.study_topics_title_label.setVisible(False)
+            self.study_topics_content_label.setVisible(False)
+            return
+
+        ai_grade_to_display = None
+        ai_feedback_to_display = "N/A"
+        study_topics_to_display = None
+        report_status_text = "Status: N/A"
+        report_status_stylesheet = "font-size: 14px; color: #6B7280; font-style: italic;" # Default
+
+        if self.current_view_type == 'final' and self.current_report_data.get("has_cloud_report"):
+            ai_grade_to_display = self.current_report_data.get("cloud_ai_grade")
+            ai_feedback_to_display = self.current_report_data.get("cloud_ai_rationale", "Feedback not available.")
+            study_topics_to_display = self.current_report_data.get("cloud_ai_study_topics")
+            report_status_text = "Status: Full Report (Cloud AI)"
+            report_status_stylesheet = "font-size: 14px; color: #10B981; font-weight: bold;"
+        elif self.current_view_type == 'preliminary' and self.current_report_data.get("has_local_report_data"):
+            ai_grade_to_display = self.current_report_data.get("local_ai_grade")
+            ai_feedback_to_display = self.current_report_data.get("local_ai_rationale", "Feedback not available.")
+            study_topics_to_display = self.current_report_data.get("local_ai_study_topics") # Fetch local study topics
+            report_status_text = "Status: Preliminary Insights (Local AI)"
+            report_status_stylesheet = "font-size: 14px; color: #F59E0B; font-weight: bold;"
+        elif self.current_report_data.get("has_cloud_report"): # Fallback to final if current_view_type is invalid but final exists
+            ai_grade_to_display = self.current_report_data.get("cloud_ai_grade")
+            ai_feedback_to_display = self.current_report_data.get("cloud_ai_rationale", "Feedback not available.")
+            study_topics_to_display = self.current_report_data.get("cloud_ai_study_topics")
+            report_status_text = "Status: Full Report (Cloud AI)"
+            report_status_stylesheet = "font-size: 14px; color: #10B981; font-weight: bold;"
+            self.report_type_toggle_checkbox.setChecked(False) # Sync checkbox
+            self.current_view_type = 'final' # Correct the view type
+        elif self.current_report_data.get("has_local_report_data"): # Fallback to preliminary if only local exists
+            ai_grade_to_display = self.current_report_data.get("local_ai_grade")
+            ai_feedback_to_display = self.current_report_data.get("local_ai_rationale", "Feedback not available.")
+            study_topics_to_display = self.current_report_data.get("local_ai_study_topics")
+            report_status_text = "Status: Preliminary Insights (Local AI)"
+            report_status_stylesheet = "font-size: 14px; color: #F59E0B; font-weight: bold;"
+            self.report_type_toggle_checkbox.setChecked(True) # Sync checkbox
+            self.current_view_type = 'preliminary' # Correct the view type
+        else: # No report data of any kind
+            self.report_status_label.setText("Status: Report Data Unavailable")
+            self.score_percentage_label.setText("-")
+            self.score_progress_bar.setValue(0)
+            self._update_medal(0)
+            self._clear_layout(self.qa_layout)
+            self.qa_layout.addWidget(QLabel("No AI feedback available for this item."))
+            self.study_topics_title_label.setVisible(False)
+            self.study_topics_content_label.setVisible(False)
+            return
+
+        self.report_status_label.setText(report_status_text)
+        self.report_status_label.setStyleSheet(report_status_stylesheet)
+
+        score = 0.0
+        if ai_grade_to_display is not None:
             try:
-                score = float(score) if score else 0.0
+                score = float(ai_grade_to_display)
             except (ValueError, TypeError):
+                logger.warning(f"Could not convert grade '{ai_grade_to_display}' to float for history_id {self.current_report_data.get('history_id')}")
                 score = 0.0
         
-        total_possible = report_item_details.get("question_total_marks", 0)
-        if not isinstance(total_possible, (int, float)) or total_possible <= 0: # Ensure total_possible is valid
-            total_possible = 100 # Default to 100 if invalid to avoid division by zero
-            logger.warning(f"Invalid or zero question_total_marks for history_id {response_id}. Defaulting to 100 for percentage calculation.")
+        total_possible = self.current_report_data.get("question_total_marks", 0)
+        if not isinstance(total_possible, (int, float)) or total_possible <= 0:
+            total_possible = 100 
+            logger.warning(f"Invalid or zero question_total_marks for history_id {self.current_report_data.get('history_id')}. Defaulting to 100.")
 
-
-        percentage_score = 0
-        if total_possible > 0:
-            percentage_score = (score / total_possible) * 100
+        percentage_score = (score / total_possible) * 100 if total_possible > 0 else 0
         
         self.score_percentage_label.setText(f"{percentage_score:.0f}%")
         self.score_progress_bar.setValue(int(percentage_score))
         self._update_medal(percentage_score)
 
-        # --- Populate Questions & Answers (for the single question) ---
+        # --- Populate Questions & Answers ---
         self._clear_layout(self.qa_layout) 
 
         student_answer_text = "N/A"
-        if report_item_details.get("user_answer"):
-            # Assuming user_answer is a dict like {"selected_option": "A", "written_answer": "Some text"}
-            # This needs to be adapted to your actual user_answer_json structure
-            answer_detail = report_item_details["user_answer"]
-            if isinstance(answer_detail, dict):
-                 # Prioritize a 'written_answer' or 'text' field if available
-                if 'written_answer' in answer_detail:
-                    student_answer_text = str(answer_detail['written_answer'])
-                elif 'text' in answer_detail:
-                     student_answer_text = str(answer_detail['text'])
-                elif 'selected_option' in answer_detail: # Fallback to selected_option
-                    student_answer_text = f"Selected: {answer_detail['selected_option']}"
-                else: # If structure is unknown, dump the dict
-                    student_answer_text = json.dumps(answer_detail)
-            else: # If it's not a dict (e.g., just a string), use it directly
-                student_answer_text = str(answer_detail)
+        user_answer_data = self.current_report_data.get("user_answer")
+        if user_answer_data:
+            if isinstance(user_answer_data, dict):
+                if 'written_answer' in user_answer_data:
+                    student_answer_text = str(user_answer_data['written_answer'])
+                elif 'text' in user_answer_data:
+                     student_answer_text = str(user_answer_data['text'])
+                elif 'selected_option' in user_answer_data:
+                    student_answer_text = f"Selected: {user_answer_data['selected_option']}"
+                else:
+                    student_answer_text = json.dumps(user_answer_data) # Fallback
+            else:
+                student_answer_text = str(user_answer_data)
         
         item_widget = QuestionAnswerItemWidget(
-            question_number=1, # Only one question in this view
-            question_text=report_item_details.get("question_text", "N/A"),
+            question_number=1, 
+            question_text=self.current_report_data.get("question_text", "N/A"),
             student_answer=student_answer_text,
-            correct_answer=report_item_details.get("correct_answer", "N/A"), # From _extract_correct_answer
-            ai_feedback=report_item_details.get("ai_feedback", "") 
+            correct_answer=self.current_report_data.get("correct_answer", "N/A"),
+            ai_feedback=ai_feedback_to_display
         )
         self.qa_layout.addWidget(item_widget)
+
+        # Study Topics Display
+        formatted_study_topics = self._format_study_topics(study_topics_to_display)
+        if formatted_study_topics and formatted_study_topics != "No specific study topics provided.":
+            self.study_topics_content_label.setText(formatted_study_topics)
+            self.study_topics_title_label.setVisible(True)
+            self.study_topics_content_label.setVisible(True)
+        else:
+            self.study_topics_title_label.setVisible(False)
+            self.study_topics_content_label.setVisible(False)
         
         self.qa_layout.addStretch(1) 
         self.qa_list_widget.adjustSize() 
