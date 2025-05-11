@@ -563,29 +563,29 @@ class FirebaseClient:
             return None
 
     def create_examiner_report(self, hardware_id: str, report_data: Dict[str, Any]) -> bool:
-        """
-        Creates a new document in the 'examiner-reports' collection.
-        The document ID will be the hardware_id.
-        report_data should be in the format expected by Firestore REST API's 'fields'.
-        """
-        self._ensure_authenticated()
-        url = f"{self.firestore_base_url}/examiner-reports?documentId={hardware_id}"
-        headers = {
-            "Authorization": f"Bearer {self.id_token}",
-            "Content-Type": "application/json"
-        }
-        
         try:
-            response = requests.post(url, headers=headers, json=report_data)
-            if response.status_code == 200: 
-                logger.info(f"Successfully created examiner-report for hardware_id {hardware_id}")
-                return True
-            else:
-                logger.error(f"Failed to create examiner-report for {hardware_id}: {response.status_code} - {response.text}")
-                response.raise_for_status() 
+            # Convert Python data to Firestore format
+            firestore_data = {
+                "fields": {
+                    key: self._to_firestore_value(value)
+                    for key, value in report_data.items()
+                }
+            }
+            
+            url = f"{self.firestore_base_url}/examiner-reports?documentId={hardware_id}"
+            headers = {
+                "Authorization": f"Bearer {self.id_token}",
+                "Content-Type": "application/json"
+            }
+            response = requests.post(url, headers=headers, json=firestore_data)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to create report. Status: {response.status_code}, Response: {response.text}")
                 return False
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error creating examiner-report for hardware_id {hardware_id}: {e}")
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error creating examiner report: {e}")
             return False
 
     def update_examiner_report(self, hardware_id: str, updates: Dict[str, Any], new_answered_questions: Optional[List[Dict[str, Any]]] = None) -> bool:

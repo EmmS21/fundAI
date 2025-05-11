@@ -7,6 +7,7 @@ from typing import Dict, Optional, Any, Tuple, List
 import threading
 import sys 
 import re
+from src.core.events import EventSystem, EVENT_NEW_ACTIVITY_TO_SYNC
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 DB_FILE = 'student_profile.db' 
@@ -190,6 +191,14 @@ class UserHistoryManager:
             finally:
                  if cursor: cursor.close() # Ensure cursor is closed even on error
 
+        # After successfully inserting a new history entry, emit event
+        if history_id:
+            # Emit event for sync service
+            EventSystem().publish(
+                EVENT_NEW_ACTIVITY_TO_SYNC,
+                user_id=user_id,
+                history_id=history_id
+            )
 
         return history_id
 
@@ -570,15 +579,15 @@ class UserHistoryManager:
                 ah.history_id,
                 ah.answer_timestamp,
                 ah.cloud_report_received,
-                cq.question_id,
+                ah.cached_question_id,
                 cq.subject,
                 cq.level,
-                cq.paper_number,
+                cq.paper_document_id as paper_number,
                 cq.paper_year
             FROM
                 answer_history ah
             JOIN
-                cached_questions cq ON ah.cached_question_id = cq.question_id
+                cached_questions cq ON ah.cached_question_id = cq.unique_question_key
             WHERE
                 ah.user_id = ?
             ORDER BY
@@ -586,23 +595,20 @@ class UserHistoryManager:
             """
         try:
             cursor = conn.cursor()
-            # Set row factory to easily convert rows to dictionary-like objects
             conn.row_factory = sqlite3.Row 
-            cursor = conn.cursor() # Re-create cursor after setting row_factory
+            cursor = conn.cursor()
             
             logger.debug(f"Executing SQL to get all history details for user {user_id}")
             cursor.execute(sql, (user_id,))
             rows = cursor.fetchall()
             
-            # Convert Row objects to dictionaries
             results = [dict(row) for row in rows] 
             logger.info(f"Retrieved {len(results)} history entries for user {user_id}")
 
         except sqlite3.Error as e:
             logger.error(f"DATABASE ERROR getting all history details for user {user_id}: {e}", exc_info=True)
-            return [] # Return empty list on error
+            return []
         finally:
-            # Reset row_factory to default if necessary, or handle appropriately elsewhere
             conn.row_factory = None 
             if cursor: cursor.close()
 
@@ -764,3 +770,51 @@ class UserHistoryManager:
                 cursor.close()
 
         return activities
+
+    def sync_student_activity_report(self):
+        """Sync student activity report to Firebase"""
+        logger.info("Starting student activity report sync...")
+        
+        try:
+            # Get hardware ID - this is all we need to identify the user
+            hardware_id = HardwareIdentifier.get_hardware_id()
+            
+            # Get all student activity with full details
+            all_activity = services.user_history_manager.get_all_student_activity_for_sync(user_id=1)  # Default user_id is 1 for desktop app
+            
+            if not all_activity:
+                logger.info("No activity to sync")
+                return
+            
+            # Format data for Firebase
+            report_data = {
+                "lastSyncTimestamp": datetime.now(timezone.utc).isoformat(),
+                "answeredQuestions": all_activity
+            }
+            
+            # Check if report exists
+            existing_report = self.firebase.get_examiner_report(hardware_id)
+            
+            if existing_report:
+                success = self.firebase.update_examiner_report(
+                    hardware_id=hardware_id,
+                    updates={"lastSyncTimestamp": report_data["lastSyncTimestamp"]},
+                    new_answered_questions=report_data["answeredQuestions"]
+                )
+            else:
+                success = self.firebase.create_examiner_report(
+                    hardware_id=hardware_id,
+                    report_data=report_data
+                )
+            
+            if success:
+                logger.info(f"Successfully synced activity report for hardware ID: {hardware_id}")
+                # Mark all synced activities
+                for activity in all_activity:
+                    if 'history_id' in activity:
+                        services.user_history_manager.mark_as_sent_to_cloud(activity['history_id'])
+            else:
+                logger.error(f"Failed to sync activity report for hardware ID: {hardware_id}")
+            
+        except Exception as e:
+            logger.error(f"Error syncing student activity report: {e}", exc_info=True)

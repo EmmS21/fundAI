@@ -71,7 +71,12 @@ def initialize_app():
         print(f">>> DEBUG: *** ERROR DURING UserHistoryManager INITIALIZATION OR ASSIGNMENT ***: {e}", file=sys.stderr)
         logger.error(f"CRITICAL: Failed UserHistoryManager init/assignment: {e}", exc_info=True)
     
-    # 6. Initialize Sync Service (depends on network monitor, queue manager)
+    # 6. Initialize Firebase client
+    firebase_client = FirebaseClient()
+    services.firebase_client = firebase_client
+    logger.info("Firebase client initialized")
+
+    # 7. Initialize Sync Service (depends on network monitor, queue manager)
     sync_service = SyncService()
     services.sync_service = sync_service
     
@@ -82,11 +87,6 @@ def initialize_app():
     if hasattr(network_monitor, 'start'):
         network_monitor.start()
     
-    # Initialize Firebase client
-    firebase_client = FirebaseClient()
-    services.firebase_client = firebase_client
-    logger.info("Firebase client initialized")
-
     # Start background sync of question cache to DB
     logger.info("Starting background sync of question cache to DB...")
     sync_thread = threading.Thread(target=cache_manager.sync_question_cache_to_db, daemon=True)
