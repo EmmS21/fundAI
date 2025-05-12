@@ -5282,3 +5282,27 @@ INFO:sqlalchemy.engine.Engine:COMMIT
 INFO:src.data.cache.cache_manager:>>> SYNC_ANSWERS_DB: Finished answer sync. Checked Files: 16, Processed Sub-Answers: 61, Inserted: 0, Updated: 55, Skipped (No Q-File): 0, Skipped (No PaperID): 0, Skipped (Other): 0
 INFO:src.data.cache.cache_manager:>>> SYNC_ANSWERS_DB: Answer sync process attempt finished.
 INFO:src.data.cache.cache_manager:>>> SYNC_ALL_TO_DB: Full local cache to DB sync finished.
+INFO:src.core.services:Shutting down application services...
+ERROR:src.core.services:Error during service shutdown: cannot access local variable 'sync_service' where it is not associated with a value
+Traceback (most recent call last):
+  File "/Users/emmanuelsibanda/Desktop/GitHub/fundAI/EdTech Apps/The Examiner/src/core/services.py", line 99, in shutdown_services
+    if sync_service:
+       ^^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'sync_service' where it is not associated with a value
+Traceback (most recent call last):
+  File "/Users/emmanuelsibanda/Desktop/GitHub/fundAI/EdTech Apps/The Examiner/src/core/services.py", line 99, in shutdown_services
+    if sync_service:
+       ^^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'sync_service' where it is not associated with a value
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/emmanuelsibanda/Desktop/GitHub/fundAI/EdTech Apps/The Examiner/src/main.py", line 45, in cleanup
+    services.shutdown_services()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/emmanuelsibanda/Desktop/GitHub/fundAI/EdTech Apps/The Examiner/src/core/services.py", line 115, in shutdown_services
+    if not sync_service:
+           ^^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'sync_service' where it is not associated with a value
+Performing application cleanup...
