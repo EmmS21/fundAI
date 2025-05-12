@@ -36,19 +36,23 @@ def find_model_path() -> Optional[str]:
     Returns:
         The full path to the model if found, otherwise None.
     """
+    # First try application bundle
+    if getattr(sys, 'frozen', False):
+        # Running as packaged app
+        bundle_dir = os.path.dirname(sys.executable)
+        model_path = os.path.join(bundle_dir, 'models', MODEL_FILENAME)
+        if os.path.isfile(model_path):
+            logger.info(f"Found model in app bundle: {model_path}")
+            return model_path
+    
+    # Fallback to user's Documents
     model_path = BASE_LLAMA_DIR / MODEL_FILENAME
-    logger.debug(f"Checking for model at fixed path: {model_path}")
-
-    if not BASE_LLAMA_DIR.is_dir():
-         logger.error(f"Assumed model directory does not exist: {BASE_LLAMA_DIR}")
-         return None
-
     if model_path.is_file():
-        logger.info(f"Found model at: {model_path}")
+        logger.info(f"Found model in Documents: {model_path}")
         return str(model_path)
-    else:
-        logger.error(f"Model '{MODEL_FILENAME}' not found in directory: {BASE_LLAMA_DIR}")
-        return None
+    
+    logger.error(f"Model '{MODEL_FILENAME}' not found in bundle or Documents")
+    return None
 
 def parse_ai_response(response_text: str) -> Dict[str, Optional[str]]:
     """

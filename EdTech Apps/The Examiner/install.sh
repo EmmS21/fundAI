@@ -21,25 +21,16 @@ feedback to help you improve.
 Installing The Examiner...
 "
 
-# Create virtual environment if it doesn't exist
-if [ ! -d "venv" ]; then
-    echo "Setting up Python virtual environment..."
-    python3 -m venv venv
-fi
-
-# Activate virtual environment
-source venv/bin/activate
-
-# Install dependencies
-echo "Installing required packages..."
-pip install -r requirements.txt
+echo "Building The Examiner..."
 
 # Create necessary directories
-echo "Setting up application directories..."
-mkdir -p ~/.examiner/logs
+echo "Creating application directories..."
+mkdir -p ~/.examiner/app
 mkdir -p ~/.examiner/data
+mkdir -p ~/.examiner/logs
+mkdir -p ~/.local/share/applications
 
-# Copy application files
+# Install application files
 echo "Installing application files..."
 cp -r src/* ~/.examiner/app/
 
@@ -58,6 +49,9 @@ Categories=Education;
 Keywords=Education;AI;Tutor;Exams
 X-Author=Emmanuel Sibanda
 EOL
+
+# Set permissions
+chmod +x ~/.examiner/app/main.py
 
 echo "
 Installation Complete!

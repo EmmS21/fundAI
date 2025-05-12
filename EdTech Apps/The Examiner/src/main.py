@@ -1,5 +1,9 @@
 import sys
 import os
+import traceback
+from datetime import datetime
+import logging
+from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFontDatabase, QIcon
 from PySide6.QtCore import QCoreApplication
@@ -10,58 +14,126 @@ from src.data.database.models import Base
 from src.utils.db import engine, Session
 from src.data.database.models import User
 from src.core import services
-import logging
 
-logger = logging.getLogger(__name__)
+try:
+    print("Python path:", sys.path)
+    print("Current directory:", os.getcwd())
+    
+    # Try imports one by one
+    print("Importing PySide6...")
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtGui import QFontDatabase, QIcon
+    from PySide6.QtCore import QCoreApplication
+    
+    print("Importing app...")
+    from src.app import initialize_app
+    
+    print("Importing UI components...")
+    from src.ui.components.onboarding.onboarding_window import OnboardingWindow
+    from src.ui.main_window import MainWindow
+    
+    print("Importing database modules...")
+    from src.data.database.models import Base, User
+    from src.utils.db import engine, Session
+    
+    print("Importing services...")
+    from src.core import services
+    
+except Exception as e:
+    print(f"Import error: {e}")
+    print("Traceback:")
+    traceback.print_exc()
+    sys.exit(1)
+
+def setup_logging():
+    """Set up logging configuration for debugging"""
+    # Create logs directory in user's home
+    log_dir = Path.home() / '.examiner' / 'logs'
+    log_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create log file with timestamp
+    log_file = log_dir / f'examiner_debug_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
+    
+    # Configure logging
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+    return logging.getLogger(__name__)
 
 def main():
-    # Initialize core application services first
-    if not initialize_app():
-        print("Failed to initialize application services. Exiting.", file=sys.stderr)
-        if logger: logger.critical("Failed to initialize application services. Exiting.")
-        sys.exit(1)
-
+    logger = setup_logging()
+    logger.info("Application starting...")
+    
     try:
-        logger.info("--- Checking services status immediately after initialize_app() in main.py ---")
-        logger.info(f"ID of 'services' module in main.py: {id(services)}")
-        logger.info(f"Value of services.user_history_manager in main.py: {getattr(services, 'user_history_manager', 'AttributeNotFound')}")
-    except Exception as log_err:
-        print(f"Error logging services status in main.py: {log_err}", file=sys.stderr)
+        logger.debug("Importing required modules...")
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QFontDatabase, QIcon
+        from PySide6.QtCore import QCoreApplication
+        
+        logger.debug("Importing local modules...")
+        from src.app import initialize_app
+        from src.ui.components.onboarding.onboarding_window import OnboardingWindow
+        from src.ui.main_window import MainWindow
+        from src.data.database.models import Base, User
+        from src.utils.db import engine, Session
+        from src.core import services
 
-    app = QApplication(sys.argv)
-    
-    # Check if database exists and has a user
-    db_exists = os.path.exists("student_profile.db")
-    
-    # Create/update tables
-    Base.metadata.create_all(engine)
-    
-    # Initialize all services
-    services.initialize_services()
-    
-    # Set up cleanup
-    def cleanup():
-        print("Performing application cleanup...")
-        services.shutdown_services()
-    
-    app.aboutToQuit.connect(cleanup)
-    
-    # Simply check if we have any user in the database
-    if db_exists:
+        logger.info("Creating QApplication instance...")
+        app = QApplication(sys.argv)
+        
+        logger.info("Initializing application services...")
+        if not initialize_app():
+            logger.critical("Failed to initialize application services")
+            return 1
+
+        logger.debug("Checking database existence...")
+        db_path = os.path.expanduser('~/.examiner/data/student_profile.db')
+        db_exists = os.path.exists(db_path)
+        logger.info(f"Database exists: {db_exists}")
+        
+        logger.debug("Creating database tables...")
+        Base.metadata.create_all(engine)
+        
+        logger.info("Initializing services...")
+        services.initialize_services()
+        
+        def cleanup():
+            logger.info("Performing application cleanup...")
+            services.shutdown_services()
+        
+        app.aboutToQuit.connect(cleanup)
+        
+        logger.debug("Checking for existing user...")
         with Session() as session:
-            user = session.query(User).first()  # Get any user, no hardware ID filter
+            user = session.query(User).first()
             if user:
-                print("Found existing user, showing MainWindow")
+                logger.info("Existing user found, launching MainWindow")
                 window = MainWindow(user)
             else:
-                print("No user found in database, showing OnboardingWindow")
+                logger.info("No user found, launching OnboardingWindow")
                 window = OnboardingWindow()
-    else:
-        print("No database found, showing OnboardingWindow")
-        window = OnboardingWindow()
-    
-    window.show()
-    return app.exec()
+        
+        logger.debug("Showing window...")
+        window.show()
+        
+        logger.info("Entering application main loop...")
+        return app.exec()
+
+    except Exception as e:
+        logger.critical(f"Unhandled exception: {str(e)}")
+        logger.critical(f"Traceback: {traceback.format_exc()}")
+        return 1
 
 if __name__ == "__main__":
-    main()
+    try:
+        sys.exit(main())
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.critical(f"Fatal error: {str(e)}")
+        logger.critical(f"Traceback: {traceback.format_exc()}")
+        sys.exit(1)
