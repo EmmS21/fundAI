@@ -93,19 +93,31 @@ def initialize_services():
         
 def shutdown_services():
     """Gracefully shut down application services."""
+    global sync_service, cache_manager, mongodb_client
+    
     logger.info("Shutting down application services...")
     try:
         # Stop services that have a stop method, in reverse order of start
         if sync_service:
-            sync_service.stop()
-            logger.info("Sync service stopped")
+            try:
+                sync_service.stop()
+                logger.info("Sync service stopped")
+            except Exception as e:
+                logger.error(f"Error stopping sync service: {e}", exc_info=True)
+        
         if cache_manager:
-            cache_manager.stop()
-            logger.info("Cache manager stopped")
+            try:
+                cache_manager.stop()
+                logger.info("Cache manager stopped")
+            except Exception as e:
+                logger.error(f"Error stopping cache manager: {e}", exc_info=True)
 
         if mongodb_client:
-            mongodb_client.close()
-            logger.info("MongoDB client connection closed")
+            try:
+                mongodb_client.close()
+                logger.info("MongoDB client connection closed")
+            except Exception as e:
+                logger.error(f"Error closing MongoDB client: {e}", exc_info=True)
 
         logger.info("Services shut down successfully")
     except Exception as e:
