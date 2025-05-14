@@ -9,37 +9,34 @@ __pycache__/
 
 # Virtual environments
 venv/
+.venv/
 env/
 .env
 *.env
 
-# Build artifacts
-build/
-dist/
+# Build artifacts and distribution folders
+**/build/
 **/dist/
 *.egg-info/
+*.pkg
 
 # Log files
 *.log
 
-src/data/secure/
+# Secure storage (if you still have this pattern)
+EdTech Apps/The Examiner/src/data/secure/
 
-# IDE and editor specific files (examples)
+# Large Model files
+*.gguf
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE and editor specific files
 .vscode/
 .idea/
 *.swp
 *~
-.cursor/
-
-# Specific large model file patterns (if not caught by dist/)
-*.gguf
-
-# Database files
-app.db
-
-# Electron build output
-electron/out/
-
-# Node.js
-node_modules/
 
