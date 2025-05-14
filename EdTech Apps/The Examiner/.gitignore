@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+env/
+.env
+*.env
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Log files
+*.log
+
+# Secure storage for local, hardware-encrypted data
+# This directory contains files encrypted with a hardware-bound key
+# and are specific to the machine they were generated on.
+src/data/secure/
+
+# IDE and editor specific files (examples)
+.vscode/
+.idea/
+*.swp
+*~
