@@ -16,14 +16,12 @@ env/
 # Build artifacts
 build/
 dist/
+**/dist/
 *.egg-info/
 
 # Log files
 *.log
 
-# Secure storage for local, hardware-encrypted data
-# This directory contains files encrypted with a hardware-bound key
-# and are specific to the machine they were generated on.
 src/data/secure/
 
 # IDE and editor specific files (examples)
@@ -31,7 +29,17 @@ src/data/secure/
 .idea/
 *.swp
 *~
+.cursor/
 
 # Specific large model file patterns (if not caught by dist/)
 *.gguf
+
+# Database files
+app.db
+
+# Electron build output
+electron/out/
+
+# Node.js
+node_modules/
 
