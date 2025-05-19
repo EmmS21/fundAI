@@ -86,10 +86,45 @@ The application maintains comprehensive logs for debugging and monitoring:
    ```bash
    pip install -r requirements-dev.txt
    ```
-3. Build the AppImage:
+3. Build using the build script:
    ```bash
-   ./build_appimage.sh
+   # Make sure the build script is executable
+   chmod +x build.sh
+   
+   # Run the build script
+   ./build.sh
    ```
+
+### Build Process and Artifacts
+
+The build script (`build.sh`) automates the creation of a Linux distribution:
+
+1. **What the build script does**:
+   - Creates a Docker build environment with all necessary dependencies
+   - Installs Python requirements from `new_requirements.txt`
+   - Runs PyInstaller with the `examiner.spec` configuration
+   - Packages the application into a tarball
+
+2. **Build Artifacts**:
+   - Main artifact: `Examiner-linux-1.0.0.tar.gz` (produced in the project root)
+   - Intermediate files in `./dist/Examiner/` directory
+
+3. **Deploying the artifact**:
+   ```bash
+   # Extract the tarball on the target system
+   tar -xzvf Examiner-linux-1.0.0.tar.gz
+   
+   # Navigate to the extracted directory
+   cd Examiner-linux-1.0.0
+   
+   # Run the application
+   ./Examiner
+   ```
+
+4. **Troubleshooting builds**:
+   - Check Docker is installed and running
+   - Verify Python dependencies in `new_requirements.txt`
+   - Examine PyInstaller output for missing modules
 
 ### Packaging Process
 The application is packaged using PyInstaller and AppImage:
