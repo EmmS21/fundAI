@@ -1,137 +1,152 @@
 #!/bin/bash
 
-echo "Building The Examiner..."
-APP_VERSION="1.0.0" 
+echo "Starting Linux artifact build for The Examiner using Docker..."
+APP_VERSION="1.0.0" # Or read from a configuration file
+PROJECT_ROOT_DIR=$(pwd) # Assuming this script is in the project root
 
-# Clean up previous build artifacts
-echo "Cleaning previous build artifacts..."
-rm -rf build dist "Examiner-linux-${APP_VERSION}.tar.gz" "Examiner-macos-${APP_VERSION}.zip"
-rm -rf venv
+# --- Configuration ---
+DOCKER_BUILDER_IMAGE_NAME="examiner-linux-builder:${APP_VERSION}"
+DOCKERFILE_FOR_BUILD_ENV="Dockerfile.buildenv" # Temporary Dockerfile for the build environment
+REQUIREMENTS_FILE_FOR_BUILD="new_requirements.txt" # As per your request
 
-# Create fresh virtual environment
-echo "Creating virtual environment..."
-python3 -m venv venv
-source venv/bin/activate
+# --- Output paths ---
+PYINSTALLER_OUTPUT_DIR_NAME="Examiner" 
+HOST_DIST_DIR="${PROJECT_ROOT_DIR}/dist"
+HOST_BUILD_DIR="${PROJECT_ROOT_DIR}/build" 
 
-# Upgrade pip first
-echo "Upgrading pip..."
-pip install --upgrade pip
+LINUX_PACKAGE_NAME_BASE="Examiner-linux-${APP_VERSION}"
+LINUX_FINAL_ARCHIVE_NAME="${LINUX_PACKAGE_NAME_BASE}.tar.gz"
 
-# Install requirements (including Pillow)
-echo "Installing dependencies..."
-pip install -r requirements.txt || {
-    echo "Error installing dependencies"
-    exit 1
-}
+# --- Cleanup of previous Linux artifacts ---
+echo "[BUILD.SH] Cleaning up previous Linux build artifacts..."
+rm -rf "${HOST_DIST_DIR}/${PYINSTALLER_OUTPUT_DIR_NAME}"
+rm -rf "${HOST_DIST_DIR}/${LINUX_PACKAGE_NAME_BASE}"  
+rm -f "${PROJECT_ROOT_DIR}/${LINUX_FINAL_ARCHIVE_NAME}" 
+rm -rf "${HOST_BUILD_DIR}" 
+rm -f "${PROJECT_ROOT_DIR}/${DOCKERFILE_FOR_BUILD_ENV}" 
+echo "[BUILD.SH] Cleanup complete."
 
-# Verify critical packages are installed
-echo "Verifying critical packages..."
-pip list | grep -E "Pillow|PyInstaller|PySide6" || {
-    echo "Critical packages not installed properly"
-    exit 1
-}
+# --- Create Dockerfile for the Build Environment ---
+echo "[BUILD.SH] Generating ${DOCKERFILE_FOR_BUILD_ENV} for Linux build environment..."
+cat << EOF > "${PROJECT_ROOT_DIR}/${DOCKERFILE_FOR_BUILD_ENV}"
+FROM python:3.11-bookworm
 
-ICON_PATH_ARG=""
-OUTPUT_NAME="Examiner" # Base name for output
+# Install build essentials, PyInstaller dependencies, and dev libraries
+RUN apt-get update && apt-get install -y --no-install-recommends \\
+    build-essential \\
+    patchelf \\
+    git \\
+    # General X11 and graphics dev libraries
+    libgl1-mesa-dev \\
+    libegl1-mesa-dev \\
+    libxcb1-dev \\
+    libxcb-icccm4-dev \\
+    libxcb-image0-dev \\
+    libxcb-keysyms1-dev \\
+    libxcb-randr0-dev \\
+    libxcb-render-util0-dev \\
+    libxcb-shape0-dev \\
+    libxcb-shm0-dev \\
+    libxcb-sync-dev \\
+    libxcb-xfixes0-dev \\
+    libxcb-xinerama0-dev \\
+    libxcb-xkb-dev \\
+    libxkbcommon-x11-dev \\
+    libxkbcommon-dev \\
+    libfontconfig1-dev \\
+    libfreetype6-dev \\
+    libdbus-1-dev \\
+    # --- Corrected Qt6 Development Packages for Bookworm ---
+    qt6-base-dev \\
+    qt6-tools-dev \\
+    qt6-tools-dev-tools \\
+    # Also include runtime QPA plugins and cursor lib in build env
+    # as PyInstaller might inspect them or need them for hooks.
+    qt6-qpa-plugins \\
+    libxcb-cursor0 \\
+    # --- End Qt6 Development Packages ---
+    # Add any other -dev packages potentially needed by your dependencies
+    && rm -rf /var/lib/apt/lists/*
 
-# Platform-specific preparations
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    echo "Configuring for macOS build..."
-    # Convert icon for macOS
-    echo "Converting icon for macOS..."
-    python3 - <<EOF
-from PIL import Image
-import os
+WORKDIR /build_src
 
-def convert_to_icns():
-    icon_path = 'src/assets/examiner.jpg'
-    iconset_path = 'src/assets/examiner.iconset'
-    output_icns_path = 'src/assets/examiner.icns'
+COPY ${REQUIREMENTS_FILE_FOR_BUILD} ./requirements.txt
+RUN echo "[BUILDENV DOCKERFILE] Installing Python packages from ${REQUIREMENTS_FILE_FOR_BUILD}..."
+RUN pip install --no-cache-dir -r requirements.txt
 
-    if not os.path.exists(icon_path):
-        print(f"Error: Icon not found at {icon_path}")
-        return False
-        
-    os.makedirs(iconset_path, exist_ok=True)
-    
-    img = Image.open(icon_path)
-    
-    sizes = [(16,16), (32,32), (64,64), (128,128), (256,256), (512,512)]
-    for size_tuple in sizes: # Renamed 'size' to 'size_tuple' to avoid conflict
-        resized = img.resize(size_tuple, Image.Resampling.LANCZOS)
-        resized.save(f'{iconset_path}/icon_{size_tuple[0]}x{size_tuple[0]}.png')
-    
-    os.system(f'iconutil -c icns {iconset_path} -o {output_icns_path}')
-    os.system(f'rm -rf {iconset_path}')
-    
-    if os.path.exists(output_icns_path):
-        print(f"Successfully created {output_icns_path}")
-        return True
-    else:
-        print(f"Error: Failed to create {output_icns_path}")
-        return False
+COPY . .
 
-if __name__ == "__main__":
-    convert_to_icns()
+# Ensure the runtime hook is available and executable if needed.
+# PyInstaller looks for it relative to the spec file path during the PyInstaller execution.
+RUN chmod +x pyi_rth_qt6.py || true 
+
+CMD ["echo", "Build environment created. PyInstaller should be run via 'docker run' with specific commands."]
 EOF
-    if [ -f "src/assets/examiner.icns" ]; then
-        ICON_PATH_ARG="--icon=src/assets/examiner.icns"
-    else
-        echo "Warning: macOS icon (examiner.icns) not found. Using default."
-        ICON_PATH_ARG="--icon=src/assets/examiner.jpg" # Fallback
-    fi
-    OUTPUT_NAME="Examiner.app" # PyInstaller creates .app bundle on macOS
 
-else # Assuming Linux or other Unix-like
-    echo "Configuring for Linux build..."
-    ICON_PATH_ARG="--icon=src/assets/examiner.jpg"
+if [ ! -f "${PROJECT_ROOT_DIR}/${DOCKERFILE_FOR_BUILD_ENV}" ]; then
+    echo "ERROR: Failed to create ${DOCKERFILE_FOR_BUILD_ENV}!"
+    exit 1
 fi
+echo "[BUILD.SH] ${DOCKERFILE_FOR_BUILD_ENV} created successfully."
 
-# Verify PyInstaller is in path
-if ! command -v pyinstaller &> /dev/null; then
-    echo "PyInstaller not found. Ensuring it's installed..."
-    pip install pyinstaller
+# --- Build the Docker Image for the Build Environment ---
+echo "[BUILD.SH] Building Docker image: ${DOCKER_BUILDER_IMAGE_NAME}..."
+# Build for the host architecture. If on ARM Mac, this will be ARM.
+# If you needed an x86_64 Linux build specifically, you'd add --platform linux/amd64 here.
+docker build -t "${DOCKER_BUILDER_IMAGE_NAME}" -f "${PROJECT_ROOT_DIR}/${DOCKERFILE_FOR_BUILD_ENV}" "${PROJECT_ROOT_DIR}"
+if [ $? -ne 0 ]; then
+    echo "ERROR: Docker image build (${DOCKER_BUILDER_IMAGE_NAME}) failed!"
+    exit 1
 fi
+echo "[BUILD.SH] Docker builder image ${DOCKER_BUILDER_IMAGE_NAME} built successfully."
 
-# Build the application using the .spec file
-echo "Building application with PyInstaller using Examiner.spec..."
-pyinstaller Examiner.spec 
+# --- Run PyInstaller inside the Docker Container ---
+echo "[BUILD.SH] Running PyInstaller inside Docker container..."
+mkdir -p "${HOST_DIST_DIR}"
+mkdir -p "${HOST_BUILD_DIR}"
+
+docker run --rm \
+    -v "${PROJECT_ROOT_DIR}:/app" \
+    -v "${HOST_DIST_DIR}:/app/dist" \
+    -v "${HOST_BUILD_DIR}:/app/build" \
+    "${DOCKER_BUILDER_IMAGE_NAME}" \
+    bash -c "cd /app && python -m PyInstaller --distpath /app/dist --workpath /app/build examiner.spec"
 
 if [ $? -ne 0 ]; then
-    echo "PyInstaller build failed!"
+    echo "ERROR: PyInstaller build inside Docker failed!"
     exit 1
 fi
 
-echo "PyInstaller build completed."
+# --- Packaging the Linux Application ---
+PYINSTALLER_OUTPUT_PATH="${HOST_DIST_DIR}/${PYINSTALLER_OUTPUT_DIR_NAME}"
 
-# Package the application
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    echo "Packaging for macOS..."
-    if [ -d "dist/Examiner.app" ]; then
-        # Create a ZIP of the .app bundle
-        (cd dist && zip -r "../Examiner-macos-${APP_VERSION}.zip" "Examiner.app")
-        echo "macOS package created: Examiner-macos-${APP_VERSION}.zip"
+if [ -d "${PYINSTALLER_OUTPUT_PATH}" ]; then
+    echo "[BUILD.SH] Packaging Linux application from ${PYINSTALLER_OUTPUT_PATH}..."
+    TARGET_PACKAGE_DIR="${HOST_DIST_DIR}/${LINUX_PACKAGE_NAME_BASE}"
+    rm -rf "${TARGET_PACKAGE_DIR}" 
+    mkdir -p "${TARGET_PACKAGE_DIR}"
+    echo "[BUILD.SH] Copying application files from ${PYINSTALLER_OUTPUT_PATH} to ${TARGET_PACKAGE_DIR}/"
+    cp -R "${PYINSTALLER_OUTPUT_PATH}/." "${TARGET_PACKAGE_DIR}/"
+    if [ -f "${PROJECT_ROOT_DIR}/install.sh" ]; then
+        echo "[BUILD.SH] Copying install.sh to ${TARGET_PACKAGE_DIR}/"
+        cp "${PROJECT_ROOT_DIR}/install.sh" "${TARGET_PACKAGE_DIR}/"
+        chmod +x "${TARGET_PACKAGE_DIR}/install.sh"
     else
-        echo "Error: dist/Examiner.app not found!"
-        exit 1
+        echo "WARNING: install.sh not found in project root (${PROJECT_ROOT_DIR}). It will not be included in the archive."
     fi
-else # Linux
-    echo "Packaging for Linux..."
-    if [ -d "dist/Examiner" ]; then
-        # Copy the modified install.sh into the directory to be archived
-        cp install.sh dist/Examiner/
-        chmod +x dist/Examiner/install.sh
-
-        # Create a tar.gz archive
-        (cd dist && tar -czvf "../Examiner-linux-${APP_VERSION}.tar.gz" "Examiner")
-        echo "Linux package created: Examiner-linux-${APP_VERSION}.tar.gz"
+    echo "[BUILD.SH] Creating archive ./${LINUX_FINAL_ARCHIVE_NAME} from directory dist/${LINUX_PACKAGE_NAME_BASE}..."
+    (cd "${HOST_DIST_DIR}" && tar -czvf "../${LINUX_FINAL_ARCHIVE_NAME}" "${LINUX_PACKAGE_NAME_BASE}")
+    if [ $? -eq 0 ]; then
+        echo "[BUILD.SH] Linux package created successfully: ./${LINUX_FINAL_ARCHIVE_NAME}"
     else
-        echo "Error: dist/Examiner directory not found!"
-        exit 1
+        echo "ERROR: Failed to create Linux archive ./${LINUX_FINAL_ARCHIVE_NAME}."
     fi
+    rm -rf "${TARGET_PACKAGE_DIR}"
+else
+    echo "ERROR: PyInstaller output directory ${PYINSTALLER_OUTPUT_PATH} not found after build!"
+    exit 1
 fi
 
-echo "Build and packaging completed successfully!"
-echo "Output artifacts are in the project root directory."
-
-deactivate # Deactivate virtual environment
+rm -f "${PROJECT_ROOT_DIR}/${DOCKERFILE_FOR_BUILD_ENV}"
+echo "[BUILD.SH] Linux build and packaging script finished successfully."
+echo "The Linux artifact is: ./${LINUX_FINAL_ARCHIVE_NAME}"

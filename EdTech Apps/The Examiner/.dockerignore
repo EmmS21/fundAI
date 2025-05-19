@@ -1,0 +1,28 @@
+# Git
+.git
+.gitignore
+
+# Python virtual environments
+venv/
+.venv/
+*.pyc
+__pycache__/
+*.env
+.env
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Build artifacts (if they are generated locally and you don't want them in the image)
+dist/
+build/
+*.spec # examiner.spec is needed, so be careful if you have other spec files
+
+# Logs and temporary files
+*.log
+debug_output.txt
+sync_queue.json
+
+# macOS specific
+.DS_Store

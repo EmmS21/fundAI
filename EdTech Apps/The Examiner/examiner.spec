@@ -5,32 +5,156 @@ import sys
 from pathlib import Path
 # import site # Typically not needed unless you are manipulating Python's site packages paths
 
+# --- Create pyi_rth_qt6.py runtime hook FIRST ---
+# This hook will be created in the same directory as the .spec file
+# It helps the bundled application find its own Qt plugins.
+# Moved this to the TOP of the spec file to ensure it exists before Analysis.
+hook_content = """
+import os
+import sys
+
+# Set QT_PLUGIN_PATH to point to the bundled Qt plugins
+# This is crucial for PySide6 to find its platform plugins, etc.
+if sys.platform.startswith('linux') or sys.platform == 'darwin': # Applicable for both Linux and macOS
+    if hasattr(sys, '_MEIPASS'):
+        # Default base for PySide6 bundled files
+        pyside_base = os.path.join(sys._MEIPASS, 'PySide6')
+        
+        # Main plugin path
+        qt_plugin_path = os.path.join(pyside_base, 'Qt', 'plugins')
+        # Alternative if plugins are directly under PySide6 (older PyInstaller/PySide6 versions)
+        if not os.path.isdir(os.path.join(qt_plugin_path, 'platforms')):
+             plugin_path_alt = os.path.join(pyside_base, 'plugins')
+             if os.path.isdir(os.path.join(plugin_path_alt, 'platforms')):
+                 qt_plugin_path = plugin_path_alt
+
+        print(f"INFO: [pyi_rth_qt6] Effective Qt Plugin Path: {qt_plugin_path}")
+        os.environ['QT_PLUGIN_PATH'] = qt_plugin_path
+        
+        qpa_plugin_path = os.path.join(qt_plugin_path, 'platforms')
+        print(f"INFO: [pyi_rth_qt6] Effective QPA Platform Plugin Path: {qpa_plugin_path}")
+        os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = qpa_plugin_path
+
+        # Also add to LD_LIBRARY_PATH as an additional measure for Linux
+        if sys.platform.startswith('linux'):
+            current_ld_path = os.environ.get('LD_LIBRARY_PATH', '')
+            paths_to_add_to_ld = []
+
+            # Add sys._MEIPASS first, as it's the root of the bundled app
+            if sys._MEIPASS not in paths_to_add_to_ld:
+                paths_to_add_to_ld.append(sys._MEIPASS)
+
+            # Add PySide6 library path (e.g., _MEIPASS/PySide6)
+            pyside_lib_path = os.path.join(sys._MEIPASS, 'PySide6') # Contains libPySide6.so.6.x etc.
+            if os.path.isdir(pyside_lib_path) and pyside_lib_path not in paths_to_add_to_ld:
+                 paths_to_add_to_ld.append(pyside_lib_path)
+
+            # Add Qt plugin paths
+            if os.path.isdir(qt_plugin_path) and qt_plugin_path not in paths_to_add_to_ld:
+                 paths_to_add_to_ld.append(qt_plugin_path)
+            if os.path.isdir(qpa_plugin_path) and qpa_plugin_path not in paths_to_add_to_ld:
+                paths_to_add_to_ld.append(qpa_plugin_path)
+            
+            new_ld_path_components = paths_to_add_to_ld
+            if current_ld_path: # Prepend our paths, then append existing ones
+                new_ld_path_components.extend(current_ld_path.split(os.pathsep))
+            
+            # Remove duplicates while preserving order
+            final_ld_path_components = []
+            seen_paths = set()
+            for path_component in new_ld_path_components:
+                if path_component not in seen_paths:
+                    final_ld_path_components.append(path_component)
+                    seen_paths.add(path_component)
+            
+            os.environ['LD_LIBRARY_PATH'] = os.pathsep.join(final_ld_path_components)
+            print(f"INFO: [pyi_rth_qt6] Updated LD_LIBRARY_PATH: {os.environ['LD_LIBRARY_PATH']}")
+
+        # Debug: List available platform plugins if path exists
+        if os.path.isdir(qpa_plugin_path):
+            print(f"INFO: [pyi_rth_qt6] Available platform plugins in {qpa_plugin_path}: {os.listdir(qpa_plugin_path)}")
+            # Further debug: check libqxcb.so dependencies if possible (requires ldd, not easy in hook)
+            # For example, if 'libqxcb.so' in os.listdir(qpa_plugin_path):
+            #    print(f"INFO: [pyi_rth_qt6] libqxcb.so found at {os.path.join(qpa_plugin_path, 'libqxcb.so')}")
+
+        else:
+            print(f"WARNING: [pyi_rth_qt6] QPA plugin path does NOT exist: {qpa_plugin_path}")
+    else:
+        # Development mode (running from source) - try to find system or venv PySide6 plugins
+        try:
+            import PySide6
+            pyside6_dir = os.path.dirname(PySide6.__file__)
+            dev_plugin_path = os.path.join(pyside6_dir, 'Qt', 'plugins')
+            if not os.path.isdir(os.path.join(dev_plugin_path, 'platforms')):
+                dev_plugin_path_alt = os.path.join(pyside6_dir, 'plugins')
+                if os.path.isdir(os.path.join(dev_plugin_path_alt, 'platforms')):
+                    dev_plugin_path = dev_plugin_path_alt
+            
+            if os.path.isdir(dev_plugin_path):
+                # Only set if not already set, to avoid overriding Docker ENV vars during Linux build
+                if 'QT_PLUGIN_PATH' not in os.environ:
+                    os.environ['QT_PLUGIN_PATH'] = dev_plugin_path
+                if 'QT_QPA_PLATFORM_PLUGIN_PATH' not in os.environ:
+                    dev_qpa_plugin_path = os.path.join(dev_plugin_path, 'platforms')
+                    if os.path.isdir(dev_qpa_plugin_path):
+                        os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = dev_qpa_plugin_path
+        except ImportError:
+            pass
+"""
+Path('pyi_rth_qt6.py').write_text(hook_content)
+print("INFO: [spec] Created/Updated pyi_rth_qt6.py")
+
 # --- Dynamic Library Discovery for llama_cpp ---
 # This section dynamically finds shared libraries (.so, .dylib, .dll)
 # within the installed llama_cpp package. This is more robust than hardcoding paths.
 llama_cpp_libs_to_bundle = []
 try:
     import llama_cpp
+    import os
+    
+    # Debug output during build
+    print(f"LLAMA-CPP DIR: {os.path.dirname(llama_cpp.__file__)}")
+    
     llama_cpp_dir = os.path.dirname(llama_cpp.__file__)
-    # Add all shared libraries in the llama_cpp package directory and its subdirectories (like llama_cpp/lib)
+    
+    # Method 1: Search for all shared libraries
     for root, _, files in os.walk(llama_cpp_dir):
-        for file in files:
-            if file.endswith(('.so', '.dylib', '.dll')):
-                lib_path = os.path.join(root, file)
-                # The second element of the tuple is the destination directory within the bundle.
-                # Placing them in a 'llama_cpp' subdirectory inside the bundle is a common practice.
-                destination_in_bundle = os.path.join('llama_cpp', os.path.relpath(root, llama_cpp_dir), file)
-                if destination_in_bundle.startswith('llama_cpp/./'): # Clean up path if relpath returns './'
-                    destination_in_bundle = destination_in_bundle.replace('llama_cpp/./', 'llama_cpp/', 1)
-
-                llama_cpp_libs_to_bundle.append((lib_path, os.path.dirname(destination_in_bundle)))
-    if llama_cpp_libs_to_bundle:
-        print(f"Found and will bundle llama_cpp libraries: {llama_cpp_libs_to_bundle}")
-    else:
-        print("Warning: No llama_cpp libraries found to bundle automatically. Ensure llama_cpp is correctly installed.")
-except (ImportError, FileNotFoundError) as e:
-    print(f"Warning: Could not find llama_cpp or its libraries: {e}. Manual inclusion might be needed if runtime errors occur.")
-    llama_cpp_libs_to_bundle = []
+        for file_name in files:
+            if file_name.endswith(('.so', '.dylib', '.dll')):
+                lib_path = os.path.join(root, file_name)
+                destination = os.path.join('llama_cpp_libs', os.path.relpath(root, llama_cpp_dir))
+                print(f"Found library: {lib_path} -> {destination}")
+                llama_cpp_libs_to_bundle.append((lib_path, destination))
+    
+    # Method 2: Check specific locations if method 1 fails
+    if not llama_cpp_libs_to_bundle:
+        # Check if the library is in the lib directory
+        lib_dir = os.path.join(llama_cpp_dir, 'lib')
+        if os.path.exists(lib_dir):
+            print(f"Checking lib directory: {lib_dir}")
+            for file_name in os.listdir(lib_dir):
+                if file_name.endswith(('.so', '.dylib', '.dll')):
+                    lib_path = os.path.join(lib_dir, file_name)
+                    print(f"Found library in lib dir: {lib_path}")
+                    llama_cpp_libs_to_bundle.append((lib_path, 'llama_cpp_libs'))
+    
+    # Method 3: Direct approach if methods 1 and 2 fail
+    if not llama_cpp_libs_to_bundle:
+        # Try to find libllama directly
+        for lib_name in ['libllama.so', 'llama.dll', 'libllama.dylib']:
+            potential_path = os.path.join(llama_cpp_dir, lib_name)
+            if os.path.exists(potential_path):
+                print(f"Found library directly: {potential_path}")
+                llama_cpp_libs_to_bundle.append((potential_path, 'llama_cpp_libs'))
+    
+    # Final check and warning
+    if not llama_cpp_libs_to_bundle:
+        print("WARNING: No llama_cpp libraries found to bundle!")
+        
+except ImportError:
+    print("WARNING: llama_cpp package not found. Cannot bundle its libraries.")
+except Exception as e:
+    print(f"WARNING: An error occurred during llama_cpp library discovery: {e}")
 
 # --- Model File Handling (NOT BUNDLED) ---
 # The GGUF model is assumed to be pre-installed on the target machine.
@@ -57,31 +181,75 @@ else:
     app_icon_main = 'src/assets/examiner.jpg' # For Linux executable
     exe_icon = app_icon_main
 
+# --- Data Files ---
+datas = [
+    ('src/assets', 'src/assets'),
+    ('src/config', 'src/config'),
+    # Add other non-Python data directories if they exist and are needed directly
+    # e.g., ('src/ui_files', 'src/ui_files') if you have .ui files there
+]
+# If PySide6 needs specific data files like translations, uncomment and adapt:
+# from PyInstaller.utils.hooks import collect_data_files
+# datas += collect_data_files('PySide6', subdir='Qt/translations', destdir='PySide6/Qt/translations', include_py_files=False)
+# datas += collect_data_files('PySide6', subdir='Qt/resources', destdir='PySide6/Qt/resources', include_py_files=False)
+
+# --- Hidden Imports ---
+hiddenimports = [
+    'sqlalchemy.sql.default_comparator',
+    'sqlalchemy.dialects.sqlite',
+    'sqlalchemy.ext.declarative',
+    'src.data.database.models',
+    'src.utils.db',
+    'src.core.services',
+    'llama_cpp',
+    'llama_cpp.llama',
+    'PIL._tkinter_finder',
+    'PySide6.QtSvg',
+    'PySide6.QtPrintSupport',
+    # Add other Qt modules your app uses if PyInstaller misses them
+    'sentry_sdk.integrations', # Ensure parent package is processed
+    'sentry_sdk.integrations.stdlib',
+    'sentry_sdk.integrations.logging', 
+    'sentry_sdk.integrations.atexit',
+    'sentry_sdk.integrations.excepthook',
+    'sentry_sdk.integrations.dedupe',
+    'sentry_sdk.integrations.threading',
+]
+
+# Add this to your examiner.spec file inside the Analysis section
+qt_plugins = [
+    'platforms/libqxcb.so',
+    'platforms/libqwayland.so',
+    'platformthemes/libqgtk3.so',
+    'imageformats/libqjpeg.so', 
+    'imageformats/libqsvg.so',
+]
+
+binaries = []
+for plugin in qt_plugins:
+    if hasattr(sys, '_MEIPASS'):
+        binaries.append((os.path.join(sys._MEIPASS, 'PySide6', 'Qt', 'plugins', plugin), os.path.join('PySide6', 'Qt', 'plugins', os.path.dirname(plugin))))
+    else:
+        try:
+            import PySide6
+            pyside_dir = os.path.dirname(PySide6.__file__)
+            plugin_path = os.path.join(pyside_dir, 'Qt', 'plugins', plugin)
+            if os.path.exists(plugin_path):
+                binaries.append((plugin_path, os.path.join('PySide6', 'Qt', 'plugins', os.path.dirname(plugin))))
+        except ImportError:
+            pass
 
 a = Analysis(
     ['src/main.py'],
-    pathex=[os.path.abspath('.')], # Adds current directory to PyInstaller's search path
-    binaries=llama_cpp_libs_to_bundle, # Use dynamically discovered llama_cpp libraries
-    datas=[ # Data files to be bundled with the application
-        ('src/assets', 'src/assets'),      # All assets will be in 'src/assets' in the bundle
-        ('src/config', 'src/config'),      # Configuration files
-        ('src/core', 'src/core'),          # Core logic modules (if they contain data)
-        ('src/data', 'src/data'),          # Data-related modules/files
-        ('src/ui', 'src/ui'),              # UI definition files (e.g., .ui files if any)
-        ('src/utils', 'src/utils'),        # Utility modules (if they contain data)
-        # The GGUF model is NOT bundled, so model_data is not added here.
-    ],
-    hiddenimports=[ # List of modules that PyInstaller might miss
-        'sqlalchemy.sql.default_comparator',
-        'sqlalchemy.ext.declarative',
-        'src.data.database.models',
-        'src.utils.db',
-        'src.core.services',
-        'llama_cpp', # Ensures llama_cpp modules are included
-    ],
+    pathex=[os.path.abspath('.')],
+    binaries=llama_cpp_libs_to_bundle + binaries,  # Add binaries here
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[
+        'pyi_rth_qt6.py' 
+    ],
     excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -91,44 +259,52 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    [], # Additional scripts, usually empty
-    exclude_binaries=True, # Binaries are handled by COLLECT and a.binaries
-    name='Examiner',       # The name of the executable
-    debug=True,            # Enable debug mode (more verbose output)
-    bootloader_ignore_signals=False,
-    strip=False,           # Do not strip symbols (can help with debugging)
-    upx=True,              # Use UPX to compress the executable (if available)
-    console=True,          # True: shows a console window (good for CLI apps or debugging GUI apps)
-                           # False: hides console (typical for GUI apps in release)
-    icon=exe_icon          # Icon for the executable (mainly for Windows and Linux)
-)
-
-coll = COLLECT( # Gathers all files for the application directory
-    exe,
-    a.binaries,  # Bundled binary files (like llama_cpp libs)
-    a.zipfiles,  # Zipped dependencies
-    a.datas,     # Data files
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='Examiner' # Name of the output folder in 'dist'
-)
-
-# --- macOS .app Bundle Configuration ---
-# This section is specific to macOS builds.
+# For macOS .app, BUNDLE is the primary target. EXE is intermediate.
+# For Linux, EXE and COLLECT are primary.
 if sys.platform == "darwin":
+    # EXE for macOS is an intermediate step for BUNDLE
+    exe = EXE(pyz, a.scripts, [], name='Examiner', debug=True, strip=False, upx=False, console=False, icon=None) # console=False for .app
     app = BUNDLE(
-        coll,
-        name='Examiner.app', # Name of the .app bundle
-        icon=app_icon_main,  # Path to the .icns file (e.g., src/assets/examiner.icns)
-        bundle_identifier='com.fundai.examiner', # Unique identifier for the app
-        info_plist={ # Additional entries for the Info.plist file
+        exe, # Pass the EXE object directly
+        name='Examiner.app',
+        icon=app_icon_main, # This should be src/assets/examiner.icns
+        bundle_identifier='com.fundai.examiner',
+        info_plist={
             'NSHighResolutionCapable': 'True',
-            'CFBundleShortVersionString': '1.0.0', # User-visible version string
-            'CFBundleVersion': '1.0',          # Build version number
-            # 'LSMinimumSystemVersion': '10.15', # Example: specify minimum macOS version
-        }
+            'CFBundleShortVersionString': '1.0.0',
+            'CFBundleVersion': '1.0.0.1',
+            'LSMinimumSystemVersion': '11.0', # Example, adjust as needed
+            'NSPrincipalClass': 'NSApplication',
+            'NSMainNibFile': 'MainMenu',
+            'CFBundlePackageType': 'APPL'
+        },
+        # PyInstaller will collect binaries and datas from Analysis 'a' for BUNDLE
+        binaries=a.binaries, # Pass binaries from Analysis
+        datas=a.datas,       # Pass datas from Analysis
+        zipfiles=a.zipfiles
+    )
+else: # For Linux build (this part will be executed inside Docker by build.sh)
+    exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name='Examiner',
+        debug=True,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,
+        console=True, 
+        icon=exe_icon
+    )
+    # For Linux, we need COLLECT to create the one-dir bundle
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.zipfiles,
+        a.datas,
+        strip=False,
+        upx=False,
+        upx_exclude=[],
+        name='Examiner' # Output folder in dist/
     )
