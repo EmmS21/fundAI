@@ -2363,3 +2363,72 @@ INFO:src.core.network.sync_service:Starting student activity report sync...
 >>> DEBUG: *** Database file NOT FOUND at /Users/emmanuelsibanda/Desktop/GitHub/fundAI/EdTech Apps/The Examiner/student_profile.db ***
 ERROR:src.core.history.user_history_manager:Cannot get student activity for sync (user 1): No database connection.
 INFO:src.core.network.sync_service:No activity to sync
+INFO:src.core.network.sync_service:SyncService: Performing periodic student activity report sync.
+INFO:src.core.network.sync_service:Starting student activity report sync...
+>>> DEBUG: UserHistoryManager _get_connection() called.
+>>> DEBUG: UserHistoryManager _get_connection(): self.conn is None, attempting reconnect.
+>>> DEBUG: UserHistoryManager _connect_db() entered.
+>>> DEBUG: *** Database file NOT FOUND at /Users/emmanuelsibanda/Desktop/GitHub/fundAI/EdTech Apps/The Examiner/student_profile.db ***
+ERROR:src.core.history.user_history_manager:Cannot get student activity for sync (user 1): No database connection.
+INFO:src.core.network.sync_service:No activity to sync
+INFO:src.data.cache.cache_manager:Checking for new content to cache
+INFO:src.data.cache.cache_manager:Checking for cache updates...
+INFO:src.data.cache.cache_manager:MongoDB connected, checking for new content...
+2025-05-20 15:56:37,568 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+2025-05-20 15:56:37,571 INFO sqlalchemy.engine.Engine SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
+FROM users
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
+FROM users
+ LIMIT ? OFFSET ?
+2025-05-20 15:56:37,572 INFO sqlalchemy.engine.Engine [cached since 3.566e+04s ago] (1, 0)
+INFO:sqlalchemy.engine.Engine:[cached since 3.566e+04s ago] (1, 0)
+2025-05-20 15:56:37,595 INFO sqlalchemy.engine.Engine COMMIT
+INFO:sqlalchemy.engine.Engine:COMMIT
+2025-05-20 15:56:37,596 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+2025-05-20 15:56:37,596 INFO sqlalchemy.engine.Engine SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
+FROM users
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:SELECT users.id AS users_id, users.hardware_id AS users_hardware_id, users.full_name AS users_full_name, users.birthday AS users_birthday, users.country AS users_country, users.school_level AS users_school_level, users.grade AS users_grade, users.school AS users_school, users.profile_picture AS users_profile_picture, users.city AS users_city, users.medals AS users_medals, users.created_at AS users_created_at, users.updated_at AS users_updated_at, users.sync_status AS users_sync_status, users.sync_attempts AS users_sync_attempts, users.last_sync_attempt AS users_last_sync_attempt 
+FROM users
+ LIMIT ? OFFSET ?
+2025-05-20 15:56:37,597 INFO sqlalchemy.engine.Engine [cached since 3.566e+04s ago] (1, 0)
+INFO:sqlalchemy.engine.Engine:[cached since 3.566e+04s ago] (1, 0)
+2025-05-20 15:56:37,598 INFO sqlalchemy.engine.Engine SELECT user_subjects.id AS user_subjects_id, user_subjects.user_id AS user_subjects_user_id, user_subjects.subject_id AS user_subjects_subject_id, user_subjects.grade_7 AS user_subjects_grade_7, user_subjects.o_level AS user_subjects_o_level, user_subjects.a_level AS user_subjects_a_level, user_subjects.created_at AS user_subjects_created_at, user_subjects.updated_at AS user_subjects_updated_at, subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
+FROM user_subjects JOIN subjects ON user_subjects.subject_id = subjects.id 
+WHERE user_subjects.user_id = ?
+INFO:sqlalchemy.engine.Engine:SELECT user_subjects.id AS user_subjects_id, user_subjects.user_id AS user_subjects_user_id, user_subjects.subject_id AS user_subjects_subject_id, user_subjects.grade_7 AS user_subjects_grade_7, user_subjects.o_level AS user_subjects_o_level, user_subjects.a_level AS user_subjects_a_level, user_subjects.created_at AS user_subjects_created_at, user_subjects.updated_at AS user_subjects_updated_at, subjects.id AS subjects_id, subjects.name AS subjects_name, subjects.created_at AS subjects_created_at 
+FROM user_subjects JOIN subjects ON user_subjects.subject_id = subjects.id 
+WHERE user_subjects.user_id = ?
+2025-05-20 15:56:37,599 INFO sqlalchemy.engine.Engine [cached since 3.566e+04s ago] (1,)
+INFO:sqlalchemy.engine.Engine:[cached since 3.566e+04s ago] (1,)
+INFO:src.data.database.operations:No subjects found for user 1
+2025-05-20 15:56:37,599 INFO sqlalchemy.engine.Engine COMMIT
+INFO:sqlalchemy.engine.Engine:COMMIT
+WARNING:src.data.cache.cache_manager:No subjects found for user, skipping cache update check
+INFO:src.core.network.sync_service:SyncService: Performing periodic student activity report sync.
+INFO:src.core.network.sync_service:Starting student activity report sync...
+>>> DEBUG: UserHistoryManager _get_connection() called.
+>>> DEBUG: UserHistoryManager _get_connection(): self.conn is None, attempting reconnect.
+>>> DEBUG: UserHistoryManager _connect_db() entered.
+>>> DEBUG: *** Database file NOT FOUND at /Users/emmanuelsibanda/Desktop/GitHub/fundAI/EdTech Apps/The Examiner/student_profile.db ***
+ERROR:src.core.history.user_history_manager:Cannot get student activity for sync (user 1): No database connection.
+INFO:src.core.network.sync_service:No activity to sync
+INFO:src.core.network.sync_service:SyncService: Performing periodic student activity report sync.
+INFO:src.core.network.sync_service:Starting student activity report sync...
+>>> DEBUG: UserHistoryManager _get_connection() called.
+>>> DEBUG: UserHistoryManager _get_connection(): self.conn is None, attempting reconnect.
+>>> DEBUG: UserHistoryManager _connect_db() entered.
+>>> DEBUG: *** Database file NOT FOUND at /Users/emmanuelsibanda/Desktop/GitHub/fundAI/EdTech Apps/The Examiner/student_profile.db ***
+ERROR:src.core.history.user_history_manager:Cannot get student activity for sync (user 1): No database connection.
+INFO:src.core.network.sync_service:No activity to sync
+INFO:src.core.network.sync_service:SyncService: Performing periodic student activity report sync.
+INFO:src.core.network.sync_service:Starting student activity report sync...
+>>> DEBUG: UserHistoryManager _get_connection() called.
+>>> DEBUG: UserHistoryManager _get_connection(): self.conn is None, attempting reconnect.
+>>> DEBUG: UserHistoryManager _connect_db() entered.
+>>> DEBUG: *** Database file NOT FOUND at /Users/emmanuelsibanda/Desktop/GitHub/fundAI/EdTech Apps/The Examiner/student_profile.db ***
+ERROR:src.core.history.user_history_manager:Cannot get student activity for sync (user 1): No database connection.
+INFO:src.core.network.sync_service:No activity to sync
