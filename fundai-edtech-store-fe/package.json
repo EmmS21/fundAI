@@ -1,6 +1,6 @@
 {
   "name": "fundai-edtech-store",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Funda AI EdTech Store - Desktop Application",
   "homepage": "https://github.com/EmmS21/fundAI",
   "main": "electron/main.js",
@@ -36,8 +36,14 @@
     },
     "linux": {
       "target": [
-        "AppImage",
-        "deb"
+        {
+          "target": "AppImage",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64", "arm64"]
+        }
       ],
       "category": "Education",
       "icon": "src/assets/logo.icns",

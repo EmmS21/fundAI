@@ -2432,3 +2432,11 @@ INFO:src.core.network.sync_service:Starting student activity report sync...
 >>> DEBUG: *** Database file NOT FOUND at /Users/emmanuelsibanda/Desktop/GitHub/fundAI/EdTech Apps/The Examiner/student_profile.db ***
 ERROR:src.core.history.user_history_manager:Cannot get student activity for sync (user 1): No database connection.
 INFO:src.core.network.sync_service:No activity to sync
+INFO:src.core.network.sync_service:SyncService: Performing periodic student activity report sync.
+INFO:src.core.network.sync_service:Starting student activity report sync...
+>>> DEBUG: UserHistoryManager _get_connection() called.
+>>> DEBUG: UserHistoryManager _get_connection(): self.conn is None, attempting reconnect.
+>>> DEBUG: UserHistoryManager _connect_db() entered.
+>>> DEBUG: *** Database file NOT FOUND at /Users/emmanuelsibanda/Desktop/GitHub/fundAI/EdTech Apps/The Examiner/student_profile.db ***
+ERROR:src.core.history.user_history_manager:Cannot get student activity for sync (user 1): No database connection.
+INFO:src.core.network.sync_service:No activity to sync
