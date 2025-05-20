@@ -7,14 +7,32 @@ const downloadManager = require('./services/downloadManager');
 const crypto = require('crypto');
 const log = require('electron-log');
 const { URLSearchParams } = require('url');
+const url = require('url');
 
 // --- Update Checking ---
 const { autoUpdater } = require('electron-updater');
 
-log.transports.file.level = 'info';
-autoUpdater.logger = log;
-autoUpdater.autoDownload = true;
+// --- Test File Write & Basic Log Config ---
+const desktopPath = app.getPath('desktop');
+const directLogTestPath = path.join(desktopPath, 'main_process_started_TEST.txt');
+const electronLogPath = path.join(desktopPath, 'fundai-main.log');
 
+try {
+  fs.writeFileSync(directLogTestPath, `Main process script was executed at: ${new Date().toISOString()}\nApp Path: ${app.getAppPath()}\nUser Data Path: ${app.getPath('userData')}\nIs Packaged: ${app.isPackaged}\n`);
+} catch (e) {
+  // If this fails, we can't even write a simple file. Log to console if possible (might not be visible)
+  console.error('CRITICAL: Failed to write directLogTestPath:', e);
+}
+
+log.transports.file.resolvePathFn = () => electronLogPath;
+log.transports.file.level = 'info';
+log.transports.console.level = 'info'; // For build terminal, if anything shows up
+
+log.info(`----------------------------------------------------`);
+log.info(`MAIN PROCESS SCRIPT INITIALIZED (${new Date().toISOString()})`);
+log.info(`Electron-log file should be at: ${electronLogPath}`);
+log.info(`Direct test log file should be at: ${directLogTestPath}`);
+log.info(`isDev: ${process.env.NODE_ENV === 'development'}`);
 
 /** @typedef {import('./types').WindowState} WindowState */
 
@@ -60,52 +78,68 @@ module.exports = { WindowStateManager };
 let mainWindow;
 
 const createWindow = () => {
+  log.info('Attempting to create main window (further simplified)...');
   try {
-    const stateManager = new WindowStateManager(1200, 800);
-    const windowState = stateManager.savedState;
-
     mainWindow = new BrowserWindow({
-      width: windowState.width,
-      height: windowState.height,
-      x: windowState.x,
-      y: windowState.y,
+      width: 1200,
+      height: 800,
       webPreferences: {
-        nodeIntegration: false,
+        preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,
-        preload: path.join(__dirname, 'preload.js')
+        nodeIntegration: false,
+        webSecurity: true, // Keep this true!
+        allowFileAccess: true // Usually default, but good to be explicit
       },
       show: false,
-      backgroundColor: '#ffffff'
+    });
+    log.info('BrowserWindow created.');
+
+    mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      log.error(`[webContents] DID-FAIL-LOAD: URL: ${validatedURL}, Code: ${errorCode}, Desc: ${errorDescription}, MainFrame: ${isMainFrame}`);
+      console.error(`[webContents] DID-FAIL-LOAD: URL: ${validatedURL}, Code: ${errorCode}, Desc: ${errorDescription}, MainFrame: ${isMainFrame}`);
+    });
+    mainWindow.webContents.on('did-finish-load', () => {
+      log.info(`[webContents] DID-FINISH-LOAD for main window.`);
+    });
+     mainWindow.webContents.on('dom-ready', () => {
+      log.info(`[webContents] DOM-READY for main window.`);
+
+      // Try opening devtools once dom is ready in the packaged app
+      // if (!isDev) { // We'll comment this out for production
+      //   log.info('Opening devtools for main window on dom-ready (packaged app).');
+      //   mainWindow.webContents.openDevTools({ mode: 'detach' });
+      // }
     });
 
-    if (windowState.isMaximized) {
-      mainWindow.maximize();
-    }
-
     mainWindow.once('ready-to-show', () => {
+      log.info('Main window ready-to-show.');
       mainWindow.show();
     });
 
+    const loadPath = path.join(__dirname, '../dist/index.html');
+    const loadUrl = url.format({
+      pathname: loadPath,
+      protocol: 'file:',
+      slashes: true,
+    });
+
+    log.info(`Attempting to load URL: ${loadUrl}`);
+    mainWindow.loadURL(loadUrl)
+      .then(() => {
+        log.info(`Successfully initiated loading of URL: ${loadUrl}`);
+      })
+      .catch(err => {
+        log.error(`Error on mainWindow.loadURL for ${loadUrl}:`, err);
+      });
+
     if (isDev) {
-      mainWindow.loadURL('http://localhost:5173');
-      mainWindow.webContents.openDevTools();
-    } else {
-      mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+        log.info('Opening dev tools for main window (dev mode).');
+        mainWindow.webContents.openDevTools();
     }
 
-    mainWindow.on('close', () => {
-      stateManager.saveState(mainWindow);
-    });
-
-    mainWindow.on('closed', () => {
-      mainWindow = null;
-    });
-
-    // Setup all handlers
-    setupAuthHandlers();
   } catch (error) {
-    console.error('Failed to create window:', error);
-    app.quit();
+    log.error('FATAL ERROR in createWindow:', error);
+    // No app.quit() here to ensure logs can be written if possible
   }
 };
 

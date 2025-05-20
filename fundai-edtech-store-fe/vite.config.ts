@@ -8,6 +8,7 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     plugins: [react()],
+    base: command === 'serve' ? '/' : './',
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src')
