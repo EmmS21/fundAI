@@ -91,17 +91,16 @@ echo "[BUILD.SH] ${DOCKERFILE_FOR_BUILD_ENV} created successfully."
 
 # --- Build the Docker Image for the Build Environment ---
 echo "[BUILD.SH] Building Docker image: ${DOCKER_BUILDER_IMAGE_NAME}..."
-# Build for the host architecture. If on ARM Mac, this will be ARM.
-# If you needed an x86_64 Linux build specifically, you'd add --platform linux/amd64 here.
-docker build -t "${DOCKER_BUILDER_IMAGE_NAME}" -f "${PROJECT_ROOT_DIR}/${DOCKERFILE_FOR_BUILD_ENV}" "${PROJECT_ROOT_DIR}"
+# Build specifically for linux/amd64 to ensure compatibility with older x86_64 systems
+docker build --platform linux/amd64 -t "${DOCKER_BUILDER_IMAGE_NAME}" -f "${PROJECT_ROOT_DIR}/${DOCKERFILE_FOR_BUILD_ENV}" "${PROJECT_ROOT_DIR}"
 if [ $? -ne 0 ]; then
-    echo "ERROR: Docker image build (${DOCKER_BUILDER_IMAGE_NAME}) failed!"
+    echo "ERROR: Docker image build (${DOCKER_BUILDER_IMAGE_NAME}) for platform linux/amd64 failed!"
     exit 1
 fi
-echo "[BUILD.SH] Docker builder image ${DOCKER_BUILDER_IMAGE_NAME} built successfully."
+echo "[BUILD.SH] Docker builder image ${DOCKER_BUILDER_IMAGE_NAME} for platform linux/amd64 built successfully."
 
 # --- Run PyInstaller inside the Docker Container ---
-echo "[BUILD.SH] Running PyInstaller inside Docker container..."
+echo "[BUILD.SH] Running PyInstaller inside Docker container (target: linux/amd64)..."
 mkdir -p "${HOST_DIST_DIR}"
 mkdir -p "${HOST_BUILD_DIR}"
 
