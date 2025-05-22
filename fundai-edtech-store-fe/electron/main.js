@@ -12,6 +12,12 @@ const url = require('url');
 // --- Update Checking ---
 const { autoUpdater } = require('electron-updater');
 
+// Configure autoUpdater
+autoUpdater.logger = log;
+autoUpdater.logger.transports.file.level = 'info';
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
+
 // --- Test File Write & Basic Log Config ---
 const desktopPath = app.getPath('desktop');
 const directLogTestPath = path.join(desktopPath, 'main_process_started_TEST.txt');
@@ -723,6 +729,13 @@ app.whenReady().then(() => {
 
   setupIpcHandlers(/* pass dependencies like store if needed */);
   setupAuthHandlers();
+  
+  // Check for updates
+  if (!isDev) {
+    log.info('Checking for updates...');
+    autoUpdater.checkForUpdatesAndNotify();
+    setupPeriodicUpdateChecks();
+  }
 
   log.info('Calling createWindow.');
   createWindow();
@@ -860,6 +873,30 @@ autoUpdater.on('update-downloaded', (info) => {
   }
 });
 // --- End AutoUpdater Event Handlers ---
+
+// Setup periodic update checks (every 4 hours)
+function setupPeriodicUpdateChecks() {
+  if (isDev) return; // Don't run periodic checks in development
+  
+  const FOUR_HOURS = 4 * 60 * 60 * 1000; // 4 hours in milliseconds
+  
+  // First check happens after 10 minutes (let user get settled in first)
+  setTimeout(() => {
+    log.info('Running scheduled update check...');
+    autoUpdater.checkForUpdatesAndNotify().catch(err => {
+      log.error('Error during scheduled update check:', err);
+    });
+    
+    // Then check every 4 hours
+    setInterval(() => {
+      log.info('Running scheduled update check...');
+      autoUpdater.checkForUpdatesAndNotify().catch(err => {
+        log.error('Error during scheduled update check:', err);
+      });
+    }, FOUR_HOURS);
+  }, 10 * 60 * 1000); // 10 minutes
+}
+
 // --- IPC Handler for Restarting ---
 // Listen for message from renderer process to install update
 ipcMain.on('restart_app', () => {

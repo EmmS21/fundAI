@@ -1,6 +1,6 @@
 {
   "name": "fundai-edtech-store",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Funda AI EdTech Store - Desktop Application",
   "homepage": "https://github.com/EmmS21/fundAI",
   "main": "electron/main.js",

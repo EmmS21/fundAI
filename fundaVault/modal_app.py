@@ -13,7 +13,7 @@ funda_vault_secrets = modal.Secret.from_name("fundai")
 
 # Include all necessary packages and add local files/dirs to the image
 image = (
-    Image.debian_slim()
+    Image.debian_slim(python_version="3.12")
     .apt_install("sqlite3")
     .pip_install([
         "fastapi>=0.100.0,<0.110.0",    

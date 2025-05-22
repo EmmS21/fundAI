@@ -11,21 +11,49 @@ def get_supabase_client() -> SupabaseClient:
     """Initializes and returns the singleton Supabase client instance."""
     global _supabase_client
     if _supabase_client is None:
-        logger.info("Initializing Supabase client...")
-        if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
-             logger.error("Supabase URL or Key not configured in settings.")
-             raise ValueError("Supabase URL and Key must be configured.")
+        # MODIFIED FOR DEBUGGING - MORE AGGRESSIVE LOGGING / EARLY EXIT
+        logger.critical("--- ENTERING get_supabase_client (MODDED FOR DEBUG) ---")
+        
+        # Use getattr for safer access and to provide a default if not found
+        supabase_url_from_settings = getattr(settings, 'SUPABASE_URL', 'SETTINGS_ATTRIBUTE_NOT_FOUND')
+        supabase_key_from_settings = getattr(settings, 'SUPABASE_KEY', 'SETTINGS_ATTRIBUTE_NOT_FOUND')
+
+        logger.critical(f"DEBUG: settings.SUPABASE_URL resolved to: '{supabase_url_from_settings}' (type: {type(supabase_url_from_settings)})")
+        
+        # For the key, just log its presence and type, not its value, but indicate if it was found in settings
+        key_status = 'SETTINGS_ATTRIBUTE_NOT_FOUND'
+        if supabase_key_from_settings != 'SETTINGS_ATTRIBUTE_NOT_FOUND':
+            key_status = f"Key found in settings (type: {type(supabase_key_from_settings)}), non-empty: {bool(supabase_key_from_settings)}"
+        logger.critical(f"DEBUG: settings.SUPABASE_KEY status: {key_status}")
+
+        if supabase_url_from_settings == 'SETTINGS_ATTRIBUTE_NOT_FOUND' or not supabase_url_from_settings:
+            logger.critical("CRITICAL ERROR: SUPABASE_URL is missing from settings or is empty.")
+            raise ValueError("CRITICAL ERROR VIA DEBUG: SUPABASE_URL not properly configured in settings.")
+        
+        if supabase_key_from_settings == 'SETTINGS_ATTRIBUTE_NOT_FOUND' or not supabase_key_from_settings:
+            logger.critical("CRITICAL ERROR: SUPABASE_KEY is missing from settings or is empty.")
+            raise ValueError("CRITICAL ERROR VIA DEBUG: SUPABASE_KEY not properly configured in settings.")
+        # END MODIFIED FOR DEBUGGING
+
+        # Original logic proceeds if checks above pass
+        logger.info(f"Initializing Supabase client with URL: {supabase_url_from_settings} and Key: (Key is present)") # Avoid logging key
         try:
             # Initialize the client using URL and Key from settings
-            # You can add ClientOptions here if needed later (e.g., for timeouts)
-            # from supabase.client import ClientOptions
-            # options: ClientOptions = ClientOptions(postgrest_client_timeout=10)
-            # _supabase_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY, options=options)
-            _supabase_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
-            logger.info("Supabase client initialized successfully.")
+            _supabase_client = create_client(supabase_url_from_settings, supabase_key_from_settings)
+            logger.info("Supabase client object potentially created.") # Changed log message
+
+            # Add a quick test after creation
+            if _supabase_client:
+                logger.info(f"Supabase client appears to be a valid object: type={type(_supabase_client)}")
+            else:
+                # This case should ideally not be reached if create_client raises exceptions on failure
+                logger.error("CRITICAL: create_client returned None without raising an exception!")
+                raise ValueError("Supabase client creation resulted in None unexpectedly.")
+
         except Exception as e:
-            logger.error(f"Failed to initialize Supabase client: {e}", exc_info=True)
+            logger.error(f"Failed to initialize Supabase client during create_client call: {e}", exc_info=True)
             raise # Critical error if client can't be created
+            
     return _supabase_client
 
 # Dependency function for FastAPI endpoints

@@ -27,13 +27,19 @@ async def create_subscription(
                                 .eq('id', user_id)\
                                 .limit(1)\
                                 .execute()
-        # Log the raw response object (might reveal internal attributes)
         logger.debug(f"User check response object: {user_check_response!r}")
 
         if user_check_response is None:
              logger.error(f"User check query returned None unexpectedly for UserID=[{user_id}]")
              raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error during user check.")
-        if user_check_response.count == 0:
+        
+        # Assuming user_check_response.count is available if user_check_response is not None
+        # and that an error in the query would be caught by user_check_response.error (similar to subscription check)
+        if hasattr(user_check_response, 'error') and user_check_response.error:
+            logger.error(f"Database error during user check for UserID=[{user_id}]: {user_check_response.error}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database query failed during user check: {user_check_response.error}")
+
+        if not hasattr(user_check_response, 'count') or user_check_response.count == 0: # Check if count attribute exists
             logger.warning(f"Subscription creation failed: User not found. UserID=[{user_id}]")
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
         logger.debug(f"User check passed for UserID=[{user_id}]")
@@ -44,15 +50,23 @@ async def create_subscription(
                                .select('id')\
                                .eq('user_id', user_id)\
                                .maybe_single()\
-                               .execute()
+                               .execute() # Added backslash for consistency
         logger.debug(f"Subscription check response object: {sub_check_response!r}")
 
+        # Error handling for subscription check:
+        # 1. Check if the response object itself is None (unexpected)
         if sub_check_response is None:
-            logger.error(f"Subscription check query returned None unexpectedly for UserID=[{user_id}]. This likely follows a non-2xx HTTP status from Supabase.")
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error during subscription check (Query failed).")
+            logger.error(f"Subscription check query returned None unexpectedly for UserID=[{user_id}]. This might indicate a low-level client issue.")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database client error during subscription check.")
 
-        if sub_check_response.data is not None:
-            logger.warning(f"Subscription creation failed: Already exists. UserID=[{user_id}]")
+        # 2. Check if the APIResponse object has an error attribute and if it's set
+        if hasattr(sub_check_response, 'error') and sub_check_response.error:
+            logger.error(f"Database error during subscription check for UserID=[{user_id}]: {sub_check_response.error}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database query failed during subscription check: {sub_check_response.error}")
+
+        # 3. If no error, check the data (maybe_single returns data=None if no row found)
+        if sub_check_response.data is not None: # A subscription was found
+            logger.warning(f"Subscription creation failed: Already exists. UserID=[{user_id}] SubData: {sub_check_response.data}")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Subscription already exists for this user."
@@ -73,11 +87,15 @@ async def create_subscription(
 
         if insert_response is None:
             logger.error(f"Subscription insert query returned None unexpectedly for UserID=[{user_id}]")
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error during subscription insert.")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database client error during subscription insert.")
 
-        if not insert_response.data:
-             logger.error(f"Subscription insert for UserID=[{user_id}] failed unexpectedly (no data returned).")
-             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to confirm subscription creation.")
+        if hasattr(insert_response, 'error') and insert_response.error:
+            logger.error(f"Database error during subscription insert for UserID=[{user_id}]: {insert_response.error}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database query failed during subscription insert: {insert_response.error}")
+
+        if not insert_response.data: # Should contain the inserted record
+             logger.error(f"Subscription insert for UserID=[{user_id}] failed unexpectedly (no data returned post-insert).")
+             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to confirm subscription creation after insert.")
 
         created_sub = insert_response.data[0]
         logger.info(f"Subscription created successfully: SubID=[{created_sub.get('id')}] UserID=[{user_id}]")
