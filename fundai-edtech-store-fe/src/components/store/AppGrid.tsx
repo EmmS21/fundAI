@@ -53,7 +53,7 @@ declare global {
 
 // Interfaces for Download Events Data (match data sent from main.js)
 interface DownloadProgressData {
-  appId?: string; // Make appId optional if sometimes only filename is sent
+  appId?: string;
   filename: string;
   percentage: number;
   path: string;
@@ -72,15 +72,16 @@ interface DownloadErrorData {
 }
 // --- Interface for Cancelled Data ---
 interface DownloadCancelledData {
+    appId: string;
     filename: string;
-    appId?: string; // Include appId if main.js sends it
 }
 
 // Define the structure for progress state
 interface DownloadProgress {
-  status: 'idle' | 'downloading' | 'complete' | 'error'; // Use strict types
+  status: 'idle' | 'downloading' | 'complete' | 'error' | 'cancelled';
   percentage: number;
   error?: string;
+  path?: string;
 }
 type AppDownloadProgressMap = { [appId: string]: DownloadProgress; };
 interface AppGridProps { apps: App[]; onAppClick?: (app: App) => void; }
@@ -113,14 +114,22 @@ export const AppGrid: React.FC<AppGridProps> = ({ apps, onAppClick }) => {
       // Try finding appId using the helper, prioritize data.appId if present
       const appId = data.appId || findAppId(data.filename);
       if (!appId) return;
-      setDownloadProgress(prev => ({ ...prev, [appId]: { ...prev[appId], status: 'downloading', percentage: data.percentage } }));
+      setDownloadProgress(prev => ({ ...prev, [appId]: { ...prev[appId], status: 'downloading', percentage: data.percentage, path: data.path } }));
     };
 
     const handleComplete = (data: DownloadCompleteData) => {
       const appId = data.appId || findAppId(data.filename);
       if (!appId) return;
-      console.log(`[AppGrid] Complete ${appId}`);
-      setDownloadProgress(prev => ({ ...prev, [appId]: { status: 'complete', percentage: 100, error: undefined } }));
+      console.log(`[AppGrid] Complete ${appId}, Path: ${data.path}`);
+      setDownloadProgress(prev => ({
+        ...prev,
+        [appId]: {
+          status: 'complete',
+          percentage: 100,
+          error: undefined,
+          path: data.path
+        }
+      }));
     };
 
     const handleError = (data: DownloadErrorData) => {
@@ -193,7 +202,7 @@ export const AppGrid: React.FC<AppGridProps> = ({ apps, onAppClick }) => {
     
     setDownloadProgress(prev => ({
       ...prev,
-      [appId]: { status: 'downloading', percentage: 0, error: undefined }
+      [appId]: { status: 'downloading', percentage: 0, error: undefined, path: undefined }
     }));
 
     try {
@@ -203,7 +212,7 @@ export const AppGrid: React.FC<AppGridProps> = ({ apps, onAppClick }) => {
       console.error(`[AppGrid handleDownload] Error:`, error);
       setDownloadProgress(prev => ({
         ...prev,
-        [appId]: { status: 'error', percentage: 0, error: error.message }
+        [appId]: { status: 'error', percentage: 0, error: error.message, path: undefined }
       }));
     }
   };
@@ -212,7 +221,7 @@ export const AppGrid: React.FC<AppGridProps> = ({ apps, onAppClick }) => {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
       {apps.map((app) => {
-        const progressProp = downloadProgress[app.id] ?? { status: 'idle', percentage: 0 };
+        const progressProp = downloadProgress[app.id] ?? { status: 'idle', percentage: 0, path: undefined };
         // --- Use app.name as filename ---
         const filenameToUse = app.name || `${app.id}-download`; // Fallback if name is missing
 

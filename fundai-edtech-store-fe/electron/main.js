@@ -111,7 +111,7 @@ const createWindow = () => {
       // }
     });
 
-    mainWindow.once('ready-to-show', () => {
+    mainWindow.once('ready-to-show', () => { 
       log.info('Main window ready-to-show.');
       mainWindow.show();
     });
@@ -722,6 +722,7 @@ app.whenReady().then(() => {
   log.info('App ready.');
 
   setupIpcHandlers(/* pass dependencies like store if needed */);
+  setupAuthHandlers();
 
   log.info('Calling createWindow.');
   createWindow();
@@ -852,9 +853,10 @@ autoUpdater.on('download-progress', (progressObj) => {
 
 autoUpdater.on('update-downloaded', (info) => {
   log.info('Update downloaded.', info);
+  const appName = app.getName(); // Get the application name
   // Prompt user in the renderer process to restart
   if (mainWindow) {
-    mainWindow.webContents.send('update_downloaded', info);
+    mainWindow.webContents.send('update_downloaded', { ...info, appName }); // Send appName along
   }
 });
 // --- End AutoUpdater Event Handlers ---
