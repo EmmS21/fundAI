@@ -3,7 +3,7 @@ logger = logging.getLogger(__name__)
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QScrollArea, QSizePolicy, QDialog, QFrame, QMessageBox, QGroupBox, QSplitter, QListWidget, QListWidgetItem)
 from PySide6.QtGui import QPixmap, QImage, QFont, QGuiApplication, QIcon
-from PySide6.QtCore import Qt, Signal, QUrl, QThread, QStandardPaths, Slot
+from PySide6.QtCore import Qt, Signal, QUrl, QThread, QStandardPaths, Slot, QTimer
 from src.data.cache.cache_manager import CacheManager
 import os
 import sys
@@ -455,6 +455,12 @@ class QuestionView(QWidget):
         self.button_layout.addWidget(self.show_final_button) # Add to button row
         # --- END ADD "Show" Buttons ---
 
+        # --- Add Submit Paper Button ---
+        self.submit_paper_button = QPushButton("Submit Paper")
+        self.submit_paper_button.setStyleSheet("font-weight: bold; background-color: #10B981; color: white; padding: 6px 16px; border-radius: 6px;")
+        self.submit_paper_button.clicked.connect(self._on_submit_paper_clicked)
+        self.button_layout.addWidget(self.submit_paper_button)
+
         self.button_layout.addStretch() # Push Submit/Next to the right
 
         self.next_button = QPushButton("Next Question")
@@ -464,7 +470,7 @@ class QuestionView(QWidget):
 
         self.submit_button = QPushButton("Submit Answer")
         # ... styling ...
-        self.submit_button.clicked.connect(self._trigger_ai_feedback)
+        # self.submit_button.clicked.connect(self._trigger_ai_feedback)  # [BATCH-ONLY FEEDBACK] Disabled per-question feedback. Feedback is now provided after paper completion.
 
         self.button_layout.addWidget(self.submit_button)
         self.button_layout.addWidget(self.next_button)
@@ -1179,94 +1185,40 @@ class QuestionView(QWidget):
             self.logger.error("Cannot queue offline request: SyncService unavailable.")
 
     @Slot(int, object)
-    def _handle_groq_feedback_result(self, history_id: int, cloud_report: Dict):
-        """Receives the cloud report from the GroqFeedbackWorker."""
-        self.logger.info(f"Received successful Groq feedback for history_id: {history_id}")
-        history_manager = services.user_history_manager
-
-        if history_manager:
-            success = history_manager.update_with_cloud_report(history_id, cloud_report)
-
-            if success:
-                 self.logger.info(f"Successfully updated answer_history for {history_id} with cloud report via direct call.")
-
-                 # --- Set Flag indicating generation SUCCESS ---
-                 # Set this regardless of whether the user is still viewing the question,
-                 # as the data *was* generated successfully.
-                 self.finalized_feedback_generated = True
-                 self.logger.info(f"Flag finalized_feedback_generated set to True for history_id {history_id} based on successful DB update.")
-                 # ---
-
-                 # --- Update UI only if still relevant ---
-                 self.logger.info(f"Checking if UI should be updated for finalized report (history_id: {history_id})")
-                 try:
-                      current_qid = self.current_question_data.get('id') if self.current_question_data else None
-                      history_qid = history_manager.get_question_id_for_history(history_id) # This is the unique_question_key
-                      self.logger.debug(f"Check: current_qid (Paper ID)={current_qid}, history_qid (Unique Key)={history_qid}")
-
-                      # --- CORRECTED COMPARISON ---
-                      # Check if the paper ID part of the history_qid matches the current paper ID
-                      feedback_paper_id = None
-                      if history_qid and isinstance(history_qid, str) and '_' in history_qid:
-                          # Extract the part before the last underscore
-                          feedback_paper_id = history_qid.rsplit('_', 1)[0]
-
-                      # Compare the extracted paper ID with the current paper ID
-                      if history_qid and current_qid and feedback_paper_id == current_qid: # <--- This is the corrected condition
-                          # --- Start of UI Update Block (THIS BLOCK REMAINS UNCHANGED) ---
-                          self.logger.info(f"Cloud report matches current paper {current_qid}. Updating Finalized UI section for sub-question {history_qid}.")
-
-                          # Set Title for the finalized group
-                          # self.finalized_report_group.setTitle("Finalized Report (Cloud AI)") # Already set potentially
-
-                          cloud_grade = cloud_report.get('grade', 'N/A (Cloud)')
-                          cloud_rationale = cloud_report.get('rationale', 'N/A (Cloud)')
-                          cloud_study_topics_obj = cloud_report.get('study_topics', {})
-
-                          # Update status label
-                          self.final_status_label.setText("Status: Analysis Complete")
-                          self.final_status_label.setStyleSheet("font-style: normal; color: #166534; font-weight: bold;")
-
-                          # Update grade and feedback text in the FINALIZED section
-                          self.final_grade_label.setText(f"Grade: {cloud_grade}")
-
-                          study_topics_display = "Study Topics:\n"
-                          if isinstance(cloud_study_topics_obj, dict):
-                              if 'raw' in cloud_study_topics_obj: study_topics_display += cloud_study_topics_obj['raw']
-                              elif 'lines' in cloud_study_topics_obj: study_topics_display += "\n".join(f"- {line}" for line in cloud_study_topics_obj['lines'])
-                              else: study_topics_display += json.dumps(cloud_study_topics_obj, indent=2)
-                          else:
-                              study_topics_display += str(cloud_study_topics_obj)
-
-                          full_feedback = f"Rationale:\n{cloud_rationale}\n\n{study_topics_display}"
-                          self.final_feedback_text.setText(full_feedback)
-
-                          # Ensure the finalized section is visible using the method
-                          self._show_final_feedback() # Shows box, hides show button
-
-                          self.logger.info(f"Finalized UI section updated successfully for {history_id}.")
-                          # Optional: Automatically hide preliminary once finalized is ready
-                          # self._hide_prelim_feedback()
-                          # --- End of UI Update Block ---
-                      else:
-                          self.logger.info(f"Cloud report received for history_id {history_id}, but user has navigated away or IDs don't match (Current: {current_qid}, History: {history_qid}). UI not updated, but flag was set.")
-                          if self.finalized_report_group.isHidden():
-                               self.show_final_button.hide()
-
-
-                 except Exception as ui_update_err:
-                      self.logger.error(f"Error updating UI with cloud report for {history_id}: {ui_update_err}", exc_info=True)
-                 # --- END UI UPDATE ---
-
-                 self.update_new_report_indicator() # Update badge count
-            else:
-                 self.logger.error(f"Failed to update answer_history for {history_id} with cloud report data.")
-                 # Failed DB update, so don't set the flag
-                 self.finalized_feedback_generated = False
-        else:
-            self.logger.error("UserHistoryManager service not available when Groq result received. Cannot save cloud report to DB.")
-            # Cannot confirm generation, don't set the flag
-            self.finalized_feedback_generated = False
+    def _handle_groq_feedback_result(self, history_id: int, cloud_report: dict):
+        """Update the feedback modal with finalized Groq feedback when received."""
+        self.logger.info(f"Received Groq feedback for history_id {history_id}")
+        # Find the result index for this history_id
+        idx = None
+        for i, result in enumerate(getattr(self, 'local_feedback_results', [])):
+            if result.get('history_id') == history_id:
+                idx = i
+                break
+        if idx is not None and hasattr(self, 'feedback_modal') and self.feedback_modal and hasattr(self.feedback_modal, 'feedback_widgets'):
+            widgets = self.feedback_modal.feedback_widgets
+            if idx < len(widgets):
+                cloud_label = widgets[idx]['cloud_label']
+                # Format cloud feedback
+                grade = cloud_report.get('grade', 'N/A (Cloud)')
+                rationale = cloud_report.get('rationale', 'N/A (Cloud)')
+                study_topics_obj = cloud_report.get('study_topics', {})
+                study_topics_display = "Study Topics:<br>"
+                if isinstance(study_topics_obj, dict):
+                    if 'raw' in study_topics_obj:
+                        study_topics_display += study_topics_obj['raw']
+                    elif 'lines' in study_topics_obj:
+                        study_topics_display += "<br>" + "<br>".join(f"- {line}" for line in study_topics_obj['lines'])
+                    else:
+                        import json
+                        study_topics_display += json.dumps(study_topics_obj, indent=2)
+                else:
+                    study_topics_display += str(study_topics_obj)
+                cloud_label.setText(f"<b style='color:#166534'>Finalized (Cloud) Report:</b><br>"
+                                    f"<b>Grade:</b> {grade}<br>"
+                                    f"<b>Rationale:</b> {rationale}<br>"
+                                    f"<b>{study_topics_display}</b>")
+                cloud_label.setStyleSheet("color:#166534;")
+                self.logger.info(f"Updated feedback modal with Groq feedback for idx {idx}.")
 
     @Slot(int, str)
     def _handle_groq_feedback_error(self, history_id: int, error_message: str):
@@ -1406,6 +1358,135 @@ class QuestionView(QWidget):
     # You might want a corresponding function to hide the performance view 
     # and show the main question view again, e.g., hidePerformanceView()
     # triggered by a 'Back' button or similar.
+
+    # --- Add new method for paper submission ---
+    def _on_submit_paper_clicked(self):
+        """Triggered when the user submits the entire paper. Runs batch local AI feedback for all questions and shows progress, then presents results."""
+        self.logger.info("User submitted the paper. Starting batch feedback processing.")
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Processing Paper Feedback")
+        dlg.setModal(True)
+        layout = QVBoxLayout(dlg)
+        label = QLabel("Generating AI Feedback for all questions. Please wait...")
+        label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(label)
+        progress_label = QLabel("")
+        progress_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(progress_label)
+        dlg.setMinimumWidth(350)
+        dlg.show()
+        QGuiApplication.processEvents() # Ensure dialog displays
+
+        # --- Batch feedback logic ---
+        paper_id = self.current_question_data.get('id') if self.current_question_data else None
+        if not paper_id:
+            self.logger.error("No paper ID found; cannot run batch feedback.")
+            label.setText("Error: Could not determine paper ID.")
+            QTimer.singleShot(2000, dlg.accept)
+            return
+        cache_manager = self.cache_manager
+        # Find all questions for this paper in the cache
+        all_questions = []
+        for q_key, q_obj in cache_manager._question_cache.items():
+            if q_obj.get('paper_document_id') == paper_id:
+                all_questions.append(q_obj)
+        if not all_questions:
+            self.logger.error(f"No questions found in cache for paper ID {paper_id}.")
+            label.setText("Error: No questions found for this paper.")
+            QTimer.singleShot(2000, dlg.accept)
+            return
+        self.logger.info(f"Found {len(all_questions)} questions for paper {paper_id}.")
+
+        # --- Collect user answers for each question ---
+        # For this example, assume self.user_answers is a dict: {unique_question_key: {sub_num: answer, ...}}
+        # If not, you may need to adapt this to your actual answer storage.
+        user_answers = getattr(self, 'user_answers', {})
+
+        from src.core.ai.marker import run_ai_evaluation
+        local_feedback_results = []
+        history_ids = []
+        for idx, question in enumerate(all_questions):
+            unique_key = question.get('unique_question_key')
+            user_answer = user_answers.get(unique_key, {})
+            correct_answer_data = question.get('correct_answer_data', {})
+            marks = question.get('marks', 0)
+            progress_label.setText(f"Processing question {idx+1} of {len(all_questions)}...")
+            QGuiApplication.processEvents()
+            eval_result, prompt = run_ai_evaluation(question, correct_answer_data, user_answer, marks)
+            # --- Store in user history DB ---
+            history_manager = services.user_history_manager
+            exam_id = question.get('paper_document_id')
+            current_user_id = 1  # TODO: Replace with actual user ID if available
+            feedback_for_this = eval_result if isinstance(eval_result, dict) else {}
+            history_id = None
+            if history_manager:
+                try:
+                    history_id = history_manager.add_history_entry(
+                        user_id=current_user_id,
+                        cached_question_id=unique_key,
+                        user_answer_dict=user_answer,
+                        local_ai_feedback_dict=feedback_for_this,
+                        exam_result_id=exam_id
+                    )
+                except Exception as e:
+                    self.logger.error(f"Failed to store history for {unique_key}: {e}")
+            if history_id:
+                history_ids.append((history_id, prompt))
+            local_feedback_results.append({
+                'question_key': unique_key,
+                'question_text': question.get('content', ''),
+                'user_answer': user_answer,
+                'eval_result': eval_result,
+                'prompt': prompt,
+                'history_id': history_id
+            })
+        progress_label.setText("All questions processed.")
+        QGuiApplication.processEvents()
+        QTimer.singleShot(800, dlg.accept)
+        self.logger.info("Batch local feedback processing complete.")
+
+        # --- Queue Groq analysis for each question ---
+        for history_id, prompt in history_ids:
+            if history_id and prompt:
+                self.trigger_cloud_sync(history_id, prompt)
+
+        # --- Present feedback in a simple modal ---
+        self.local_feedback_results = local_feedback_results  # Store for later updates
+        self.feedback_modal = None  # Track modal instance
+        def show_feedback_modal():
+            self.feedback_modal = QDialog(self)
+            self.feedback_modal.setWindowTitle("Your Paper Feedback")
+            feedback_layout = QVBoxLayout(self.feedback_modal)
+            self.feedback_modal.feedback_widgets = []  # Store widgets for later update
+            for idx, result in enumerate(self.local_feedback_results):
+                q_label = QLabel(f"<b>Q{idx+1}:</b> {result['question_text']}")
+                q_label.setWordWrap(True)
+                feedback_layout.addWidget(q_label)
+                ua_label = QLabel(f"<i>Your Answer:</i> {result['user_answer']}")
+                ua_label.setWordWrap(True)
+                feedback_layout.addWidget(ua_label)
+                fb = result['eval_result'] or {}
+                grade = fb.get('Grade', 'N/A')
+                rationale = fb.get('Rationale', 'No details provided.')
+                study_topics = fb.get('Study Topics', 'N/A')
+                fb_label = QLabel(f"<b>Mark:</b> {grade}<br><b>Rationale:</b> {rationale}<br><b>Study Topics:</b> {study_topics}")
+                fb_label.setWordWrap(True)
+                feedback_layout.addWidget(fb_label)
+                # Placeholder for cloud feedback
+                cloud_label = QLabel("<span style='color:#888'>Full (cloud) analysis pending...</span>")
+                cloud_label.setWordWrap(True)
+                feedback_layout.addWidget(cloud_label)
+                self.feedback_modal.feedback_widgets.append({
+                    'cloud_label': cloud_label,
+                    'result_idx': idx
+                })
+                feedback_layout.addWidget(QLabel("<hr>"))
+            close_btn = QPushButton("Close")
+            close_btn.clicked.connect(self.feedback_modal.accept)
+            feedback_layout.addWidget(close_btn)
+            self.feedback_modal.setMinimumWidth(500)
+            self.feedback_modal.exec()
+        QTimer.singleShot(1000, show_feedback_modal)
 
 # Example Usage (if run standalone)
 if __name__ == '__main__':
