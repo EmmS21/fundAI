@@ -221,6 +221,8 @@ export const AppGrid: React.FC<AppGridProps> = ({ apps, onAppClick }) => {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
       {apps.map((app) => {
+        console.log(`[AppGrid] Inspecting app object for ID ${app.id}:`, JSON.stringify(app, null, 2));
+
         const progressProp = downloadProgress[app.id] ?? { status: 'idle', percentage: 0, path: undefined };
         // Use app.storage_key as filename if available, otherwise fall back to app.name or ID
         const filenameToUse = app.storage_key || app.name || `${app.id}-download`;
