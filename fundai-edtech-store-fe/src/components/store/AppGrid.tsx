@@ -3,7 +3,6 @@ import { App } from '../../types/app';
 import { AppCard } from './AppCard';
 import { useAppStore } from '../../stores/appStore';
 import { useUIStore } from '../../stores/uiStore';
-import path from 'path';
 
 // Type definitions for API and Events (consider moving to a d.ts file)
 // Ensure this matches what's exposed in preload.js under 'electronAPI'
@@ -226,7 +225,7 @@ export const AppGrid: React.FC<AppGridProps> = ({ apps, onAppClick }) => {
         
         // --- MODIFIED LOGIC FOR filenameToUse ---
         const filenameToUse = app.file_path
-                                ? path.basename(app.file_path)
+                                ? app.file_path.substring(app.file_path.lastIndexOf('/') + 1)
                                 : app.name || `${app.id}-download`;
         // --- END MODIFIED LOGIC ---
 
