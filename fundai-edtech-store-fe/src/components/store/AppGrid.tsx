@@ -3,6 +3,7 @@ import { App } from '../../types/app';
 import { AppCard } from './AppCard';
 import { useAppStore } from '../../stores/appStore';
 import { useUIStore } from '../../stores/uiStore';
+import path from 'path';
 
 // Type definitions for API and Events (consider moving to a d.ts file)
 // Ensure this matches what's exposed in preload.js under 'electronAPI'
@@ -198,7 +199,7 @@ export const AppGrid: React.FC<AppGridProps> = ({ apps, onAppClick }) => {
 
 
   const handleDownload = async (appId: string, filename: string) => {
-    console.log(`[AppGrid handleDownload] Starting download for ${appId}`);
+    console.log(`[AppGrid handleDownload] Starting download for ${appId} as ${filename}`);
     
     setDownloadProgress(prev => ({
       ...prev,
@@ -221,11 +222,15 @@ export const AppGrid: React.FC<AppGridProps> = ({ apps, onAppClick }) => {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
       {apps.map((app) => {
-        console.log(`[AppGrid] Inspecting app object for ID ${app.id}:`, JSON.stringify(app, null, 2));
-
         const progressProp = downloadProgress[app.id] ?? { status: 'idle', percentage: 0, path: undefined };
-        // Use app.storage_key as filename if available, otherwise fall back to app.name or ID
-        const filenameToUse = app.storage_key || app.name || `${app.id}-download`;
+        
+        // --- MODIFIED LOGIC FOR filenameToUse ---
+        const filenameToUse = app.file_path
+                                ? path.basename(app.file_path)
+                                : app.name || `${app.id}-download`;
+        // --- END MODIFIED LOGIC ---
+
+        // console.log(`[AppGrid] Filename to use for ${app.id}:`, filenameToUse, typeof filenameToUse);
 
         return (
           <AppCard
