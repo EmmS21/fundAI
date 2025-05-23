@@ -1,0 +1,66 @@
+FROM python:3.11-slim-bullseye
+
+# Add bullseye-backports repository for Qt6
+RUN echo 'deb http://deb.debian.org/debian bullseye-backports main' > /etc/apt/sources.list.d/backports.list
+
+# Install build essentials, PyInstaller dependencies, and dev libraries
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    patchelf \
+    git \
+    # General X11 and graphics dev libraries
+    libgl1-mesa-dev \
+    libegl1-mesa-dev \
+    libxcb1-dev \
+    libxcb-icccm4-dev \
+    libxcb-image0-dev \
+    libxcb-keysyms1-dev \
+    libxcb-randr0-dev \
+    libxcb-render-util0-dev \
+    libxcb-shape0-dev \
+    libxcb-shm0-dev \
+    libxcb-sync-dev \
+    libxcb-xfixes0-dev \
+    libxcb-xinerama0-dev \
+    libxcb-xkb-dev \
+    libxkbcommon-x11-dev \
+    libxkbcommon-dev \
+    libfontconfig1-dev \
+    libfreetype6-dev \
+    libdbus-1-dev \
+    # --- Qt6 Development Packages from Bullseye Backports ---
+    # Specify the target release for backported packages
+    qt6-base-dev/bullseye-backports \
+    qt6-tools-dev/bullseye-backports \
+    qt6-tools-dev-tools/bullseye-backports \
+    # Also include runtime QPA plugins and cursor lib in build env
+    # qt6-qpa-plugins is a metapackage; let's install specific ones if needed or see if base-dev pulls enough.
+    # For Bullseye, Qt6 plugins might be more granular or part of base.
+    # Let's try with qt6-base-dev first, it often pulls in necessary runtime components.
+    # If platform plugins are missing later, we might need e.g. libqt6xcbqpa6/bullseye-backports
+    # For now, focusing on the dev packages. PyInstaller hooks should pick up runtime deps.
+    libqt6dbus6/bullseye-backports \
+    libqt6gui6/bullseye-backports \
+    libqt6widgets6/bullseye-backports \
+    libqt6network6/bullseye-backports \
+    # libxcb-cursor0 is fine from standard Bullseye repos
+    libxcb-cursor0 \
+    # --- End Qt6 Development Packages ---
+    # Add any other -dev packages potentially needed by your dependencies
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build_src
+
+COPY new_requirements.txt ./requirements.txt
+RUN echo "[BUILDENV DOCKERFILE] Installing Python packages from new_requirements.txt..."
+# Ensure pip is up-to-date and setuptools is present, as these can sometimes cause issues with specific package installs
+RUN pip install --no-cache-dir --upgrade pip setuptools
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# Ensure the runtime hook is available and executable if needed.
+# PyInstaller looks for it relative to the spec file path during the PyInstaller execution.
+RUN chmod +x pyi_rth_qt6.py || true 
+
+CMD ["echo", "Build environment created. PyInstaller should be run via 'docker run' with specific commands."]

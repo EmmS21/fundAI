@@ -28,7 +28,7 @@ echo "[BUILD.SH] Cleanup complete."
 
 # --- Pre-build cleanup of macOS metadata files from the project source ---
 echo "[BUILD.SH] Cleaning macOS metadata files (._* and .DS_Store) from project source..."
-find "${PROJECT_ROOT_DIR}" -type f \\( -name '._*' -o -name '.DS_Store' \\) -print -delete
+find "${PROJECT_ROOT_DIR}" -type f \( -name '._*' -o -name '.DS_Store' \) -print -delete
 echo "[BUILD.SH] macOS metadata file cleanup complete."
 
 # --- Create Dockerfile for the Build Environment ---
