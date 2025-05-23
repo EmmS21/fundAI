@@ -37,11 +37,19 @@ mkdir -p "$DESKTOP_ENTRY_DIR"
 
 SCRIPT_SOURCE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
-echo "Installing application files from $SCRIPT_SOURCE_DIR to $APP_INSTALL_DIR..."
-if rsync -av --delete "$SCRIPT_SOURCE_DIR/" "$APP_INSTALL_DIR/" --exclude "$(basename "${BASH_SOURCE[0]}")"; then
-    echo "Application files installed."
+# The actual application files are in a subdirectory (e.g., "Examiner")
+APP_BUNDLE_SOURCE_DIR="$SCRIPT_SOURCE_DIR/Examiner" # Assuming PYINSTALLER_OUTPUT_DIR_NAME is "Examiner"
+
+echo "Installing application files from $APP_BUNDLE_SOURCE_DIR to $APP_INSTALL_DIR..."
+if [ -d "$APP_BUNDLE_SOURCE_DIR" ]; then
+    if rsync -av --delete "$APP_BUNDLE_SOURCE_DIR/" "$APP_INSTALL_DIR/"; then
+        echo "Application files installed."
+    else
+        echo "ERROR: Failed to copy application files from $APP_BUNDLE_SOURCE_DIR. Aborting."
+        exit 1
+    fi
 else
-    echo "ERROR: Failed to copy application files. Aborting."
+    echo "ERROR: Application bundle directory not found at $APP_BUNDLE_SOURCE_DIR. Aborting."
     exit 1
 fi
 
@@ -83,8 +91,6 @@ if command -v update-desktop-database &> /dev/null; then
     echo "Updating desktop database..."
     update-desktop-database "$DESKTOP_ENTRY_DIR"
 fi
-
-chmod +x ~/.examiner/app/main.py
 
 echo "
 Installation Complete!

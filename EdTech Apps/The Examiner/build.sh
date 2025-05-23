@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "Starting Linux artifact build for The Examiner using Docker..."
-APP_VERSION="1.0.0" # Or read from a configuration file
+APP_VERSION="1.0.2" # Updated version
 PROJECT_ROOT_DIR=$(pwd) # Assuming this script is in the project root
 
 # --- Configuration ---
@@ -14,8 +14,8 @@ PYINSTALLER_OUTPUT_DIR_NAME="Examiner"
 HOST_DIST_DIR="${PROJECT_ROOT_DIR}/dist"
 HOST_BUILD_DIR="${PROJECT_ROOT_DIR}/build" 
 
-LINUX_PACKAGE_NAME_BASE="Examiner-linux-${APP_VERSION}"
-LINUX_FINAL_ARCHIVE_NAME="${LINUX_PACKAGE_NAME_BASE}.tar.gz"
+LINUX_PACKAGE_NAME_BASE="Examiner-linux-${APP_VERSION}" # This will now use 1.0.1
+LINUX_FINAL_ARCHIVE_NAME="${LINUX_PACKAGE_NAME_BASE}.tar.gz" # This will now use 1.0.1
 
 # --- Cleanup of previous Linux artifacts ---
 echo "[BUILD.SH] Cleaning up previous Linux build artifacts..."
@@ -29,7 +29,10 @@ echo "[BUILD.SH] Cleanup complete."
 # --- Create Dockerfile for the Build Environment ---
 echo "[BUILD.SH] Generating ${DOCKERFILE_FOR_BUILD_ENV} for Linux build environment..."
 cat << EOF > "${PROJECT_ROOT_DIR}/${DOCKERFILE_FOR_BUILD_ENV}"
-FROM python:3.11-bookworm
+FROM python:3.11-slim-bullseye
+
+# Add bullseye-backports repository for Qt6
+RUN echo 'deb http://deb.debian.org/debian bullseye-backports main' > /etc/apt/sources.list.d/backports.list
 
 # Install build essentials, PyInstaller dependencies, and dev libraries
 RUN apt-get update && apt-get install -y --no-install-recommends \\
@@ -56,13 +59,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \\
     libfontconfig1-dev \\
     libfreetype6-dev \\
     libdbus-1-dev \\
-    # --- Corrected Qt6 Development Packages for Bookworm ---
-    qt6-base-dev \\
-    qt6-tools-dev \\
-    qt6-tools-dev-tools \\
+    # --- Qt6 Development Packages from Bullseye Backports ---
+    # Specify the target release for backported packages
+    qt6-base-dev/bullseye-backports \\
+    qt6-tools-dev/bullseye-backports \\
+    qt6-tools-dev-tools/bullseye-backports \\
     # Also include runtime QPA plugins and cursor lib in build env
-    # as PyInstaller might inspect them or need them for hooks.
-    qt6-qpa-plugins \\
+    # qt6-qpa-plugins is a metapackage; let's install specific ones if needed or see if base-dev pulls enough.
+    # For Bullseye, Qt6 plugins might be more granular or part of base.
+    # Let's try with qt6-base-dev first, it often pulls in necessary runtime components.
+    # If platform plugins are missing later, we might need e.g. libqt6xcbqpa6/bullseye-backports
+    # For now, focusing on the dev packages. PyInstaller hooks should pick up runtime deps.
+    libqt6dbus6/bullseye-backports \\
+    libqt6gui6/bullseye-backports \\
+    libqt6widgets6/bullseye-backports \\
+    libqt6network6/bullseye-backports \\
+    # libxcb-cursor0 is fine from standard Bullseye repos
     libxcb-cursor0 \\
     # --- End Qt6 Development Packages ---
     # Add any other -dev packages potentially needed by your dependencies
@@ -72,6 +84,8 @@ WORKDIR /build_src
 
 COPY ${REQUIREMENTS_FILE_FOR_BUILD} ./requirements.txt
 RUN echo "[BUILDENV DOCKERFILE] Installing Python packages from ${REQUIREMENTS_FILE_FOR_BUILD}..."
+# Ensure pip is up-to-date and setuptools is present, as these can sometimes cause issues with specific package installs
+RUN pip install --no-cache-dir --upgrade pip setuptools
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
@@ -124,12 +138,30 @@ if [ -d "${PYINSTALLER_OUTPUT_PATH}" ]; then
     TARGET_PACKAGE_DIR="${HOST_DIST_DIR}/${LINUX_PACKAGE_NAME_BASE}"
     rm -rf "${TARGET_PACKAGE_DIR}" 
     mkdir -p "${TARGET_PACKAGE_DIR}"
-    echo "[BUILD.SH] Copying application files from ${PYINSTALLER_OUTPUT_PATH} to ${TARGET_PACKAGE_DIR}/"
-    cp -R "${PYINSTALLER_OUTPUT_PATH}/." "${TARGET_PACKAGE_DIR}/"
+    echo "[BUILD.SH] Copying application files from ${PYINSTALLER_OUTPUT_PATH} to ${TARGET_PACKAGE_DIR}/${PYINSTALLER_OUTPUT_DIR_NAME}/"
+    cp -R "${PYINSTALLER_OUTPUT_PATH}/." "${TARGET_PACKAGE_DIR}/${PYINSTALLER_OUTPUT_DIR_NAME}/"
+
     if [ -f "${PROJECT_ROOT_DIR}/install.sh" ]; then
         echo "[BUILD.SH] Copying install.sh to ${TARGET_PACKAGE_DIR}/"
         cp "${PROJECT_ROOT_DIR}/install.sh" "${TARGET_PACKAGE_DIR}/"
         chmod +x "${TARGET_PACKAGE_DIR}/install.sh"
+
+        # Create the installer .desktop file
+        INSTALLER_DESKTOP_FILE_NAME="Install The Examiner.desktop"
+        echo "[BUILD.SH] Creating installer .desktop file: ${TARGET_PACKAGE_DIR}/${INSTALLER_DESKTOP_FILE_NAME}"
+        cat << EOF_INSTALLER_DESKTOP > "${TARGET_PACKAGE_DIR}/${INSTALLER_DESKTOP_FILE_NAME}"
+[Desktop Entry]
+Version=1.0
+Name=Install The Examiner
+Comment=Run this to install The Examiner AI Tutor
+Type=Application
+Exec=./install.sh
+Icon=utilities-terminal
+Terminal=true
+Categories=Utility;
+StartupNotify=true
+EOF_INSTALLER_DESKTOP
+        chmod +x "${TARGET_PACKAGE_DIR}/${INSTALLER_DESKTOP_FILE_NAME}"
     else
         echo "WARNING: install.sh not found in project root (${PROJECT_ROOT_DIR}). It will not be included in the archive."
     fi

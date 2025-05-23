@@ -6,4 +6,5 @@ export interface App {
   size: number;
   category: string;
   thumbnail?: string;
+  storage_key?: string;
 }

@@ -4930,3 +4930,24 @@ INFO:src.core.network.sync_service:Starting student activity report sync...
 >>> DEBUG: *** Database file NOT FOUND at /Users/emmanuelsibanda/Desktop/GitHub/fundAI/EdTech Apps/The Examiner/student_profile.db ***
 ERROR:src.core.history.user_history_manager:Cannot get student activity for sync (user 1): No database connection.
 INFO:src.core.network.sync_service:No activity to sync
+Error calling Python override of QWidget::paintEvent(): Traceback (most recent call last):
+  File "/Users/emmanuelsibanda/Desktop/GitHub/fundAI/EdTech Apps/The Examiner/src/ui/components/profile/achievements/medal_widget.py", line 67, in paintEvent
+    def paintEvent(self, event):
+    
+KeyboardInterrupt
+INFO:__main__:Performing application cleanup...
+INFO:src.core.services:Shutting down application services...
+INFO:src.core.network.sync_service:Sync service stopped
+INFO:src.core.services:Sync service stopped
+INFO:src.data.cache.cache_manager:Cache Manager stopped
+INFO:src.core.services:Cache manager stopped
+ERROR:src.core.services:Error closing MongoDB client: 'MongoDBClient' object has no attribute 'close'
+Traceback (most recent call last):
+  File "/Users/emmanuelsibanda/Desktop/GitHub/fundAI/EdTech Apps/The Examiner/src/core/services.py", line 117, in shutdown_services
+    mongodb_client.close()
+    ^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'MongoDBClient' object has no attribute 'close'
+INFO:src.core.services:Services shut down successfully
+INFO:__main__:Application event loop finished with exit code: 0
+INFO:__main__:Flushing Sentry events before shutdown...
+INFO:__main__:Application shutdown complete.
