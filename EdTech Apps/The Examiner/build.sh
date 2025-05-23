@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "Starting Linux artifact build for The Examiner using Docker..."
-APP_VERSION="1.0.2" # Updated version
+APP_VERSION="1.0.3" # Updated version
 PROJECT_ROOT_DIR=$(pwd) # Assuming this script is in the project root
 
 # --- Configuration ---
@@ -25,6 +25,11 @@ rm -f "${PROJECT_ROOT_DIR}/${LINUX_FINAL_ARCHIVE_NAME}"
 rm -rf "${HOST_BUILD_DIR}" 
 rm -f "${PROJECT_ROOT_DIR}/${DOCKERFILE_FOR_BUILD_ENV}" 
 echo "[BUILD.SH] Cleanup complete."
+
+# --- Pre-build cleanup of macOS metadata files from the project source ---
+echo "[BUILD.SH] Cleaning macOS metadata files (._* and .DS_Store) from project source..."
+find "${PROJECT_ROOT_DIR}" -type f \\( -name '._*' -o -name '.DS_Store' \\) -print -delete
+echo "[BUILD.SH] macOS metadata file cleanup complete."
 
 # --- Create Dockerfile for the Build Environment ---
 echo "[BUILD.SH] Generating ${DOCKERFILE_FOR_BUILD_ENV} for Linux build environment..."
@@ -166,7 +171,14 @@ EOF_INSTALLER_DESKTOP
         echo "WARNING: install.sh not found in project root (${PROJECT_ROOT_DIR}). It will not be included in the archive."
     fi
     echo "[BUILD.SH] Creating archive ./${LINUX_FINAL_ARCHIVE_NAME} from directory dist/${LINUX_PACKAGE_NAME_BASE}..."
-    (cd "${HOST_DIST_DIR}" && tar -czvf "../${LINUX_FINAL_ARCHIVE_NAME}" "${LINUX_PACKAGE_NAME_BASE}")
+    # Exclude macOS specific metadata files and other unwanted patterns from the tar archive
+    (cd "${HOST_DIST_DIR}" && tar \
+        --exclude='._*' \
+        --exclude='.DS_Store' \
+        --exclude='__pycache__' \
+        --exclude='*.pyc' \
+        --exclude='*.pyo' \
+        -czvf "../${LINUX_FINAL_ARCHIVE_NAME}" "${LINUX_PACKAGE_NAME_BASE}")
     if [ $? -eq 0 ]; then
         echo "[BUILD.SH] Linux package created successfully: ./${LINUX_FINAL_ARCHIVE_NAME}"
     else
