@@ -1,0 +1,36 @@
+# The Engineer AI Tutor Dependencies
+# Core GUI Framework
+PySide6==6.8.0.2
+
+# AI Inference
+llama-cpp-python==0.3.9  # Optional on ARM64
+groq>=0.5.0
+openai>=1.0.0  # Additional AI provider option
+
+# Database & ORM
+sqlalchemy>=2.0.0
+
+# Cloud Integration
+firebase-admin
+pymongo  # For MongoDB alternative
+
+# Code Analysis & Execution (Programming-specific)
+ast  # Built into Python - for code analysis
+subprocess  # Built into Python - for safe code execution
+black>=23.0.0  # Code formatting
+pylint>=3.0.0  # Code analysis
+mypy>=1.0.0  # Type checking
+
+# Utilities
+python-dotenv  # Environment variable management
+requests>=2.31.0
+aiohttp>=3.8.0  # Async HTTP for better performance
+loguru>=0.7.0  # Better logging
+
+# Testing & Development
+pytest>=7.0.0
+pytest-asyncio
+pytest-qt  # For GUI testing
+
+# Packaging
+pyinstaller>=5.0.0 
