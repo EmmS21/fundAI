@@ -1,11 +1,152 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QFrame, QGridLayout, QLineEdit, QSpinBox, QDialog, QFormLayout, QFileDialog, QSizePolicy, QInputDialog, QProgressBar
+    QFrame, QGridLayout, QLineEdit, QSpinBox, QDialog, QFormLayout, QFileDialog, QSizePolicy, QInputDialog, QProgressBar,
+    QLayout, QLayoutItem, QWidgetItem
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QRect, QSize, QPoint
 from PySide6.QtGui import QFont, QPixmap, QPainter, QPainterPath
 import shutil
 from pathlib import Path
+
+class FlowLayout(QLayout):
+    def __init__(self, parent=None, margin=0, hSpacing=-1, vSpacing=-1):
+        super().__init__(parent)
+        self.itemList = []
+        self.m_hSpace = hSpacing
+        self.m_vSpace = vSpacing
+        self.setContentsMargins(margin, margin, margin, margin)
+
+    def __del__(self):
+        item = self.takeAt(0)
+        while item:
+            item = self.takeAt(0)
+
+    def addItem(self, item):
+        self.itemList.append(item)
+
+    def insertWidget(self, index, widget):
+        self.addChildWidget(widget)
+        item = QWidgetItem(widget)
+        if 0 <= index <= len(self.itemList):
+            self.itemList.insert(index, item)
+        else:
+            self.itemList.append(item)
+
+    def count(self):
+        return len(self.itemList)
+
+    def itemAt(self, index):
+        if 0 <= index < len(self.itemList):
+            return self.itemList[index]
+        return None
+
+    def takeAt(self, index):
+        if 0 <= index < len(self.itemList):
+            return self.itemList.pop(index)
+        return None
+
+    def expandingDirections(self):
+        return Qt.Orientations(Qt.Orientation(0))
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        height = self.doLayout(QRect(0, 0, width, 0), True)
+        return height
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self.doLayout(rect, False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self.itemList:
+            size = size.expandedTo(item.minimumSize())
+        
+        margins = self.contentsMargins()
+        size += QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
+        return size
+
+    def doLayout(self, rect, testOnly):
+        left, top, right, bottom = self.getContentsMargins()
+        effectiveRect = rect.adjusted(left, top, -right, -bottom)
+        x = effectiveRect.x()
+        y = effectiveRect.y()
+        lineHeight = 0
+
+        if not self.itemList:
+            return y + lineHeight - rect.y() + bottom
+
+        # Separate profile picture from other items
+        profile_item = self.itemList[0] if len(self.itemList) > 0 else None
+        other_items = self.itemList[1:] if len(self.itemList) > 1 else []
+
+        # Position profile picture at far left
+        if profile_item and not testOnly:
+            profile_item.setGeometry(QRect(QPoint(int(x), y), profile_item.sizeHint()))
+        
+        if profile_item:
+            x += profile_item.sizeHint().width()
+            lineHeight = max(lineHeight, profile_item.sizeHint().height())
+
+        # If we have other items, distribute them with space-evenly
+        if other_items:
+            # Add some spacing after profile picture
+            profile_spacing = 20  # Fixed spacing after profile picture
+            x += profile_spacing
+            
+            # Calculate total width needed for remaining items
+            totalItemWidth = sum(item.sizeHint().width() for item in other_items)
+            
+            # Calculate available space for distribution
+            remainingWidth = effectiveRect.right() - x
+            remainingSpace = remainingWidth - totalItemWidth
+            
+            # Distribute space evenly between remaining items
+            if len(other_items) > 1 and remainingSpace > 0:
+                spaceBetween = remainingSpace / (len(other_items) + 1)
+                x += spaceBetween  # Initial offset
+            else:
+                spaceBetween = self.horizontalSpacing()
+
+            for i, item in enumerate(other_items):
+                if not testOnly:
+                    item.setGeometry(QRect(QPoint(int(x), y), item.sizeHint()))
+
+                x += item.sizeHint().width()
+                
+                # Add space between items (except after the last item)
+                if i < len(other_items) - 1:
+                    x += spaceBetween
+                    
+                lineHeight = max(lineHeight, item.sizeHint().height())
+
+        return y + lineHeight - rect.y() + bottom
+
+    def horizontalSpacing(self):
+        if self.m_hSpace >= 0:
+            return self.m_hSpace
+        else:
+            return self.smartSpacing(QSizePolicy.PushButton, Qt.Horizontal)
+
+    def verticalSpacing(self):
+        if self.m_vSpace >= 0:
+            return self.m_vSpace
+        else:
+            return self.smartSpacing(QSizePolicy.PushButton, Qt.Vertical)
+
+    def smartSpacing(self, pm, orientation):
+        parent = self.parent()
+        if not parent:
+            return -1
+        elif parent.isWidgetType():
+            return parent.style().layoutSpacing(pm, pm, orientation)
+        else:
+            return parent.spacing()
 
 class CircularImageWidget(QWidget):
     def __init__(self, size=116, parent=None):
@@ -294,18 +435,16 @@ class DashboardView(QWidget):
             }
         """)
         
-        self.profile_layout = QHBoxLayout(profile_frame)
-        self.profile_layout.setSpacing(15)
-        self.profile_layout.setAlignment(Qt.AlignVCenter)
+        self.profile_layout = FlowLayout(profile_frame, margin=0, hSpacing=15, vSpacing=10)
         
-        self.profile_picture = CircularImageWidget(116)
+        self.profile_picture = CircularImageWidget(90)
         self.load_profile_picture()
-        self.profile_layout.addWidget(self.profile_picture, 0)
+        self.profile_layout.addWidget(self.profile_picture)
         
         self.name_value = QLabel(self.user_data.get('username', 'Student'))
         self.name_value.setWordWrap(True)
         self.name_value.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.name_value.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.name_value.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Preferred)
         self.name_value.setStyleSheet("""
             QLabel {
                 color: rgba(255, 255, 255, 0.95);
@@ -321,22 +460,21 @@ class DashboardView(QWidget):
         """)
         self.name_value.setCursor(Qt.PointingHandCursor)
         self.name_value.mousePressEvent = self.start_editing_name
-        self.profile_layout.addWidget(self.name_value, 1)
+        self.profile_layout.addWidget(self.name_value)
         
         score_value = f"{self.user_data.get('overall_score', 0):.1f}%"
         self.score_value = QLabel(score_value)
         self.score_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.score_value.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        self.score_value.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred)
         self.score_value.setStyleSheet("""
             QLabel {
                 color: rgba(100, 210, 255, 0.9);
                 font-size: 18px;
                 font-weight: 700;
                 font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-                min-width: 60px;
             }
         """)
-        self.profile_layout.addWidget(self.score_value, 0)
+        self.profile_layout.addWidget(self.score_value)
         
         layout.addWidget(profile_frame)
         
@@ -451,9 +589,20 @@ class DashboardView(QWidget):
             self.is_editing = True
             self.show_save_button()
             
-            # Replace name label with input
+            # Remove name label and add input
             current_text = self.name_value.text()
             self.name_value.hide()
+            
+            # Find the position of name_value in the layout
+            name_index = -1
+            for i in range(self.profile_layout.count()):
+                if self.profile_layout.itemAt(i).widget() == self.name_value:
+                    name_index = i
+                    break
+            
+            if name_index >= 0:
+                # Remove the name label from layout
+                self.profile_layout.takeAt(name_index)
             
             self.name_input = QLineEdit(current_text)
             self.name_input.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -470,7 +619,13 @@ class DashboardView(QWidget):
                     padding: 4px;
                 }
             """)
-            self.profile_layout.replaceWidget(self.name_value, self.name_input)
+            
+            # Insert the input at the same position
+            if name_index >= 0:
+                self.profile_layout.insertWidget(name_index, self.name_input)
+            else:
+                self.profile_layout.addWidget(self.name_input)
+                
             self.name_input.selectAll()
             self.name_input.setFocus()
 
@@ -524,12 +679,29 @@ class DashboardView(QWidget):
             self.save_button.deleteLater()
             self.save_button = None
         
-        # Replace inputs with labels
+        # Replace input with label
         if self.name_input:
+            # Find the position of name_input in the layout
+            input_index = -1
+            for i in range(self.profile_layout.count()):
+                if self.profile_layout.itemAt(i).widget() == self.name_input:
+                    input_index = i
+                    break
+            
+            if input_index >= 0:
+                # Remove the input from layout
+                self.profile_layout.takeAt(input_index)
+            
             self.name_value.setText(self.user_data.get('username', 'Student'))
-            self.profile_layout.replaceWidget(self.name_input, self.name_value)
             self.name_input.deleteLater()
             self.name_input = None
+            
+            # Insert the label at the same position
+            if input_index >= 0:
+                self.profile_layout.insertWidget(input_index, self.name_value)
+            else:
+                self.profile_layout.addWidget(self.name_value)
+                
             self.name_value.show()
 
     def load_profile_picture(self):
