@@ -1,11 +1,103 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QFrame, QGridLayout, QLineEdit, QSpinBox, QDialog, QFormLayout, QFileDialog
+    QFrame, QGridLayout, QLineEdit, QSpinBox, QDialog, QFormLayout, QFileDialog, QSizePolicy, QInputDialog
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QPixmap
+from PySide6.QtGui import QFont, QPixmap, QPainter, QPainterPath
 import shutil
 from pathlib import Path
+
+class CircularImageWidget(QWidget):
+    def __init__(self, size=116, parent=None):
+        super().__init__(parent)
+        self.size = size
+        self.pixmap = None
+        self.setFixedSize(size, size)
+        self.setCursor(Qt.PointingHandCursor)
+        
+    def setPixmap(self, pixmap):
+        self.pixmap = pixmap
+        self.update()
+        
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        if self.pixmap:
+            # Create circular clipping path
+            path = QPainterPath()
+            path.addEllipse(0, 0, self.size, self.size)
+            painter.setClipPath(path)
+            
+            # Draw the image
+            painter.drawPixmap(0, 0, self.size, self.size, self.pixmap)
+        else:
+            # Draw camera icon when no image
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(Qt.white)
+            painter.setOpacity(0.1)
+            painter.drawEllipse(0, 0, self.size, self.size)
+            
+            # Draw camera icon
+            painter.setOpacity(0.7)
+            painter.setPen(Qt.white)
+            font = painter.font()
+            font.setPointSize(self.size // 4)  # 2x bigger than before
+            painter.setFont(font)
+            
+            # Center the camera icon
+            painter.drawText(self.rect(), Qt.AlignCenter, "📷")
+        
+        painter.end()
+        
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.upload_profile_picture()
+            
+    def upload_profile_picture(self):
+        """Handle profile picture upload"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Profile Picture",
+            "",
+            "Image Files (*.png *.jpg *.jpeg *.gif *.bmp)"
+        )
+        
+        if file_path:
+            try:
+                # Create profile pictures directory
+                profile_dir = Path("data/profile_pictures")
+                profile_dir.mkdir(exist_ok=True)
+                
+                # Copy file to our directory with user ID in filename
+                user_id = self.parent().user_data.get('id', 'unknown')
+                file_extension = Path(file_path).suffix
+                new_filename = f"user_{user_id}_profile{file_extension}"
+                new_path = profile_dir / new_filename
+                
+                # Copy the file
+                shutil.copy2(file_path, new_path)
+                
+                # Update database
+                if 'id' in self.parent().user_data:
+                    success = self.parent().main_window.database.update_user_profile(
+                        self.parent().user_data['id'],
+                        profile_picture=str(new_path)
+                    )
+                    
+                    if success:
+                        # Update local data
+                        self.parent().user_data['profile_picture'] = str(new_path)
+                        
+                        # Update UI
+                        self.parent().load_profile_picture()
+                        
+                        print(f"Profile picture updated: {new_path}")
+                    else:
+                        print("Failed to update profile picture in database")
+                
+            except Exception as e:
+                print(f"Error uploading profile picture: {e}")
 
 class ProfileEditDialog(QDialog):
     profile_updated = Signal(dict)
@@ -137,12 +229,13 @@ class DashboardView(QWidget):
         # Header
         header_layout = QHBoxLayout()
         
-        welcome_label = QLabel("🚀 Welcome to The Engineer!")
+        welcome_label = QLabel("The Engineer!")
         welcome_label.setStyleSheet("""
             QLabel {
-                font-size: 28px;
-                font-weight: bold;
-                color: #2c3e50;
+                font-size: 26px;
+                font-weight: 600;
+                color: rgba(255, 255, 255, 0.9);
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             }
         """)
         header_layout.addWidget(welcome_label)
@@ -150,291 +243,146 @@ class DashboardView(QWidget):
         header_layout.addStretch()
         
         # Profile edit button
-        edit_button = QPushButton("✏️ Edit Profile")
-        edit_button.setStyleSheet("""
-            QPushButton {
-                font-size: 14px;
-                padding: 8px 16px;
-                border: 2px solid #3498db;
-                border-radius: 6px;
-                background-color: white;
-                color: #3498db;
-            }
-            QPushButton:hover {
-                background-color: #3498db;
-                color: white;
-            }
-        """)
-        edit_button.clicked.connect(self.edit_profile)
-        header_layout.addWidget(edit_button)
+
+
         
         layout.addLayout(header_layout)
         
-        # Profile section - allows content to flow over
         profile_frame = QFrame()
         profile_frame.setStyleSheet("""
             QFrame {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #3498db, stop:1 #2980b9);
-                border-radius: 15px;
-                padding: 30px;
-                margin-bottom: 20px;
-                min-height: 200px;
+                background: rgba(255, 255, 255, 0.05);
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
+                padding: 20px;
+                margin-bottom: 25px;
             }
         """)
         
         profile_layout = QHBoxLayout(profile_frame)
-        profile_layout.setSpacing(40)
-        profile_layout.setAlignment(Qt.AlignCenter)
+        profile_layout.setSpacing(15)
+        profile_layout.setAlignment(Qt.AlignVCenter)
         
-        # Profile picture section
-        picture_layout = QVBoxLayout()
-        picture_layout.setAlignment(Qt.AlignCenter)
+        self.profile_picture = CircularImageWidget(116)
         
-        # Profile picture - bigger and more prominent
-        self.profile_picture = QLabel()
-        self.profile_picture.setFixedSize(180, 180)
-        self.profile_picture.setStyleSheet("""
-            QLabel {
-                border: 4px solid white;
-                border-radius: 90px;
-                background-color: rgba(255, 255, 255, 0.2);
-            }
-        """)
-        self.profile_picture.setAlignment(Qt.AlignCenter)
-        self.profile_picture.setScaledContents(False)
-        
-        # Load existing profile picture or show default
         self.load_profile_picture()
         
-        picture_layout.addWidget(self.profile_picture)
+
         
-        # Upload button
-        upload_button = QPushButton("📷")
-        upload_button.setStyleSheet("""
-            QPushButton {
-                font-size: 16px;
-                padding: 8px;
-                background-color: rgba(255, 255, 255, 0.2);
-                color: white;
-                border: 2px solid white;
-                border-radius: 20px;
-                margin-top: 8px;
-                min-width: 40px;
-                max-width: 40px;
-                min-height: 40px;
-                max-height: 40px;
-            }
-            QPushButton:hover {
-                background-color: rgba(255, 255, 255, 0.4);
-                transform: scale(1.05);
-            }
-        """)
-        upload_button.clicked.connect(self.upload_profile_picture)
-        picture_layout.addWidget(upload_button)
+        profile_layout.addWidget(self.profile_picture, 1)
         
-        profile_layout.addLayout(picture_layout)
-        
-        # Profile info - clean, no labels
-        info_layout = QVBoxLayout()
-        info_layout.setAlignment(Qt.AlignVCenter)
-        info_layout.setSpacing(15)
-        
-        # Name only
         self.name_value = QLabel(self.user_data.get('username', 'Student'))
-        self.name_value.setWordWrap(True)
-        self.name_value.setAlignment(Qt.AlignLeft)
+        self.name_value.setWordWrap(False)
+        self.name_value.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.name_value.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self.name_value.setStyleSheet("""
             QLabel {
-                color: white;
-                font-size: 24px;
-                font-weight: bold;
-                margin-bottom: 5px;
+                color: rgba(255, 255, 255, 0.95);
+                font-size: 16px;
+                font-weight: 600;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             }
         """)
-        info_layout.addWidget(self.name_value)
+        self.name_value.mousePressEvent = self.edit_name
+        profile_layout.addWidget(self.name_value, 0)
         
-        # Score only
         score_value = f"{self.user_data.get('overall_score', 0):.1f}%"
         self.score_value = QLabel(score_value)
-        self.score_value.setAlignment(Qt.AlignLeft)
+        self.score_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.score_value.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self.score_value.setStyleSheet("""
             QLabel {
-                color: rgba(255, 255, 255, 0.9);
-                font-size: 28px;
-                font-weight: bold;
+                color: rgba(100, 210, 255, 0.9);
+                font-size: 18px;
+                font-weight: 700;
+                font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
             }
         """)
-        info_layout.addWidget(self.score_value)
-        
-        profile_layout.addLayout(info_layout)
-        profile_layout.addStretch()
+        profile_layout.addWidget(self.score_value, 0)
         
         layout.addWidget(profile_frame)
         
-        # Coming soon section
-        coming_soon_frame = QFrame()
-        coming_soon_frame.setStyleSheet("""
-            QFrame {
-                background-color: #f8f9fa;
-                border-radius: 12px;
-                padding: 30px;
-            }
-        """)
+        # Two simple QLabel boxes
+        bottom_layout = QHBoxLayout()
+        bottom_layout.setSpacing(20)
         
-        coming_soon_layout = QVBoxLayout(coming_soon_frame)
-        
-        coming_soon_title = QLabel("🔧 Your Learning Journey Starts Here!")
-        coming_soon_title.setAlignment(Qt.AlignCenter)
-        coming_soon_title.setStyleSheet("""
+        logic_label = QLabel("🧩 Logic Puzzles")
+        logic_label.setAlignment(Qt.AlignCenter)
+        logic_label.setStyleSheet("""
             QLabel {
-                font-size: 22px;
-                font-weight: bold;
-                color: #2c3e50;
-                margin-bottom: 15px;
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 10px;
+                padding: 20px;
+                font-size: 16px;
+                font-weight: 600;
+                color: rgba(255, 255, 255, 0.9);
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            }
+            QLabel:hover {
+                background: rgba(255, 255, 255, 0.1);
+                border-color: rgba(255, 255, 255, 0.2);
             }
         """)
-        coming_soon_layout.addWidget(coming_soon_title)
         
-        description = QLabel("""
-Based on your assessment results, we're preparing personalized projects for you!
-
-🎯 Coming Soon:
-• Custom coding challenges matching your skill level
-• Step-by-step tutorials for building real applications
-• Project-based learning with immediate feedback
-• Progress tracking as you develop your skills
-
-Your engineering thinking assessment helps us create the perfect learning path just for you.
-        """)
-        description.setAlignment(Qt.AlignCenter)
-        description.setWordWrap(True)
-        description.setStyleSheet("""
+        build_label = QLabel("🏗️ Build Projects")
+        build_label.setAlignment(Qt.AlignCenter)
+        build_label.setStyleSheet("""
             QLabel {
-                font-size: 14px;
-                color: #2c3e50;
-                line-height: 1.6;
-                margin: 15px;
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 10px;
+                padding: 20px;
+                font-size: 16px;
+                font-weight: 600;
+                color: rgba(255, 255, 255, 0.9);
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            }
+            QLabel:hover {
+                background: rgba(255, 255, 255, 0.1);
+                border-color: rgba(255, 255, 255, 0.2);
             }
         """)
-        coming_soon_layout.addWidget(description)
         
-        # Action cards grid
-        cards_layout = QGridLayout()
-        cards_layout.setSpacing(15)
+        bottom_layout.addWidget(logic_label)
+        bottom_layout.addWidget(build_label)
         
-        # Cards data
-        cards = [
-            {
-                'icon': '🧩',
-                'title': 'Logic Puzzles',
-                'description': 'Sharpen your problem-solving skills',
-                'color': '#e74c3c'
-            },
-            {
-                'icon': '🏗️',
-                'title': 'Build Projects',
-                'description': 'Create real applications step by step',
-                'color': '#f39c12'
-            },
-            {
-                'icon': '🤖',
-                'title': 'Code Practice',
-                'description': 'Learn programming fundamentals',
-                'color': '#9b59b6'
-            },
-            {
-                'icon': '📊',
-                'title': 'Track Progress',
-                'description': 'See your skills grow over time',
-                'color': '#1abc9c'
-            }
-        ]
-        
-        for i, card_data in enumerate(cards):
-            card = self.create_feature_card(card_data)
-            row = i // 2
-            col = i % 2
-            cards_layout.addWidget(card, row, col)
-        
-        coming_soon_layout.addLayout(cards_layout)
-        
-        layout.addWidget(coming_soon_frame)
+        layout.addLayout(bottom_layout)
         
         # Footer
-        footer_label = QLabel("Get ready to build amazing things!")
+        footer_label = QLabel("FundaAI - Learn by building")
         footer_label.setAlignment(Qt.AlignCenter)
         footer_label.setStyleSheet("""
             QLabel {
-                font-size: 16px;
-                color: #7f8c8d;
+                font-size: 15px;
+                color: rgba(255, 255, 255, 0.6);
                 font-style: italic;
                 margin-top: 20px;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             }
         """)
         layout.addWidget(footer_label)
     
-    def create_feature_card(self, card_data):
-        card = QFrame()
-        card.setStyleSheet(f"""
-            QFrame {{
-                background-color: white;
-                border-left: 4px solid {card_data['color']};
-                border-radius: 8px;
-                padding: 20px;
-                min-height: 100px;
-            }}
-            QFrame:hover {{
-                background-color: #f8f9fa;
-                transform: translateY(-2px);
-            }}
-        """)
-        
-        layout = QVBoxLayout(card)
-        
-        # Icon and title
-        header_layout = QHBoxLayout()
-        
-        icon = QLabel(card_data['icon'])
-        icon.setStyleSheet("""
-            QLabel {
-                font-size: 24px;
-                margin-right: 10px;
-            }
-        """)
-        header_layout.addWidget(icon)
-        
-        title = QLabel(card_data['title'])
-        title.setStyleSheet(f"""
-            QLabel {{
-                font-size: 16px;
-                font-weight: bold;
-                color: {card_data['color']};
-            }}
-        """)
-        header_layout.addWidget(title)
-        header_layout.addStretch()
-        
-        layout.addLayout(header_layout)
-        
-        # Description
-        description = QLabel(card_data['description'])
-        description.setWordWrap(True)
-        description.setStyleSheet("""
-            QLabel {
-                font-size: 12px;
-                color: #7f8c8d;
-                margin-top: 5px;
-            }
-        """)
-        layout.addWidget(description)
-        
-        return card
+
     
-    def edit_profile(self):
-        dialog = ProfileEditDialog(self.user_data, self)
-        dialog.profile_updated.connect(self.update_profile)
-        dialog.exec()
+    def edit_name(self, event):
+        if event.button() == Qt.LeftButton:
+            current_name = self.user_data.get('username', 'Student')
+            new_name, ok = QInputDialog.getText(
+                self, 
+                "Edit Name", 
+                "Enter your name:",
+                text=current_name
+            )
+            if ok and new_name.strip():
+                self.user_data['username'] = new_name.strip()
+                self.name_value.setText(new_name.strip())
+                if 'id' in self.user_data:
+                    self.main_window.database.update_user_profile(
+                        self.user_data['id'],
+                        username=new_name.strip()
+                    )
     
     def load_profile_picture(self):
         """Load and display the user's profile picture"""
@@ -444,33 +392,16 @@ Your engineering thinking assessment helps us create the perfect learning path j
             # Load user's profile picture
             pixmap = QPixmap(picture_path)
             if not pixmap.isNull():
-                # Create a square version that fits properly
-                circular_pixmap = self.create_proper_circular_image(pixmap, 180)
-                self.profile_picture.setPixmap(circular_pixmap)
-                # Simple border styling only
-                self.profile_picture.setStyleSheet("""
-                    QLabel {
-                        border: 4px solid white;
-                        border-radius: 90px;
-                    }
-                """)
+                scaled_pixmap = pixmap.scaled(116, 116, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                self.profile_picture.setPixmap(scaled_pixmap)
                 return
         
-        # Show default avatar
-        self.profile_picture.clear()
-        self.profile_picture.setText("👤")
-        self.profile_picture.setStyleSheet("""
-            QLabel {
-                border: 4px solid white;
-                border-radius: 90px;
-                background-color: rgba(255, 255, 255, 0.2);
-                font-size: 72px;
-                color: white;
-            }
-        """)
+        # Show default avatar - clear the widget
+        self.profile_picture.pixmap = None
+        self.profile_picture.update()
     
-    def create_proper_circular_image(self, source_pixmap, size):
-        """Create a properly circular cropped image like the example"""
+    def create_proper_circular_image(self, source_pixmap, size=116):
+        """Create a properly circular cropped image"""
         from PySide6.QtGui import QPainter, QBrush, QPainterPath
         
         # Create final result pixmap
@@ -501,50 +432,7 @@ Your engineering thinking assessment helps us create the perfect learning path j
     
 
     
-    def upload_profile_picture(self):
-        """Handle profile picture upload"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select Profile Picture",
-            "",
-            "Image Files (*.png *.jpg *.jpeg *.gif *.bmp)"
-        )
-        
-        if file_path:
-            try:
-                # Create profile pictures directory
-                profile_dir = Path("data/profile_pictures")
-                profile_dir.mkdir(exist_ok=True)
-                
-                # Copy file to our directory with user ID in filename
-                user_id = self.user_data.get('id', 'unknown')
-                file_extension = Path(file_path).suffix
-                new_filename = f"user_{user_id}_profile{file_extension}"
-                new_path = profile_dir / new_filename
-                
-                # Copy the file
-                shutil.copy2(file_path, new_path)
-                
-                # Update database
-                if 'id' in self.user_data:
-                    success = self.main_window.database.update_user_profile(
-                        self.user_data['id'],
-                        profile_picture=str(new_path)
-                    )
-                    
-                    if success:
-                        # Update local data
-                        self.user_data['profile_picture'] = str(new_path)
-                        
-                        # Update UI
-                        self.load_profile_picture()
-                        
-                        print(f"Profile picture updated: {new_path}")
-                    else:
-                        print("Failed to update profile picture in database")
-                
-            except Exception as e:
-                print(f"Error uploading profile picture: {e}")
+
     
     def update_profile(self, updated_data):
         # Update database
