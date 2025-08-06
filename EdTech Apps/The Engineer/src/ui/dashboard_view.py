@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QFrame, QGridLayout, QLineEdit, QSpinBox, QDialog, QFormLayout, QFileDialog, QSizePolicy, QInputDialog
+    QFrame, QGridLayout, QLineEdit, QSpinBox, QDialog, QFormLayout, QFileDialog, QSizePolicy, QInputDialog, QProgressBar
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QPixmap, QPainter, QPainterPath
@@ -219,6 +219,9 @@ class DashboardView(QWidget):
         super().__init__()
         self.user_data = user_data or {}
         self.main_window = main_window
+        self.is_editing = False
+        self.name_input = None
+        self.save_button = None
         self.setup_ui()
     
     def setup_ui(self):
@@ -226,27 +229,58 @@ class DashboardView(QWidget):
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(25)
         
-        # Header
-        header_layout = QHBoxLayout()
+        # Header section
+        header_section = QVBoxLayout()
+        header_section.setSpacing(10)
         
-        welcome_label = QLabel("The Engineer!")
+        # Title
+        welcome_label = QLabel("The Engineer")
+        welcome_label.setAlignment(Qt.AlignCenter)
         welcome_label.setStyleSheet("""
             QLabel {
-                font-size: 26px;
-                font-weight: 600;
-                color: rgba(255, 255, 255, 0.9);
+                font-size: 32px;
+                font-weight: 700;
+                color: rgba(255, 255, 255, 0.95);
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                margin-bottom: 5px;
             }
         """)
-        header_layout.addWidget(welcome_label)
+        header_section.addWidget(welcome_label)
         
-        header_layout.addStretch()
+        # Subtitle
+        subtitle_label = QLabel("The Engineer - learn software engineering by building projects")
+        subtitle_label.setAlignment(Qt.AlignCenter)
+        subtitle_label.setStyleSheet("""
+            QLabel {
+                font-size: 16px;
+                font-weight: 400;
+                color: rgba(255, 255, 255, 0.7);
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                margin-bottom: 15px;
+            }
+        """)
+        header_section.addWidget(subtitle_label)
         
-        # Profile edit button
-
-
+        # Divider line
+        divider = QFrame()
+        divider.setFrameShape(QFrame.HLine)
+        divider.setStyleSheet("""
+            QFrame {
+                color: rgba(255, 255, 255, 0.2);
+                background-color: rgba(255, 255, 255, 0.2);
+                border: none;
+                height: 1px;
+                margin: 10px 0px;
+            }
+        """)
+        header_section.addWidget(divider)
         
-        layout.addLayout(header_layout)
+        layout.addLayout(header_section)
+        
+        # Save button container (will be populated when editing)
+        self.header_layout = QHBoxLayout()
+        self.header_layout.addStretch()
+        layout.addLayout(self.header_layout)
         
         profile_frame = QFrame()
         profile_frame.setStyleSheet("""
@@ -260,22 +294,18 @@ class DashboardView(QWidget):
             }
         """)
         
-        profile_layout = QHBoxLayout(profile_frame)
-        profile_layout.setSpacing(15)
-        profile_layout.setAlignment(Qt.AlignVCenter)
+        self.profile_layout = QHBoxLayout(profile_frame)
+        self.profile_layout.setSpacing(15)
+        self.profile_layout.setAlignment(Qt.AlignVCenter)
         
         self.profile_picture = CircularImageWidget(116)
-        
         self.load_profile_picture()
-        
-
-        
-        profile_layout.addWidget(self.profile_picture, 1)
+        self.profile_layout.addWidget(self.profile_picture, 0)
         
         self.name_value = QLabel(self.user_data.get('username', 'Student'))
-        self.name_value.setWordWrap(False)
+        self.name_value.setWordWrap(True)
         self.name_value.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.name_value.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        self.name_value.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.name_value.setStyleSheet("""
             QLabel {
                 color: rgba(255, 255, 255, 0.95);
@@ -283,23 +313,30 @@ class DashboardView(QWidget):
                 font-weight: 600;
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             }
+            QLabel:hover {
+                background: rgba(255, 255, 255, 0.05);
+                border-radius: 4px;
+                padding: 4px;
+            }
         """)
-        self.name_value.mousePressEvent = self.edit_name
-        profile_layout.addWidget(self.name_value, 0)
+        self.name_value.setCursor(Qt.PointingHandCursor)
+        self.name_value.mousePressEvent = self.start_editing_name
+        self.profile_layout.addWidget(self.name_value, 1)
         
         score_value = f"{self.user_data.get('overall_score', 0):.1f}%"
         self.score_value = QLabel(score_value)
         self.score_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.score_value.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        self.score_value.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         self.score_value.setStyleSheet("""
             QLabel {
                 color: rgba(100, 210, 255, 0.9);
                 font-size: 18px;
                 font-weight: 700;
                 font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+                min-width: 60px;
             }
         """)
-        profile_layout.addWidget(self.score_value, 0)
+        self.profile_layout.addWidget(self.score_value, 0)
         
         layout.addWidget(profile_frame)
         
@@ -350,40 +387,151 @@ class DashboardView(QWidget):
         
         layout.addLayout(bottom_layout)
         
-        # Footer
-        footer_label = QLabel("FundaAI - Learn by building")
-        footer_label.setAlignment(Qt.AlignCenter)
-        footer_label.setStyleSheet("""
+        # Skills Section (no box, just plain text)
+        skills_title = QLabel("Engineering Skills Progress")
+        skills_title.setAlignment(Qt.AlignCenter)
+        skills_title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        skills_title.setWordWrap(True)
+        skills_title.setStyleSheet("""
             QLabel {
-                font-size: 15px;
-                color: rgba(255, 255, 255, 0.6);
-                font-style: italic;
-                margin-top: 20px;
+                font-size: 18px;
+                font-weight: 600;
+                color: rgba(255, 255, 255, 0.9);
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                margin: 25px 0px 15px 0px;
+                min-height: 25px;
             }
         """)
-        layout.addWidget(footer_label)
-    
+        layout.addWidget(skills_title)
+        
+        skills_divider = QFrame()
+        skills_divider.setFrameShape(QFrame.HLine)
+        skills_divider.setStyleSheet("""
+            QFrame {
+                color: rgba(255, 255, 255, 0.2);
+                background-color: rgba(255, 255, 255, 0.2);
+                border: none;
+                height: 1px;
+                margin: 10px 0px;
+            }
+        """)
+        layout.addWidget(skills_divider)
+        
+        # Project stats
+        completed_projects = self.get_completed_projects_count()
+        in_progress_projects = self.get_in_progress_projects_count()
+        total_skills = self.get_total_skills_count()
+        
+        stats_text = f"🎯 {completed_projects} Completed  •  🚧 {in_progress_projects} In Progress  •  📊 {total_skills} Skills"
+        stats_label = QLabel(stats_text)
+        stats_label.setAlignment(Qt.AlignCenter)
+        stats_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        stats_label.setWordWrap(True)
+        stats_label.setStyleSheet("""
+            QLabel {
+                font-size: 13px;
+                font-weight: 500;
+                color: rgba(100, 210, 255, 0.8);
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                margin-bottom: 15px;
+                min-height: 20px;
+            }
+        """)
+        layout.addWidget(stats_label)
+        
+        # Skills grid (no container)
+        skills_grid = QGridLayout()
+        skills_grid.setSpacing(8)
+        skills_grid.setSizeConstraint(QGridLayout.SetMinimumSize)
+        self.load_skills_data_grid(skills_grid)
+        layout.addLayout(skills_grid)
 
-    
-    def edit_name(self, event):
-        if event.button() == Qt.LeftButton:
-            current_name = self.user_data.get('username', 'Student')
-            new_name, ok = QInputDialog.getText(
-                self, 
-                "Edit Name", 
-                "Enter your name:",
-                text=current_name
+    def start_editing_name(self, event):
+        if event.button() == Qt.LeftButton and not self.is_editing:
+            self.is_editing = True
+            self.show_save_button()
+            
+            # Replace name label with input
+            current_text = self.name_value.text()
+            self.name_value.hide()
+            
+            self.name_input = QLineEdit(current_text)
+            self.name_input.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            self.name_input.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+            self.name_input.setStyleSheet("""
+                QLineEdit {
+                    color: rgba(255, 255, 255, 0.95);
+                    font-size: 16px;
+                    font-weight: 600;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    background: rgba(255, 255, 255, 0.1);
+                    border: 2px solid rgba(100, 210, 255, 0.5);
+                    border-radius: 4px;
+                    padding: 4px;
+                }
+            """)
+            self.profile_layout.replaceWidget(self.name_value, self.name_input)
+            self.name_input.selectAll()
+            self.name_input.setFocus()
+
+    def show_save_button(self):
+        if not self.save_button:
+            self.save_button = QPushButton("Save Changes")
+            self.save_button.setStyleSheet("""
+                QPushButton {
+                    font-size: 14px;
+                    font-weight: 600;
+                    padding: 8px 16px;
+                    border: 2px solid rgba(100, 210, 255, 0.5);
+                    border-radius: 6px;
+                    background-color: rgba(100, 210, 255, 0.1);
+                    color: rgba(100, 210, 255, 0.9);
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                }
+                QPushButton:hover {
+                    background-color: rgba(100, 210, 255, 0.2);
+                    border-color: rgba(100, 210, 255, 0.7);
+                }
+            """)
+            self.save_button.clicked.connect(self.save_changes)
+            self.header_layout.addWidget(self.save_button)
+
+    def save_changes(self):
+        username = self.user_data.get('username', 'Student')
+        
+        if self.name_input:
+            username = self.name_input.text().strip()
+        
+        if username and 'id' in self.user_data:
+            success = self.main_window.database.update_user_profile(
+                self.user_data['id'],
+                username=username
             )
-            if ok and new_name.strip():
-                self.user_data['username'] = new_name.strip()
-                self.name_value.setText(new_name.strip())
-                if 'id' in self.user_data:
-                    self.main_window.database.update_user_profile(
-                        self.user_data['id'],
-                        username=new_name.strip()
-                    )
-    
+            
+            if success:
+                self.user_data['username'] = username
+                print(f"Profile updated: {username}")
+        
+        self.exit_edit_mode()
+
+    def exit_edit_mode(self):
+        self.is_editing = False
+        
+        # Remove save button
+        if self.save_button:
+            self.save_button.hide()
+            self.header_layout.removeWidget(self.save_button)
+            self.save_button.deleteLater()
+            self.save_button = None
+        
+        # Replace inputs with labels
+        if self.name_input:
+            self.name_value.setText(self.user_data.get('username', 'Student'))
+            self.profile_layout.replaceWidget(self.name_input, self.name_value)
+            self.name_input.deleteLater()
+            self.name_input = None
+            self.name_value.show()
+
     def load_profile_picture(self):
         """Load and display the user's profile picture"""
         picture_path = self.user_data.get('profile_picture', '')
@@ -430,26 +578,212 @@ class DashboardView(QWidget):
         
         return result
     
-
-    
-
-    
-    def update_profile(self, updated_data):
-        # Update database
-        if 'id' in self.user_data:
-            success = self.main_window.database.update_user_profile(
-                self.user_data['id'],
-                updated_data['username'],
-                updated_data['age']
+    def load_skills_data(self):
+        if 'id' not in self.user_data:
+            self.show_no_skills_message()
+            return
+        
+        skills = self.main_window.database.get_user_skills(self.user_data['id'])
+        
+        if not skills:
+            self.show_no_skills_message()
+            return
+        
+        top_skills = skills[:6]
+        
+        for skill in top_skills:
+            skill_widget = self.create_skill_progress_bar(
+                skill['skill_name'], 
+                skill['current_score'],
+                skill['total_evaluations']
             )
+            self.skills_container.addWidget(skill_widget)
+    
+    def load_skills_data_grid(self, grid_layout):
+        if 'id' not in self.user_data:
+            no_skills_label = QLabel("Complete projects to start tracking your engineering skills!")
+            no_skills_label.setAlignment(Qt.AlignCenter)
+            no_skills_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            no_skills_label.setWordWrap(True)
+            no_skills_label.setStyleSheet("""
+                QLabel {
+                    font-size: 13px;
+                    color: rgba(255, 255, 255, 0.6);
+                    font-style: italic;
+                    padding: 15px 5px;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    min-height: 20px;
+                }
+            """)
+            grid_layout.addWidget(no_skills_label, 0, 0, 1, 3)
+            return
+        
+        skills = self.main_window.database.get_user_skills(self.user_data['id'])
+        
+        if not skills:
+            no_skills_label = QLabel("Complete projects to start tracking your engineering skills!")
+            no_skills_label.setAlignment(Qt.AlignCenter)
+            no_skills_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            no_skills_label.setWordWrap(True)
+            no_skills_label.setStyleSheet("""
+                QLabel {
+                    font-size: 13px;
+                    color: rgba(255, 255, 255, 0.6);
+                    font-style: italic;
+                    padding: 15px 5px;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    min-height: 20px;
+                }
+            """)
+            grid_layout.addWidget(no_skills_label, 0, 0, 1, 3)
+            return
+        
+        # Take top 6 skills and arrange in 3x2 grid
+        top_skills = skills[:6]
+        
+        for i, skill in enumerate(top_skills):
+            row = i // 3
+            col = i % 3
             
-            if success:
-                # Update local data
-                self.user_data.update(updated_data)
-                
-                # Update UI
-                self.name_value.setText(updated_data['username'])
-                
-                print(f"Profile updated: {updated_data}")
-            else:
-                print("Failed to update profile in database") 
+            skill_text = f"{self.format_skill_name(skill['skill_name'])}: {skill['current_score']:.0f}%"
+            skill_label = QLabel(skill_text)
+            skill_label.setAlignment(Qt.AlignCenter)
+            skill_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            skill_label.setWordWrap(True)
+            skill_label.setMinimumHeight(40)
+            skill_label.setMaximumHeight(60)
+            skill_label.setStyleSheet("""
+                QLabel {
+                    font-size: 12px;
+                    font-weight: 500;
+                    color: rgba(255, 255, 255, 0.9);
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    padding: 8px 6px;
+                    background: rgba(255, 255, 255, 0.08);
+                    border: 1px solid rgba(255, 255, 255, 0.15);
+                    border-radius: 8px;
+                    margin: 2px;
+                }
+                QLabel:hover {
+                    background: rgba(255, 255, 255, 0.12);
+                    border-color: rgba(255, 255, 255, 0.25);
+                }
+            """)
+            grid_layout.addWidget(skill_label, row, col)
+    
+    def show_no_skills_message(self):
+        no_skills_label = QLabel("Complete projects to start tracking your engineering skills!")
+        no_skills_label.setAlignment(Qt.AlignCenter)
+        no_skills_label.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                color: rgba(255, 255, 255, 0.6);
+                font-style: italic;
+                padding: 20px;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            }
+        """)
+        # self.skills_container.addWidget(no_skills_label) # This line is removed as per the edit hint
+    
+    def create_skill_progress_bar(self, skill_name, score, evaluations):
+        skill_widget = QWidget()
+        skill_layout = QHBoxLayout(skill_widget)
+        skill_layout.setContentsMargins(0, 0, 0, 0)
+        skill_layout.setSpacing(0)
+        
+        # Create a simple text display: "Skill Name: 85%"
+        skill_text = f"{self.format_skill_name(skill_name)}: {score:.0f}%"
+        skill_label = QLabel(skill_text)
+        skill_label.setStyleSheet("""
+            QLabel {
+                font-size: 16px;
+                font-weight: 500;
+                color: rgba(255, 255, 255, 0.9);
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                padding: 8px 0px;
+            }
+        """)
+        skill_layout.addWidget(skill_label)
+        
+        return skill_widget
+    
+    def format_skill_name(self, skill_name):
+        return skill_name.replace('_', ' ').title()
+    
+    def get_completed_projects_count(self):
+        if 'id' not in self.user_data:
+            return 0
+        
+        try:
+            cursor = self.main_window.database.connection.cursor()
+            cursor.execute("""
+                SELECT COUNT(*) FROM github_projects 
+                WHERE user_id = ? AND completed_at IS NOT NULL
+            """, (self.user_data['id'],))
+            result = cursor.fetchone()
+            return result[0] if result else 0
+        except Exception:
+            return 0
+    
+    def get_in_progress_projects_count(self):
+        if 'id' not in self.user_data:
+            return 0
+        
+        try:
+            cursor = self.main_window.database.connection.cursor()
+            cursor.execute("""
+                SELECT COUNT(*) FROM github_projects 
+                WHERE user_id = ? AND completed_at IS NULL
+            """, (self.user_data['id'],))
+            result = cursor.fetchone()
+            return result[0] if result else 0
+        except Exception:
+            return 0
+    
+    def get_total_skills_count(self):
+        if 'id' not in self.user_data:
+            return 0
+        
+        try:
+            cursor = self.main_window.database.connection.cursor()
+            cursor.execute("""
+                SELECT COUNT(*) FROM user_skills WHERE user_id = ?
+            """, (self.user_data['id'],))
+            result = cursor.fetchone()
+            return result[0] if result else 0
+        except Exception:
+            return 0
+    
+    def create_stat_widget(self, title, value, icon):
+        stat_widget = QWidget()
+        stat_layout = QVBoxLayout(stat_widget)
+        stat_layout.setAlignment(Qt.AlignCenter)
+        stat_layout.setSpacing(5)
+        
+        # Simple value display
+        value_label = QLabel(f"{icon} {value}")
+        value_label.setAlignment(Qt.AlignCenter)
+        value_label.setStyleSheet("""
+            QLabel {
+                font-size: 20px;
+                font-weight: 600;
+                color: rgba(100, 210, 255, 0.9);
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            }
+        """)
+        stat_layout.addWidget(value_label)
+        
+        # Title
+        title_label = QLabel(title)
+        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setStyleSheet("""
+            QLabel {
+                font-size: 12px;
+                font-weight: 500;
+                color: rgba(255, 255, 255, 0.7);
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            }
+        """)
+        stat_layout.addWidget(title_label)
+        
+        return stat_widget 
