@@ -41,6 +41,47 @@ class GroqProgrammingClient:
         """Check if Groq AI is available for evaluation"""
         return self.client is not None
     
+    def generate_response(self, prompt_string: str, system_message: str = None) -> str:
+        """
+        Generate a simple text response using Groq API
+        
+        Args:
+            prompt_string: The prompt to send to the AI
+            system_message: Optional system message to set context
+            
+        Returns:
+            Generated text response or empty string if failed
+        """
+        if not self.is_available():
+            return ""
+        
+        try:
+            system_content = system_message or "You are a helpful AI tutor that creates engaging programming projects for young learners."
+            
+            completion = self.client.chat.completions.create(
+                model=AI_CONFIG["cloud"]["groq_model"],
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": system_content
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt_string
+                    }
+                ],
+                max_tokens=AI_CONFIG["cloud"]["max_tokens"],
+                temperature=AI_CONFIG["cloud"]["temperature"],
+            )
+            
+            response_text = completion.choices[0].message.content
+            logger.info("Groq response generated successfully")
+            return response_text or ""
+            
+        except Exception as e:
+            logger.error(f"Groq API call failed: {e}")
+            return ""
+    
     def generate_report_from_prompt(self, prompt_string: str) -> Dict[str, Any]:
         """
         Generate evaluation report from prompt using Groq API

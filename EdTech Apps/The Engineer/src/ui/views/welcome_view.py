@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QPushButton, QLineEdit, QSpinBox, QFrame
 )
-from PySide6.QtCore import Qt, pyqtSignal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 
 class WelcomeView(QWidget):

@@ -7,6 +7,7 @@ from PySide6.QtCore import Qt, Signal, QRect, QSize, QPoint
 from PySide6.QtGui import QFont, QPixmap, QPainter, QPainterPath
 import shutil
 from pathlib import Path
+from .views.project_wizard_view import ProjectWizardView
 
 class FlowLayout(QLayout):
     def __init__(self, parent=None, margin=0, hSpacing=-1, vSpacing=-1):
@@ -501,10 +502,9 @@ class DashboardView(QWidget):
             }
         """)
         
-        build_label = QLabel("🏗️ Build Projects")
-        build_label.setAlignment(Qt.AlignCenter)
+        build_label = QPushButton("🏗️ Build Projects")
         build_label.setStyleSheet("""
-            QLabel {
+            QPushButton {
                 background: rgba(255, 255, 255, 0.05);
                 border: 1px solid rgba(255, 255, 255, 0.1);
                 border-radius: 10px;
@@ -513,12 +513,17 @@ class DashboardView(QWidget):
                 font-weight: 600;
                 color: rgba(255, 255, 255, 0.9);
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                text-align: center;
             }
-            QLabel:hover {
+            QPushButton:hover {
                 background: rgba(255, 255, 255, 0.1);
                 border-color: rgba(255, 255, 255, 0.2);
             }
+            QPushButton:pressed {
+                background: rgba(255, 255, 255, 0.15);
+            }
         """)
+        build_label.clicked.connect(self.start_project_wizard)
         
         bottom_layout.addWidget(logic_label)
         bottom_layout.addWidget(build_label)
@@ -958,4 +963,16 @@ class DashboardView(QWidget):
         """)
         stat_layout.addWidget(title_label)
         
-        return stat_widget 
+        return stat_widget
+    
+    def start_project_wizard(self):
+        """Start the project wizard"""
+        wizard = ProjectWizardView(self.user_data, self.main_window)
+        wizard.project_started.connect(self.on_project_started)
+        self.main_window.setCentralWidget(wizard)
+    
+    def on_project_started(self, project_config):
+        """Handle project started event"""
+        # For now, just print the configuration
+        print(f"Project started with config: {project_config}")
+        # TODO: Implement AI project generation logic here 
