@@ -5,11 +5,19 @@ Wizard to guide users through AI-assisted project creation
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QFrame, QScrollArea, QButtonGroup, QRadioButton, QTextEdit, QProgressBar
+    QFrame, QScrollArea, QButtonGroup, QRadioButton, QTextEdit, QProgressBar,
+    QTextBrowser
 )
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
 from PySide6.QtGui import QFont
 from core.ai.project_generator import ProjectGenerator
+import re
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Import database operations
+from ...data.database.operations import db_manager, ProjectOperations
 
 class ProjectGenerationWorker(QThread):
     """Worker thread for generating projects using AI"""
@@ -48,10 +56,84 @@ class ProjectGenerationWorker(QThread):
         except Exception as e:
             self.generation_failed.emit(f"Error generating project: {str(e)}")
 
+class TaskHeadersWorker(QThread):
+    """Worker thread for generating task headers using AI"""
+    
+    headers_generated = Signal(str)  # Emits generated task headers
+    headers_failed = Signal(str)     # Emits error message
+    
+    def __init__(self, project_description, selected_language, use_local_only=False):
+        super().__init__()
+        self.project_description = project_description
+        self.selected_language = selected_language
+        self.use_local_only = use_local_only
+    
+    def run(self):
+        """Run task headers generation in background thread"""
+        try:
+            generator = ProjectGenerator()
+            
+            if not generator.is_available():
+                self.headers_failed.emit("No AI services available for task headers")
+                return
+            
+            task_headers = generator.generate_task_headers(
+                self.project_description,
+                self.selected_language,
+                self.use_local_only
+            )
+            
+            if task_headers:
+                self.headers_generated.emit(task_headers)
+            else:
+                self.headers_failed.emit("Failed to generate task headers. Please try again.")
+                
+        except Exception as e:
+            self.headers_failed.emit(f"Error generating task headers: {str(e)}")
+
+class TaskDetailWorker(QThread):
+    """Worker thread for generating individual task details using AI"""
+    
+    detail_generated = Signal(int, str, str)  # Emits task_number, task_name, task_detail
+    detail_failed = Signal(int, str, str)     # Emits task_number, task_name, error_message
+    
+    def __init__(self, task_name, task_number, project_description, selected_language, use_local_only=False):
+        super().__init__()
+        self.task_name = task_name
+        self.task_number = task_number
+        self.project_description = project_description
+        self.selected_language = selected_language
+        self.use_local_only = use_local_only
+    
+    def run(self):
+        """Run task detail generation in background thread"""
+        try:
+            generator = ProjectGenerator()
+            
+            if not generator.is_available():
+                self.detail_failed.emit(self.task_number, self.task_name, "No AI services available")
+                return
+            
+            task_detail = generator.generate_task_detail(
+                self.task_name,
+                self.task_number,
+                self.project_description,
+                self.selected_language,
+                self.use_local_only
+            )
+            
+            if task_detail:
+                self.detail_generated.emit(self.task_number, self.task_name, task_detail)
+            else:
+                self.detail_failed.emit(self.task_number, self.task_name, "Failed to generate task details")
+                
+        except Exception as e:
+            self.detail_failed.emit(self.task_number, self.task_name, f"Error: {str(e)}")
+
 class ProjectWizardView(QWidget):
     """Wizard for setting up AI-assisted project building"""
     
-    project_started = Signal(dict)  # Emits project configuration
+    project_started = Signal(dict)  
     
     def __init__(self, user_data, main_window):
         super().__init__()
@@ -59,7 +141,123 @@ class ProjectWizardView(QWidget):
         self.main_window = main_window
         self.current_step = 0
         self.project_config = {}
+        
+        # Initialize database operations
+        self.project_ops = ProjectOperations(db_manager)
+        self.current_project_id = None
+        
+        # Check for existing active project
+        self.check_existing_project()
+        
         self.setup_ui()
+    
+    def check_existing_project(self):
+        """Check if user has an existing active project"""
+        if not self.user_data or not self.user_data.get('id'):
+            return
+        
+        existing_project = self.project_ops.get_active_project(self.user_data['id'])
+        if existing_project:
+            self.current_project_id = existing_project['id']
+            self.project_config = existing_project
+            self.current_step = 2  # Skip to task view
+            self.current_task_number = existing_project['current_task_number']
+            self.task_names = existing_project['task_names']
+            logger.info(f"Loaded existing project: {existing_project['title']}")
+    
+    def show_existing_project_task(self):
+        """Show the current task for an existing project"""
+        if not hasattr(self, 'current_task_number') or not self.task_names:
+            self.show_introduction()
+            return
+        
+        # Check if we have task details for current task
+        current_task_name = self.task_names[self.current_task_number - 1]
+        current_task_detail = self.project_config.get('task_details', {}).get(self.current_task_number)
+        
+        if current_task_detail:
+            # Show the complete task
+            self.show_complete_current_task(current_task_name, current_task_detail)
+        else:
+            # Generate the current task details
+            self.generate_and_show_current_task()
+    
+    def save_project_to_database(self):
+        """Save current project to database"""
+        if not self.user_data or not self.user_data.get('id'):
+            return None
+        
+        # Extract title from project description
+        project_lines = self.project_config.get('project_description', '').split('\n')
+        title = 'AI Generated Project'
+        for line in project_lines:
+            if 'Project Title' in line or 'Title' in line:
+                title = line.split(':')[-1].strip() if ':' in line else line.strip()
+                break
+        
+        project_data = {
+            'title': title,
+            'description': self.project_config.get('project_description', ''),
+            'language': self.project_config.get('language', 'Python'),
+            'difficulty_level': 'junior',  # Default
+            'domain': 'software',  # Default
+            'project_description': self.project_config.get('project_description', ''),
+            'task_headers': self.project_config.get('task_headers', ''),
+            'task_names': self.task_names if hasattr(self, 'task_names') else [],
+            'task_details': self.project_config.get('task_details', {}),
+            'current_task_number': self.current_task_number if hasattr(self, 'current_task_number') else 1,
+            'user_scores': self.project_config.get('user_scores', {})
+        }
+        
+        if self.current_project_id:
+            # Update existing project
+            self.project_ops.update_project_progress(
+                self.current_project_id, 
+                self.current_task_number,
+                self.project_config.get('task_details', {})
+            )
+        else:
+            # Save new project
+            self.current_project_id = self.project_ops.save_project(
+                self.user_data['id'], 
+                project_data
+            )
+        
+        return self.current_project_id
+    
+    def add_skip_project_button(self, layout):
+        """Add a skip project button to allow starting fresh"""
+        skip_button = QPushButton("🔄 Start New Project")
+        skip_button.setStyleSheet("""
+            QPushButton {
+                font-size: 14px;
+                color: rgba(255, 255, 255, 0.8);
+                background-color: transparent;
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                border-radius: 8px;
+                padding: 10px 20px;
+                margin-top: 20px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.1);
+            }
+        """)
+        skip_button.clicked.connect(self.skip_current_project)
+        layout.addWidget(skip_button)
+    
+    def skip_current_project(self):
+        """Skip current project and start fresh"""
+        if self.current_project_id:
+            self.project_ops.skip_project(self.current_project_id)
+        
+        # Reset state
+        self.current_project_id = None
+        self.project_config = {}
+        self.current_step = 0
+        self.current_task_number = 1
+        
+        # Show introduction again
+        self.show_introduction()
     
     def setup_ui(self):
         """Setup the wizard UI"""
@@ -116,8 +314,13 @@ class ProjectWizardView(QWidget):
         # Create persistent elements
         self.create_persistent_elements()
         
-        # Show first step
-        self.show_introduction()
+        # Show appropriate step based on existing project
+        if self.current_step == 2 and hasattr(self, 'task_names') and self.task_names:
+            # User has existing project, show current task
+            self.show_existing_project_task()
+        else:
+            # Show first step
+            self.show_introduction()
     
     def create_header(self, layout):
         """Create wizard header"""
@@ -161,16 +364,43 @@ class ProjectWizardView(QWidget):
             }
         """)
         
-        # Simple label for project content - will hold AI output
-        self.project_content = QLabel()
-        self.project_content.setWordWrap(True)
-        self.project_content.setAlignment(Qt.AlignTop)
+        # Rich text browser for project content - will hold AI output with proper formatting
+        self.project_content = QTextBrowser()
+        self.project_content.setReadOnly(True)
+        self.project_content.setOpenExternalLinks(False)
         self.project_content.setStyleSheet("""
-            QLabel {
+            QTextBrowser {
                 font-size: 14px;
                 line-height: 1.6;
                 color: rgba(255, 255, 255, 0.9);
+                background-color: transparent;
+                border: none;
                 padding: 20px;
+            }
+            QTextBrowser b {
+                color: rgba(255, 255, 255, 1.0);
+                font-size: 16px;
+                font-weight: bold;
+            }
+            QTextBrowser i {
+                color: rgba(255, 255, 255, 0.8);
+                font-style: italic;
+            }
+            QTextBrowser pre {
+                background-color: rgba(0, 0, 0, 0.3);
+                border-radius: 5px;
+                padding: 10px;
+                font-family: 'Courier New', monospace;
+                color: rgba(255, 255, 255, 0.95);
+            }
+            QTextBrowser ul {
+                margin-left: 20px;
+                margin-top: 10px;
+                margin-bottom: 10px;
+            }
+            QTextBrowser li {
+                margin-bottom: 5px;
+                color: rgba(255, 255, 255, 0.9);
             }
         """)
     
@@ -497,7 +727,7 @@ class ProjectWizardView(QWidget):
         content_layout.addWidget(self.status_label)
         
         # Timer label (shows immediately)
-        self.timer_label = QLabel("⏱️ Time elapsed: 00:00")
+        self.timer_label = QLabel("Time elapsed: 00:00")
         self.timer_label.setStyleSheet("""
             QLabel {
                 font-size: 14px;
@@ -568,13 +798,16 @@ class ProjectWizardView(QWidget):
         self.showing_timer = False
         self.update_visibility()
         
-        # Set project content directly - replaces timer in same space
-        self.project_content.setText(f"<h3>Your {language} Project is Ready!</h3><br/>{project_description}")
+        # Extract only the structured project content starting from "Project Title"
+        structured_content = self.extract_structured_content(project_description)
+        # Convert markdown-style formatting to HTML and set project content (only AI output)
+        formatted_description = self.convert_markdown_to_html(structured_content)
+        self.project_content.setHtml(formatted_description)
         
         self.project_config['language'] = language
         self.project_config['project_description'] = project_description
         
-        self.next_button.setText("Start Building →")
+        self.next_button.setText("Step 1 →")
         self.next_button.setVisible(True)
         self.next_button.setEnabled(True)
         self.back_button.setEnabled(True)
@@ -636,11 +869,132 @@ class ProjectWizardView(QWidget):
         minutes = self.timer_seconds // 60
         seconds = self.timer_seconds % 60
         
-        self.timer_label.setText(f"⏱️ Time elapsed: {minutes:02d}:{seconds:02d}")
+        self.timer_label.setText(f"Time elapsed: {minutes:02d}:{seconds:02d}")
         self.timer_seconds += 1
     
-
-
+    def extract_structured_content(self, text):
+        """
+        Extracts only the structured project content starting from "1. **Project Title**"
+        and ignoring any AI reasoning or preamble before the actual project description.
+        
+        The expected structure starts with:
+        1. **Project Title**: ...
+        2. **Problem Statement**: ...
+        etc.
+        """
+        # Look for the start of structured content - either numbered or just the Project Title header
+        patterns = [
+            r'1\.\s*\*\*Project Title\*\*:.*', 
+            r'\*\*Project Title\*\*:.*',        
+            r'Project Title:.*',                
+            r'1\.\s*Project Title:.*'           
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+            if match:
+                # Extract everything from this point to the end
+                structured_content = text[match.start():]
+                return structured_content.strip()
+        
+        # If no structured pattern is found, return the original text
+        # (fallback in case AI doesn't follow the expected format)
+        return text.strip()
+    
+    def extract_structured_task_content(self, text):
+        """
+        Extracts task breakdown content starting from "**Task 1:**"
+        """
+        patterns = [
+            r'\*\*Task 1:\*\*.*',      
+            r'Task 1:.*',              
+            r'1\.\s*Task:.*',          
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+            if match:
+                structured_content = text[match.start():]
+                return structured_content.strip()
+        
+        # Fallback: return original text
+        return text.strip()
+    
+    def convert_task_markdown_to_html(self, text):
+        """
+        Converts task breakdown markdown to HTML with specialized formatting for:
+        - Task headers (**Task 1:** -> h2)
+        - Section headers (**Task Overview:** -> h3)
+        - AI prompts (quoted text -> styled code blocks)
+        - Review questions
+        """
+        # Task headers like "**Task 1:** Task Name" -> h2
+        text = re.sub(r'\*\*Task (\d+):\*\*(.*?)(?=\n|\*\*|$)', r'<h2>Task \1:\2</h2>', text)
+        
+        # Section headers like "**Task Overview:**" -> h3
+        section_headers = [
+            'Task Overview', 'Learning Goals', 'AI Prompts to Start Building', 
+            'AI Prompts for Understanding Code', 'AI Prompts for Concepts', 'Review Questions'
+        ]
+        for header in section_headers:
+            text = re.sub(rf'\*\*{header}:\*\*', rf'<h3>{header}:</h3>', text)
+        
+        # AI prompts (quoted strings) -> styled code blocks
+        text = re.sub(r'"([^"]+)"', r'<code>"\1"</code>', text)
+        
+        # Handle remaining bold text
+        text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
+        
+        # Bullet points
+        text = re.sub(r'^[-*]\s+(.+)$', r'<li>\1</li>', text, flags=re.MULTILINE)
+        
+        # Wrap consecutive list items in <ul> tags
+        text = re.sub(r'(<li>.*</li>)', r'<ul>\1</ul>', text, flags=re.DOTALL)
+        text = re.sub(r'</ul>\s*<ul>', '', text)
+        
+        # Task separators (---) -> styled dividers
+        text = re.sub(r'^---\s*$', r'<hr style="border: 1px solid rgba(255, 255, 255, 0.2); margin: 30px 0;">', text, flags=re.MULTILINE)
+        
+        # Line breaks
+        text = text.replace('\n\n', '<br/><br/>')
+        text = text.replace('\n', '<br/>')
+        
+        return text
+    
+    def convert_markdown_to_html(self, text):
+        """
+        Converts markdown-like formatting to HTML.
+        Specifically handles the AI output format with numbered headers and bold text.
+        """
+        # Handle numbered headers like "1. **Project Title**:" -> proper HTML headers
+        text = re.sub(r'(\d+)\.\s*\*\*(.*?)\*\*:', r'<h3 style="color: rgba(255, 255, 255, 1.0); margin-top: 20px; margin-bottom: 10px;">\1. \2</h3>', text)
+        
+        # Handle remaining bold text (for emphasis within content)
+        text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
+        text = re.sub(r'\_\_(.*?)\_\_', r'<b>\1</b>', text)
+        
+        # Italic
+        text = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'<i>\1</i>', text)
+        text = re.sub(r'(?<!_)_([^_]+)_(?!_)', r'<i>\1</i>', text)
+        
+        # Code blocks (triple backticks)
+        text = re.sub(r'```(.*?)```', r'<pre><code>\1</code></pre>', text, flags=re.DOTALL)
+        
+        # Inline code (single backticks)
+        text = re.sub(r'`([^`]+)`', r'<code style="background-color: rgba(0, 0, 0, 0.2); padding: 2px 4px; border-radius: 3px;">\1</code>', text)
+        
+        # Bullet points
+        text = re.sub(r'^[-*]\s+(.+)$', r'<li>\1</li>', text, flags=re.MULTILINE)
+        
+        # Wrap consecutive list items in <ul> tags
+        text = re.sub(r'(<li>.*</li>)', r'<ul>\1</ul>', text, flags=re.DOTALL)
+        text = re.sub(r'</ul>\s*<ul>', '', text)  # Remove duplicate ul tags
+        
+        # Line breaks (convert \n to <br/> but preserve structure)
+        text = text.replace('\n\n', '<br/><br/>')
+        text = text.replace('\n', '<br/>')
+        
+        return text
     
     def clear_content(self):
         """Clear the content area"""
@@ -658,8 +1012,25 @@ class ProjectWizardView(QWidget):
             self.current_step = 1
             self.show_project_generation()
         elif self.current_step == 1:
-            # Complete the wizard with generated project
-            self.complete_wizard()
+            # Go to task breakdown step
+            self.current_step = 2
+            self.show_task_breakdown()
+        elif self.current_step == 2:
+            # Move to next task or complete project
+            if hasattr(self, 'current_task_number') and self.current_task_number < len(self.task_names):
+                self.current_task_number += 1
+                # Save progress to database
+                if self.current_project_id:
+                    self.project_ops.update_project_progress(
+                        self.current_project_id, 
+                        self.current_task_number
+                    )
+                self.generate_and_show_current_task()
+            else:
+                # All tasks completed - mark project as complete
+                if self.current_project_id:
+                    self.project_ops.complete_project(self.current_project_id)
+                self.complete_wizard()
     
     def show_project_generation(self):
         """Show timer in existing QScrollArea, then replace with AI output"""
@@ -686,11 +1057,750 @@ class ProjectWizardView(QWidget):
         self.start_status_timer()
         QTimer.singleShot(100, self.start_project_generation)
     
+    def show_task_breakdown(self):
+        """Show task breakdown generation step"""
+        # Use existing scroll area and replace content with task breakdown loading
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        # Title
+        title = QLabel("Breaking Down Your Project")
+        title.setStyleSheet("""
+            QLabel {
+                font-size: 24px;
+                font-weight: 600;
+                color: rgba(255, 255, 255, 0.95);
+                margin-bottom: 20px;
+            }
+        """)
+        scroll_layout.addWidget(title)
+        
+        # Status message
+        self.breakdown_status_label = QLabel("AI is breaking your project into learning tasks...")
+        self.breakdown_status_label.setWordWrap(True)
+        self.breakdown_status_label.setStyleSheet("""
+            QLabel {
+                font-size: 16px;
+                color: rgba(255, 255, 255, 0.8);
+                margin-bottom: 15px;
+            }
+        """)
+        scroll_layout.addWidget(self.breakdown_status_label)
+        
+        # Timer label for task breakdown
+        self.breakdown_timer_label = QLabel("Time elapsed: 00:00")
+        self.breakdown_timer_label.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                color: rgba(255, 255, 255, 0.6);
+                margin-bottom: 20px;
+            }
+        """)
+        scroll_layout.addWidget(self.breakdown_timer_label)
+        
+        # Progress bar
+        self.breakdown_progress_bar = QProgressBar()
+        self.breakdown_progress_bar.setRange(0, 0)  # Indeterminate progress
+        self.breakdown_progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                border-radius: 8px;
+                background-color: rgba(255, 255, 255, 0.1);
+                height: 20px;
+            }
+            QProgressBar::chunk {
+                background-color: #3498db;
+                border-radius: 7px;
+            }
+        """)
+        scroll_layout.addWidget(self.breakdown_progress_bar)
+        
+        scroll_layout.addStretch()
+        
+        # Set this widget as the QScrollArea content
+        self.scroll_area.setWidget(scroll_widget)
+        
+        # Hide navigation buttons during generation
+        self.next_button.setVisible(False)
+        self.back_button.setEnabled(False)
+        
+        # Start task breakdown timer and generation
+        self.start_breakdown_timer()
+        QTimer.singleShot(1000, self.start_task_breakdown_generation)
+    
+    def start_breakdown_timer(self):
+        """Start timer for task breakdown generation"""
+        self.breakdown_timer_seconds = 0
+        
+        self.breakdown_status_timer = QTimer()
+        self.breakdown_status_timer.timeout.connect(self.update_breakdown_status)
+        self.breakdown_status_timer.start(1000)  # Update every second
+    
+    def update_breakdown_status(self):
+        """Update the breakdown timer display"""
+        minutes = self.breakdown_timer_seconds // 60
+        seconds = self.breakdown_timer_seconds % 60
+        
+        self.breakdown_timer_label.setText(f"Time elapsed: {minutes:02d}:{seconds:02d}")
+        self.breakdown_timer_seconds += 1
+    
+    def start_task_breakdown_generation(self):
+        """Start the AI task headers generation process (Phase 1)"""
+        # Get the project description and language from project_config
+        project_description = self.project_config.get('project_description', '')
+        selected_language = self.project_config.get('language', 'Python')
+        
+        # Start worker thread for task headers (local AI only)
+        self.headers_worker = TaskHeadersWorker(
+            project_description, selected_language, use_local_only=True
+        )
+        self.headers_worker.headers_generated.connect(self.on_task_headers_generated)
+        self.headers_worker.headers_failed.connect(self.on_task_headers_failed)
+        self.headers_worker.start()
+    
+    def on_task_headers_generated(self, task_headers):
+        """Handle successful task headers generation (Phase 1 complete)"""
+        if hasattr(self, 'breakdown_status_timer'):
+            self.breakdown_status_timer.stop()
+        
+        logger.info(f"Task headers generated: {task_headers}")
+        
+        # Parse task names from headers
+        self.task_names = self.parse_task_names(task_headers)
+        
+        if not self.task_names:
+            self.on_task_headers_failed(f"Could not parse task names from AI response. AI returned: {task_headers[:200]}...")
+            return
+        
+        # Store the headers and initialize current task tracking
+        self.project_config['task_headers'] = task_headers
+        self.project_config['task_details'] = {}
+        self.current_task_number = 1
+        
+        # Save project to database
+        self.save_project_to_database()
+        
+        # Generate and show only the first task details
+        self.generate_and_show_current_task()
+    
+    def parse_task_names(self, task_headers):
+        """Extract task names from headers - handle various AI response formats"""
+        import re
+        task_names = []
+        
+        # Multiple patterns to handle different AI response formats
+        patterns = [
+            r'\*\*Task\s+(\d+):\*\*\s*(.+?)(?=\n|\*\*|$)',  
+            r'Task\s+(\d+):\s*(.+?)(?=\n|Task\s+\d+|$)',    
+            r'(\d+)\.\s*(.+?)(?=\n|\d+\.|$)',               
+            r'Step\s+(\d+):\s*(.+?)(?=\n|Step\s+\d+|$)',    
+        ]
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, task_headers, re.IGNORECASE | re.MULTILINE)
+            if matches:
+                for task_num, task_name in matches:
+                    task_names.append((int(task_num), task_name.strip()))
+                break
+        
+        # If no structured format found, just create simple task names
+        if not task_names:
+            lines = [line.strip() for line in task_headers.split('\n') if line.strip()]
+            for i, line in enumerate(lines[:4], 1):  # Take first 4 non-empty lines
+                if line:  # Skip empty lines
+                    task_names.append((i, line))
+        
+        # Sort by task number and return just the names
+        task_names.sort(key=lambda x: x[0])
+        return [name for _, name in task_names]
+    
+    def generate_and_show_current_task(self):
+        """Generate and display the current task details"""
+        if self.current_task_number > len(self.task_names):
+            # All tasks completed
+            self.show_project_completion()
+            return
+        
+        # Show loading for current task
+        self.show_current_task_loading()
+        
+        # Generate current task details
+        current_task_name = self.task_names[self.current_task_number - 1]
+        project_description = self.project_config.get('project_description', '')
+        selected_language = self.project_config.get('language', 'Python')
+        
+        # Start worker for current task
+        self.current_task_worker = TaskDetailWorker(
+            current_task_name, self.current_task_number, 
+            project_description, selected_language, use_local_only=True
+        )
+        self.current_task_worker.detail_generated.connect(self.on_current_task_generated)
+        self.current_task_worker.detail_failed.connect(self.on_current_task_failed)
+        self.current_task_worker.start()
+    
+    def show_current_task_loading(self):
+        """Show loading screen for current task"""
+        current_task_name = self.task_names[self.current_task_number - 1]
+        
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        # Task progress indicator
+        progress_label = QLabel(f"Task {self.current_task_number} of {len(self.task_names)}")
+        progress_label.setAlignment(Qt.AlignCenter)
+        progress_label.setStyleSheet("""
+            QLabel {
+                font-size: 16px;
+                color: rgba(255, 255, 255, 0.7);
+                margin-bottom: 10px;
+            }
+        """)
+        scroll_layout.addWidget(progress_label)
+        
+        # Current task header
+        task_header = QLabel(f"**Task {self.current_task_number}:** {current_task_name}")
+        task_header.setAlignment(Qt.AlignCenter)
+        task_header.setStyleSheet("""
+            QLabel {
+                font-size: 24px;
+                font-weight: bold;
+                color: rgba(255, 255, 255, 1.0);
+                margin-bottom: 20px;
+                padding: 20px;
+                background-color: rgba(255, 255, 255, 0.05);
+                border-radius: 12px;
+            }
+        """)
+        scroll_layout.addWidget(task_header)
+        
+        # Loading message
+        loading_label = QLabel("🔄 Generating detailed instructions for this task...")
+        loading_label.setAlignment(Qt.AlignCenter)
+        loading_label.setStyleSheet("""
+            QLabel {
+                font-size: 16px;
+                color: rgba(255, 255, 255, 0.8);
+                margin: 40px;
+            }
+        """)
+        scroll_layout.addWidget(loading_label)
+        
+        scroll_layout.addStretch()
+        
+        # Set this widget as the QScrollArea content
+        self.scroll_area.setWidget(scroll_widget)
+        
+        # Hide navigation during loading
+        self.next_button.setVisible(False)
+        self.back_button.setEnabled(True)
+    
+    def show_task_headers_with_loading_details(self):
+        """Show task headers immediately with placeholders for details being generated"""
+        # Create new scroll widget
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        # Store references to detail areas for updating
+        self.task_detail_areas = {}
+        
+        for i, task_name in enumerate(self.task_names, 1):
+            # Task header
+            task_header = QLabel(f"**Task {i}:** {task_name}")
+            task_header.setStyleSheet("""
+                QLabel {
+                    font-size: 18px;
+                    font-weight: bold;
+                    color: rgba(255, 255, 255, 1.0);
+                    margin-top: 20px;
+                    margin-bottom: 10px;
+                    padding: 10px;
+                    background-color: rgba(255, 255, 255, 0.05);
+                    border-radius: 8px;
+                }
+            """)
+            scroll_layout.addWidget(task_header)
+            
+            # Detail area (initially shows loading)
+            detail_area = QTextBrowser()
+            detail_area.setReadOnly(True)
+            detail_area.setMaximumHeight(300)
+            detail_area.setStyleSheet("""
+                QTextBrowser {
+                    font-size: 14px;
+                    line-height: 1.6;
+                    color: rgba(255, 255, 255, 0.8);
+                    background-color: rgba(255, 255, 255, 0.02);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 8px;
+                    padding: 15px;
+                    margin-bottom: 20px;
+                }
+            """)
+            detail_area.setHtml(f"<i>🔄 Generating details for Task {i}...</i>")
+            scroll_layout.addWidget(detail_area)
+            
+            # Store reference for updating
+            self.task_detail_areas[i] = detail_area
+        
+        scroll_layout.addStretch()
+        
+        # Set this widget as the QScrollArea content
+        self.scroll_area.setWidget(scroll_widget)
+        
+        # Update navigation
+        self.next_button.setText("Begin First Task →")
+        self.next_button.setVisible(True)
+        self.next_button.setEnabled(True)
+        self.back_button.setEnabled(True)
+    
+    def start_generating_task_details(self):
+        """Start generating details for each task (Phase 2)"""
+        project_description = self.project_config.get('project_description', '')
+        selected_language = self.project_config.get('language', 'Python')
+        
+        for i, task_name in enumerate(self.task_names, 1):
+            # Start worker for this task
+            worker = TaskDetailWorker(
+                task_name, i, project_description, selected_language, use_local_only=True
+            )
+            worker.detail_generated.connect(self.on_task_detail_generated)
+            worker.detail_failed.connect(self.on_task_detail_failed)
+            worker.start()
+            
+            # Store worker reference
+            self.task_detail_workers[i] = worker
+    
+    def on_task_detail_generated(self, task_number, task_name, task_detail):
+        """Handle successful generation of individual task details"""
+        logger.info(f"Task {task_number} details generated")
+        
+        # Store the detail
+        self.project_config['task_details'][task_number] = task_detail
+        
+        # Save progress to database
+        if self.current_project_id:
+            self.project_ops.update_project_progress(
+                self.current_project_id, 
+                self.current_task_number,
+                {task_number: task_detail}
+            )
+        
+        # Format and update the UI
+        formatted_detail = self.convert_task_detail_to_html(task_detail)
+        
+        if task_number in self.task_detail_areas:
+            self.task_detail_areas[task_number].setHtml(formatted_detail)
+    
+    def on_task_detail_failed(self, task_number, task_name, error_message):
+        """Handle failed generation of individual task details"""
+        logger.error(f"Task {task_number} detail generation failed: {error_message}")
+        
+        if task_number in self.task_detail_areas:
+            self.task_detail_areas[task_number].setHtml(
+                f"<span style='color: rgba(255, 100, 100, 0.9);'>❌ Failed to generate details: {error_message}</span>"
+            )
+    
+    def convert_task_detail_to_html(self, task_detail):
+        """Convert individual task detail to HTML"""
+        # Extract and format the task detail content
+        structured_content = self.extract_task_detail_content(task_detail)
+        return self.convert_task_markdown_to_html(structured_content)
+    
+    def extract_task_detail_content(self, text):
+        """Extract task detail content starting from 'What You'll Build'"""
+        patterns = [
+            r'\*\*What You\'ll Build:\*\*.*',
+            r'What You\'ll Build:.*',
+            r'\*\*Task Overview:\*\*.*',  # Fallback
+            r'Task Overview:.*'  # Fallback
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+            if match:
+                return text[match.start():].strip()
+        
+        return text.strip()
+    
+    def on_current_task_generated(self, task_number, task_name, task_detail):
+        """Handle successful generation of current task details"""
+        logger.info(f"Current task {task_number} details generated")
+        
+        # Store the detail
+        self.project_config['task_details'][task_number] = task_detail
+        
+        # Show the complete task with evaluation prompt
+        self.show_complete_current_task(task_name, task_detail)
+    
+    def on_current_task_failed(self, task_number, task_name, error_message):
+        """Handle failed generation of current task details"""
+        logger.error(f"Current task {task_number} generation failed: {error_message}")
+        
+        # Show error and retry option
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        error_label = QLabel(f"❌ Failed to generate Task {task_number} details")
+        error_label.setAlignment(Qt.AlignCenter)
+        error_label.setStyleSheet("""
+            QLabel {
+                font-size: 18px;
+                color: rgba(255, 100, 100, 0.9);
+                margin: 40px;
+            }
+        """)
+        scroll_layout.addWidget(error_label)
+        
+        retry_button = QPushButton("Try Again")
+        retry_button.setStyleSheet("""
+            QPushButton {
+                font-size: 14px;
+                color: white;
+                background-color: #e74c3c;
+                border: none;
+                border-radius: 8px;
+                padding: 12px 24px;
+            }
+            QPushButton:hover {
+                background-color: #c0392b;
+            }
+        """)
+        retry_button.clicked.connect(self.generate_and_show_current_task)
+        scroll_layout.addWidget(retry_button)
+        
+        scroll_layout.addStretch()
+        self.scroll_area.setWidget(scroll_widget)
+        
+        self.back_button.setEnabled(True)
+    
+    def show_complete_current_task(self, task_name, task_detail):
+        """Show the complete current task with evaluation prompt for Cursor"""
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        progress_label = QLabel(f"Task {self.current_task_number} of {len(self.task_names)}")
+        progress_label.setAlignment(Qt.AlignCenter)
+        progress_label.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                color: rgba(255, 255, 255, 0.6);
+                margin-bottom: 10px;
+            }
+        """)
+        scroll_layout.addWidget(progress_label)
+        
+        # Task header
+        task_header = QLabel(f"Task {self.current_task_number}: {task_name}")
+        task_header.setAlignment(Qt.AlignCenter)
+        task_header.setStyleSheet("""
+            QLabel {
+                font-size: 22px;
+                font-weight: bold;
+                color: rgba(255, 255, 255, 1.0);
+                margin-bottom: 20px;
+                padding: 15px;
+                background-color: rgba(255, 255, 255, 0.05);
+                border-radius: 10px;
+            }
+        """)
+        scroll_layout.addWidget(task_header)
+        
+        # Task details
+        task_browser = QTextBrowser()
+        task_browser.setReadOnly(True)
+        task_browser.setOpenExternalLinks(False)
+        task_browser.setStyleSheet("""
+            QTextBrowser {
+                font-size: 14px;
+                line-height: 1.6;
+                color: rgba(255, 255, 255, 0.9);
+                background-color: rgba(255, 255, 255, 0.02);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 8px;
+                padding: 20px;
+                margin-bottom: 20px;
+            }
+            QTextBrowser h3 {
+                color: rgba(255, 255, 255, 1.0);
+                font-size: 16px;
+                margin-top: 20px;
+                margin-bottom: 10px;
+            }
+            QTextBrowser ul {
+                margin-left: 20px;
+            }
+            QTextBrowser li {
+                margin-bottom: 8px;
+            }
+            QTextBrowser code {
+                background-color: rgba(0, 0, 0, 0.3);
+                padding: 2px 6px;
+                border-radius: 4px;
+                font-family: 'Courier New', monospace;
+            }
+        """)
+        
+        # Format and set task details
+        formatted_detail = self.convert_task_detail_to_html(task_detail)
+        task_browser.setHtml(formatted_detail)
+        scroll_layout.addWidget(task_browser)
+        
+        # Cursor evaluation section
+        self.add_cursor_evaluation_section(scroll_layout, task_name)
+        
+        # Add skip project option
+        self.add_skip_project_button(scroll_layout)
+        
+        scroll_layout.addStretch()
+        self.scroll_area.setWidget(scroll_widget)
+        
+        # Update navigation
+        if self.current_task_number < len(self.task_names):
+            next_step = self.current_task_number + 1
+            self.next_button.setText(f"Step {next_step} →")
+        else:
+            self.next_button.setText("Complete Project →")
+        
+        self.next_button.setVisible(True)
+        self.next_button.setEnabled(True)
+        self.back_button.setEnabled(True)
+    
+    def add_cursor_evaluation_section(self, layout, task_name):
+        """Add the Cursor AI evaluation section"""
+        # Section header
+        eval_header = QLabel("📋 Task Evaluation with Cursor AI")
+        eval_header.setStyleSheet("""
+            QLabel {
+                font-size: 18px;
+                font-weight: bold;
+                color: rgba(255, 255, 255, 1.0);
+                margin-top: 30px;
+                margin-bottom: 15px;
+                padding: 12px;
+                background-color: rgba(52, 152, 219, 0.2);
+                border-radius: 8px;
+            }
+        """)
+        layout.addWidget(eval_header)
+        
+        # Instructions
+        instructions = QLabel(
+            "When you've completed this task, copy the prompt below and paste it into Cursor AI. "
+            "Cursor will evaluate your work and help you learn!"
+        )
+        instructions.setWordWrap(True)
+        instructions.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                color: rgba(255, 255, 255, 0.8);
+                margin-bottom: 15px;
+                padding: 10px;
+            }
+        """)
+        layout.addWidget(instructions)
+        
+        # Generate evaluation prompt
+        project_description = self.project_config.get('project_description', '')
+        selected_language = self.project_config.get('language', 'Python')
+        evaluation_prompt = self.create_cursor_evaluation_prompt(task_name, project_description, selected_language)
+        
+        # Copyable prompt area
+        prompt_area = QTextEdit()
+        prompt_area.setReadOnly(True)
+        prompt_area.setPlainText(evaluation_prompt)
+        prompt_area.setMaximumHeight(200)
+        prompt_area.setStyleSheet("""
+            QTextEdit {
+                font-family: 'Courier New', monospace;
+                font-size: 12px;
+                color: rgba(255, 255, 255, 0.9);
+                background-color: rgba(0, 0, 0, 0.3);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 6px;
+                padding: 12px;
+            }
+        """)
+        layout.addWidget(prompt_area)
+        
+        # Copy button
+        copy_button = QPushButton("📋 Copy Prompt for Cursor")
+        copy_button.setStyleSheet("""
+            QPushButton {
+                font-size: 14px;
+                color: white;
+                background-color: #2ecc71;
+                border: none;
+                border-radius: 8px;
+                padding: 12px 24px;
+                margin-top: 10px;
+            }
+            QPushButton:hover {
+                background-color: #27ae60;
+            }
+        """)
+        copy_button.clicked.connect(lambda: self.copy_to_clipboard(evaluation_prompt))
+        layout.addWidget(copy_button)
+    
+    def create_cursor_evaluation_prompt(self, task_name, project_description, selected_language):
+        """Create an evaluation prompt for Cursor AI"""
+        return f"""Please evaluate my progress on this coding task and help me learn:
+
+PROJECT CONTEXT:
+{project_description.split('.')[0] if project_description else 'Learning project'}
+
+CURRENT TASK: {task_name}
+LANGUAGE: {selected_language}
+
+INSTRUCTIONS:
+1. Look at my current code and files
+2. Check if I've completed the task requirements
+3. Rate my progress (0-100%) and explain what I did well
+4. Explain the software engineering concepts I used (explain like I'm 12-18 years old)
+5. Give me a list of things to study next with specific resources
+
+Please be encouraging and educational. Help me understand not just what I built, but why it works and how it connects to real software engineering.
+
+RESPOND WITH:
+- **Progress Rating:** [0-100%] and why
+- **What You Built:** Summary of my work
+- **Engineering Concepts:** Explain the concepts I used
+- **Next Steps:** 3-4 things to study with resources
+- **Encouragement:** What I did well and how to improve
+
+Please analyze my files now and give me feedback!"""
+    
+    def copy_to_clipboard(self, text):
+        """Copy text to system clipboard"""
+        from PySide6.QtGui import QGuiApplication
+        clipboard = QGuiApplication.clipboard()
+        clipboard.setText(text)
+        
+        # Show brief confirmation (could add a tooltip or status message)
+        logger.info("Evaluation prompt copied to clipboard")
+    
+    def on_task_headers_failed(self, error_message):
+        """Handle failed task breakdown generation"""
+        if hasattr(self, 'breakdown_status_timer'):
+            self.breakdown_status_timer.stop()
+        
+        # Show detailed error message
+        logger.error(f"Task breakdown failed: {error_message}")
+        self.breakdown_status_label.setText(f"Failed to generate task breakdown.\n\nError: {error_message}\n\nThis might be due to local AI limitations. The project description might be too complex for the local model.")
+        self.breakdown_status_label.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                color: rgba(255, 100, 100, 0.9);
+                margin-bottom: 30px;
+            }
+        """)
+        
+        # Hide progress bar and timer
+        self.breakdown_progress_bar.setVisible(False)
+        self.breakdown_timer_label.setVisible(False)
+        
+        # Add retry button
+        retry_button = QPushButton("Try Again")
+        retry_button.setStyleSheet("""
+            QPushButton {
+                font-size: 14px;
+                color: white;
+                background-color: #e74c3c;
+                border: none;
+                border-radius: 8px;
+                padding: 12px 24px;
+            }
+            QPushButton:hover {
+                background-color: #c0392b;
+            }
+        """)
+        retry_button.clicked.connect(self.show_task_breakdown)
+        
+        # Add retry button to layout
+        scroll_widget = self.scroll_area.widget()
+        if scroll_widget and scroll_widget.layout():
+            scroll_widget.layout().addWidget(retry_button)
+        
+        self.back_button.setEnabled(True)
+    
+    def show_project_content_again(self):
+        """Re-display the project content when going back from task breakdown"""
+        # Get the project content and language from project_config
+        project_description = self.project_config.get('project_description', '')
+        selected_language = self.project_config.get('language', 'Python')
+        
+        # Extract and format the project content
+        structured_content = self.extract_structured_content(project_description)
+        formatted_description = self.convert_markdown_to_html(structured_content)
+        
+        # Create new scroll widget with project content
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        # Create QTextBrowser for project display
+        project_browser = QTextBrowser()
+        project_browser.setReadOnly(True)
+        project_browser.setOpenExternalLinks(False)
+        project_browser.setStyleSheet("""
+            QTextBrowser {
+                font-size: 14px;
+                line-height: 1.6;
+                color: rgba(255, 255, 255, 0.9);
+                background-color: transparent;
+                border: none;
+                padding: 20px;
+            }
+            QTextBrowser b {
+                color: rgba(255, 255, 255, 1.0);
+                font-size: 16px;
+                font-weight: bold;
+            }
+            QTextBrowser h3 {
+                color: rgba(255, 255, 255, 1.0);
+                margin-top: 20px;
+                margin-bottom: 10px;
+            }
+            QTextBrowser ul {
+                margin-left: 20px;
+                margin-top: 10px;
+                margin-bottom: 10px;
+            }
+            QTextBrowser li {
+                margin-bottom: 5px;
+                color: rgba(255, 255, 255, 0.9);
+            }
+        """)
+        project_browser.setHtml(formatted_description)
+        scroll_layout.addWidget(project_browser)
+        
+        # Set this widget as the QScrollArea content
+        self.scroll_area.setWidget(scroll_widget)
+        
+        # Update navigation buttons
+        self.next_button.setText("Start Building →")
+        self.next_button.setVisible(True)
+        self.next_button.setEnabled(True)
+        self.back_button.setEnabled(True)
+    
     def previous_step(self):
         """Go to previous step"""
         if self.current_step == 1:
             # Don't go back to introduction/terms - go back to dashboard instead
             self.main_window.show_dashboard()
+        elif self.current_step == 2:
+            # Go back to previous task or project view
+            if hasattr(self, 'current_task_number') and self.current_task_number > 1:
+                self.current_task_number -= 1
+                # Update database
+                if self.current_project_id:
+                    self.project_ops.update_project_progress(
+                        self.current_project_id, 
+                        self.current_task_number
+                    )
+                # Show previous task
+                self.show_existing_project_task()
+            else:
+                # Go back to project description
+                self.show_project_content_again()
     
     def check_scroll_position(self):
         """Check if user has scrolled to the bottom and show/hide next button accordingly"""

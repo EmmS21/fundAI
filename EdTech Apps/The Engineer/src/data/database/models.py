@@ -299,32 +299,99 @@ class UserProgress(Base):
     id = Column(Integer, primary_key=True)
     
     # Progress tracking
-    topic = Column(String(100), nullable=False)  # Topic or skill being tracked
-    current_level = Column(Float, default=0.0)  # 0-100 proficiency
-    problems_solved = Column(Integer, default=0)
-    problems_attempted = Column(Integer, default=0)
+    current_module = Column(Integer, default=0)
+    completed_problems = Column(JSON, default=list)  # List of completed problem IDs
+    current_problem_id = Column(Integer)
     
     # Performance metrics
+    completion_percentage = Column(Float, default=0.0)
     average_score = Column(Float, default=0.0)
-    best_score = Column(Float, default=0.0)
-    success_rate = Column(Float, default=0.0)
-    average_time = Column(Float, default=0.0)  # Average time per problem
+    time_invested = Column(Integer, default=0)  # Total time in seconds
     
-    # Learning velocity
-    last_practice_date = Column(DateTime)
-    consecutive_days = Column(Integer, default=0)
-    weekly_problems = Column(Integer, default=0)
-    
-    # Recommendations
-    next_problems = Column(JSON, default=list)  # Suggested next problems
-    focus_areas = Column(JSON, default=list)  # Areas needing attention
+    # Streak and consistency
+    current_streak = Column(Integer, default=0)
+    last_activity = Column(DateTime, default=datetime.utcnow)
     
     # Metadata
-    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Foreign keys
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    learning_path_id = Column(Integer, ForeignKey("learning_paths.id"), nullable=True)
+    path_id = Column(Integer, ForeignKey("learning_paths.id"), nullable=False)
+
+class Project(Base):
+    """AI-generated projects for hands-on learning"""
+    __tablename__ = "projects"
+    
+    id = Column(Integer, primary_key=True)
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=False)
+    
+    # Project configuration
+    language = Column(String(50), nullable=False)  # Programming language
+    difficulty_level = Column(SQLEnum(DifficultyLevel), nullable=False)
+    domain = Column(SQLEnum(EngineeringDomain), nullable=False)
+    
+    # AI-generated content
+    project_description = Column(Text, nullable=False)  
+    task_headers = Column(Text)  
+    
+    # Project status
+    status = Column(String(50), default='active')  
+    current_task_number = Column(Integer, default=1)
+    total_tasks = Column(Integer, default=4)
+    
+    # User progress
+    progress_percentage = Column(Float, default=0.0)
+    time_spent = Column(Integer, default=0)  # Time spent in seconds
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_accessed = Column(DateTime, default=datetime.utcnow)
+    
+    # User context from assessment
+    user_scores = Column(JSON, default=dict)  # Assessment scores when project was created
+    
+    # Foreign keys
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    # Relationships
+    tasks = relationship("ProjectTask", back_populates="project", cascade="all, delete-orphan")
+
+class ProjectTask(Base):
+    """Individual tasks within AI-generated projects"""
+    __tablename__ = "project_tasks"
+    
+    id = Column(Integer, primary_key=True)
+    task_number = Column(Integer, nullable=False)
+    title = Column(String(200), nullable=False)
+    
+    # AI-generated task content
+    task_content = Column(Text)  # Detailed task instructions from AI
+    
+    # Task status
+    status = Column(String(50), default='pending')  # pending, in_progress, completed, skipped
+    
+    # Progress tracking
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    time_spent = Column(Integer, default=0)  # Time spent on this task in seconds
+    
+    # User work tracking
+    notes = Column(Text)  # User's notes about this task
+    cursor_evaluations = Column(JSON, default=list)  # Cursor AI evaluations
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Foreign keys
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    
+    # Relationships
+    project = relationship("Project", back_populates="tasks")
 
 def create_tables(engine):
     """Create all database tables"""

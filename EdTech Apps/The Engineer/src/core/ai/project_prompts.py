@@ -92,12 +92,97 @@ Please provide a detailed project description including:
    - Database choice
    - Any additional tools needed
 
-6. **Learning Outcomes**: What specific programming concepts and skills will the student practice?
+6. **Difficulty Assessment**: Based on their scores, explain why this project level is appropriate for them
 
-7. **African Context Connection**: How does this project relate to real challenges or opportunities in Africa?
-
-8. **Difficulty Assessment**: Based on their scores, explain why this project level is appropriate for them
+IMPORTANT OUTPUT INSTRUCTIONS:
+- Start your response IMMEDIATELY with "1. **Project Title**:" 
+- Do NOT include any reasoning, thinking process, or explanatory text before the project description
+- Do NOT say things like "I'll create a project..." or "Based on the assessment..." 
+- Do NOT include any preamble or introduction
+- Provide ONLY the structured project information in the exact format specified above
 
 Generate a project that will genuinely excite and engage a young African learner while teaching them valuable programming skills through building something meaningful to their context."""
+
+    return prompt
+
+def create_task_headers_prompt(project_description, selected_language):
+    """
+    Create a simple prompt to generate just task titles as strict JSON
+    """
+    project_lines = project_description.split('\n')[:5]
+    project_summary = '\n'.join(project_lines)
+    
+    prompt = f"""You must output ONLY valid JSON. No preamble, no explanations.
+Return a JSON array with EXACTLY 4 UNIQUE short task titles (strings), derived from the project below.
+
+PROJECT SUMMARY:
+{project_summary}
+
+CONSTRAINTS:
+- Output only JSON (e.g., ["Title 1", "Title 2", "Title 3", "Title 4"]).
+- Each title must be unique, context-specific, and actionable.
+- No placeholders, no examples, no markdown, no extra text.
+- Keep titles concise (max ~60 chars).
+"""
+
+    return prompt
+
+def create_task_detail_prompt(task_name, task_number, project_description, selected_language, completed_tasks_summary: str = ""):
+    """
+    Create a prompt to generate detailed content for a specific task
+    """
+    
+    prompt = f"""You are an AI Tutor helping children (ages 12–18) learn software engineering by building real projects.
+Your job is to guide the student with clear steps, give ready-to-use prompts for an AI code editor to generate code, and provide exact terminal commands when code isn’t needed (like installs on Linux Mint).
+Be concise, friendly, and concrete. No placeholders. No generic advice. Do not include any social/sharing suggestions.
+
+FULL PROJECT CONTEXT:
+{project_description}
+
+COMPLETED SO FAR:
+{completed_tasks_summary if completed_tasks_summary else 'None'}
+
+CURRENT TASK: {task_name}
+LANGUAGE: {selected_language}
+STEP NUMBER: {task_number} of 4
+
+Requirements:
+- Break this task into 3–6 tiny subtasks.
+- For each subtask, include ONE short kid-friendly explanation (one sentence) of what the subtask achieves.
+- Provide ready-to-copy Cursor prompts to generate code for this subtask. If the subtask is setup, provide exact Linux Mint commands instead.
+- Use fenced code blocks for commands:
+```bash
+sudo apt update
+sudo apt install python3 python3-pip -y
+```
+- Do NOT use placeholders or bracketed text. Avoid words like "specific" or "requirement".
+- Be practical and concrete for this project.
+
+Output format:
+
+**What You'll Build:**
+One short paragraph explaining what this step produces.
+
+**Why This Step:**
+One short paragraph linking this step to the project goals.
+
+**Subtasks:**
+For each subtask, repeat exactly this structure.
+
+- Subtask: <short name>
+  - What and Why (one sentence): <kid-friendly sentence>
+  - Do This:
+    - If code-generation: list 3–5 prompts the student can paste into an AI code editor to produce the needed code.
+    - If setup/installs: include exact Linux Mint commands in a fenced block.
+```bash
+<commands if any>
+```
+  - Verify (practical):
+    - Provide 2–3 quick checks or terminal commands to confirm the subtask is done (no generic advice).
+
+**Success Check:**
+List 2–4 practical checks or commands to confirm this whole step is complete.
+
+Be specific. Start with "**What You'll Build:**"""
 
     return prompt 

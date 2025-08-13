@@ -7,9 +7,9 @@ Contains AI model configurations and other settings
 AI_CONFIG = {
     "local": {
         "model_filename": "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
-        "context_size": 2048,
-        "max_tokens": 1024,
-        "temperature": 0.7,
+        "context_size": 4096,
+        "max_tokens": 1536,
+        "temperature": 0.6,
         "n_threads": 4,
     },
     "cloud": {

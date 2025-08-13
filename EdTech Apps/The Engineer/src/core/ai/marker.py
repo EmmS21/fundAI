@@ -15,6 +15,9 @@ except ImportError:
     Llama = None
     LLAMA_AVAILABLE = False
 
+from .project_prompts import create_project_generation_prompt
+from ..config.settings import AI_CONFIG
+
 logger = logging.getLogger(__name__)
 
 class LocalAIMarker:
@@ -31,7 +34,6 @@ class LocalAIMarker:
             logger.warning("llama-cpp-python not available, local AI disabled")
             return
         
-        # Look for model in expected locations
         model_path = self._find_model_path()
         if not model_path:
             logger.warning("Local AI model not found")
@@ -39,12 +41,14 @@ class LocalAIMarker:
         
         try:
             logger.info(f"Loading local AI model from: {model_path}")
+            ctx = AI_CONFIG.get("local", {}).get("context_size", 2048)
+            n_threads = AI_CONFIG.get("local", {}).get("n_threads", 4)
             self.model = Llama(
                 model_path=str(model_path),
-                n_ctx=2048,  # Context size
-                n_threads=4,  # Number of threads
+                n_ctx=ctx,
+                n_threads=n_threads,
                 verbose=False,
-                n_gpu_layers=-1 if self._has_gpu() else 0  # Use GPU if available
+                n_gpu_layers=-1 if self._has_gpu() else 0
             )
             self.model_ready = True
             logger.info("Local AI model loaded successfully")
@@ -89,7 +93,7 @@ class LocalAIMarker:
         """Check if local AI is available"""
         return self.model_ready and self.model is not None
     
-    def generate_response(self, prompt: str, max_tokens: int = 1024, temperature: float = 0.7) -> Optional[str]:
+    def generate_response(self, prompt: str, max_tokens: int = None, temperature: float = None) -> Optional[str]:
         """Generate a response using the local AI model"""
         if not self.is_available():
             logger.warning("Local AI model not available")
@@ -97,18 +101,23 @@ class LocalAIMarker:
         
         try:
             logger.info("Generating response with local AI")
+            cfg = AI_CONFIG.get("local", {})
+            toks = max_tokens if max_tokens is not None else cfg.get("max_tokens", 1024)
+            temp = temperature if temperature is not None else cfg.get("temperature", 0.7)
+            top_p = cfg.get("top_p", 0.9)
+            repeat_penalty = cfg.get("repeat_penalty", 1.1)
             response = self.model(
                 prompt,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                stop=["Human:", "Assistant:", "\n\n---"],  # Stop sequences
+                max_tokens=toks,
+                temperature=temp,
+                top_p=top_p,
+                repeat_penalty=repeat_penalty,
+                stop=["Human:", "Assistant:", "\n\n---"],
                 echo=False
             )
-            
             generated_text = response['choices'][0]['text'].strip()
             logger.info(f"Local AI generated {len(generated_text)} characters")
             return generated_text
-            
         except Exception as e:
             logger.error(f"Local AI generation failed: {e}")
             return None

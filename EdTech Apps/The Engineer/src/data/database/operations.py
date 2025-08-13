@@ -4,6 +4,7 @@ CRUD operations and specialized queries for programming education
 """
 
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy import create_engine, and_, or_, func, desc
@@ -15,7 +16,7 @@ from .models import (
     CodeAnalysis, LearningPath, UserProgress,
     DifficultyLevel, ProgrammingLanguage, EngineeringDomain
 )
-from ...config.settings import DATABASE_CONFIG
+from config.settings import DATABASE_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +31,14 @@ class DatabaseManager:
     def _initialize_database(self):
         """Initialize database connection and create tables"""
         try:
+            # Construct SQLite database path from config
+            db_path = os.path.join(DATABASE_CONFIG["path"], DATABASE_CONFIG["name"])
+            db_url = f"sqlite:///{db_path}"
+            
             self.engine = create_engine(
-                DATABASE_CONFIG["url"],
-                echo=DATABASE_CONFIG["echo"],
-                pool_pre_ping=DATABASE_CONFIG["pool_pre_ping"],
+                db_url,
+                echo=False,  # Set to True for SQL debugging
+                pool_pre_ping=True,
             )
             
             # Create tables
@@ -507,6 +512,183 @@ class AssessmentOperations:
         except SQLAlchemyError as e:
             session.rollback()
             logger.error(f"Failed to update assessment results: {e}")
+            return False
+        finally:
+            self.db.close_session(session)
+
+class ProjectOperations:
+    """Database operations for AI-generated projects"""
+    
+    def __init__(self, db_manager: DatabaseManager):
+        self.db = db_manager
+    
+    def save_project(self, user_id: int, project_data: dict) -> Optional[int]:
+        """Save a new project to the database"""
+        from .models import Project, ProjectTask
+        
+        session = self.db.get_session()
+        try:
+            # Create project record
+            project = Project(
+                user_id=user_id,
+                title=project_data.get('title', 'Untitled Project'),
+                description=project_data.get('description', ''),
+                language=project_data.get('language', 'Python'),
+                difficulty_level=project_data.get('difficulty_level', 'junior'),
+                domain=project_data.get('domain', 'software'),
+                project_description=project_data.get('project_description', ''),
+                task_headers=project_data.get('task_headers', ''),
+                current_task_number=project_data.get('current_task_number', 1),
+                total_tasks=len(project_data.get('task_names', [])),
+                user_scores=project_data.get('user_scores', {})
+            )
+            
+            session.add(project)
+            session.flush()  # Get the project ID
+            
+            # Create task records
+            task_names = project_data.get('task_names', [])
+            task_details = project_data.get('task_details', {})
+            
+            for i, task_name in enumerate(task_names, 1):
+                task = ProjectTask(
+                    project_id=project.id,
+                    task_number=i,
+                    title=task_name,
+                    task_content=task_details.get(i, ''),
+                    status='pending'
+                )
+                session.add(task)
+            
+            session.commit()
+            logger.info(f"Project saved with ID: {project.id}")
+            return project.id
+            
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Error saving project: {e}")
+            return None
+        finally:
+            self.db.close_session(session)
+    
+    def get_active_project(self, user_id: int) -> Optional[dict]:
+        """Get the user's current active project"""
+        from .models import Project, ProjectTask
+        
+        session = self.db.get_session()
+        try:
+            project = session.query(Project).filter(
+                Project.user_id == user_id,
+                Project.status == 'active'
+            ).order_by(Project.last_accessed.desc()).first()
+            
+            if not project:
+                return None
+            
+            # Get tasks
+            tasks = session.query(ProjectTask).filter(
+                ProjectTask.project_id == project.id
+            ).order_by(ProjectTask.task_number).all()
+            
+            # Convert to dict format
+            task_names = [task.title for task in tasks]
+            task_details = {task.task_number: task.task_content for task in tasks}
+            
+            return {
+                'id': project.id,
+                'title': project.title,
+                'description': project.description,
+                'language': project.language,
+                'project_description': project.project_description,
+                'task_headers': project.task_headers,
+                'task_names': task_names,
+                'task_details': task_details,
+                'current_task_number': project.current_task_number,
+                'total_tasks': project.total_tasks,
+                'user_scores': project.user_scores,
+                'status': project.status,
+                'progress_percentage': project.progress_percentage
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting active project: {e}")
+            return None
+        finally:
+            self.db.close_session(session)
+    
+    def update_project_progress(self, project_id: int, current_task: int, 
+                              task_details: dict = None) -> bool:
+        """Update project progress"""
+        from .models import Project, ProjectTask
+        
+        session = self.db.get_session()
+        try:
+            # Update project
+            project = session.query(Project).filter(Project.id == project_id).first()
+            if project:
+                project.current_task_number = current_task
+                project.progress_percentage = (current_task - 1) / project.total_tasks * 100
+                project.last_accessed = datetime.utcnow()
+                
+                # Update task details if provided
+                if task_details:
+                    for task_num, content in task_details.items():
+                        task = session.query(ProjectTask).filter(
+                            ProjectTask.project_id == project_id,
+                            ProjectTask.task_number == task_num
+                        ).first()
+                        if task:
+                            task.task_content = content
+                
+                session.commit()
+                return True
+            
+            return False
+            
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Error updating project progress: {e}")
+            return False
+        finally:
+            self.db.close_session(session)
+    
+    def skip_project(self, project_id: int) -> bool:
+        """Mark a project as skipped"""
+        from .models import Project
+        
+        session = self.db.get_session()
+        try:
+            project = session.query(Project).filter(Project.id == project_id).first()
+            if project:
+                project.status = 'skipped'
+                session.commit()
+                return True
+            return False
+            
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Error skipping project: {e}")
+            return False
+        finally:
+            self.db.close_session(session)
+    
+    def complete_project(self, project_id: int) -> bool:
+        """Mark a project as completed"""
+        from .models import Project
+        
+        session = self.db.get_session()
+        try:
+            project = session.query(Project).filter(Project.id == project_id).first()
+            if project:
+                project.status = 'completed'
+                project.progress_percentage = 100.0
+                session.commit()
+                return True
+            return False
+            
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Error completing project: {e}")
             return False
         finally:
             self.db.close_session(session)
