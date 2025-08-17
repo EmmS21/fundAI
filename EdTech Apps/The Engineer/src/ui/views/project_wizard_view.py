@@ -130,6 +130,49 @@ class TaskDetailWorker(QThread):
         except Exception as e:
             self.detail_failed.emit(self.task_number, self.task_name, f"Error: {str(e)}")
 
+class BackgroundTaskGenerator(QThread):
+    """Worker thread for sequentially generating remaining empty task details"""
+    
+    task_generated = Signal(int, str) 
+    all_tasks_complete = Signal()
+    
+    def __init__(self, task_names, existing_task_details, project_description, selected_language, current_task_number, project_id, project_ops):
+        super().__init__()
+        self.task_names = task_names
+        self.existing_task_details = existing_task_details
+        self.project_description = project_description
+        self.selected_language = selected_language
+        self.current_task_number = current_task_number
+        self.project_id = project_id
+        self.project_ops = project_ops
+    
+    def run(self):
+        """Generate remaining empty tasks sequentially"""
+        try:
+            generator = ProjectGenerator()
+            
+            if not generator.is_available():
+                return
+            
+            for i, task_name in enumerate(self.task_names, 1):
+                if i == self.current_task_number or self.existing_task_details.get(i):
+                    continue
+                
+                task_detail = generator.generate_task_detail(
+                    task_name, i, self.project_description, self.selected_language, use_local_only=True
+                )
+                
+                if task_detail:
+                    self.project_ops.update_project_progress(
+                        self.project_id, self.current_task_number, {i: task_detail}
+                    )
+                    self.task_generated.emit(i, task_detail)
+            
+            self.all_tasks_complete.emit()
+            
+        except Exception as e:
+            logger.error(f"Background task generation failed: {e}")
+
 class ProjectWizardView(QWidget):
     """Wizard for setting up AI-assisted project building"""
     
@@ -160,7 +203,6 @@ class ProjectWizardView(QWidget):
         if existing_project:
             self.current_project_id = existing_project['id']
             self.project_config = existing_project
-            # Don't set current_step = 2, always start with introduction
             self.current_task_number = existing_project['current_task_number']
             self.task_names = existing_project['task_names']
             logger.info(f"Loaded existing project: {existing_project['title']}")
@@ -171,16 +213,42 @@ class ProjectWizardView(QWidget):
             self.show_introduction()
             return
         
-        # Check if we have task details for current task
         current_task_name = self.task_names[self.current_task_number - 1]
         current_task_detail = self.project_config.get('task_details', {}).get(self.current_task_number)
         
         if current_task_detail:
-            # Show the complete task
             self.show_complete_current_task(current_task_name, current_task_detail)
         else:
-            # Generate the current task details
             self.generate_and_show_current_task()
+        
+        self.start_background_task_generation()
+    
+    def start_background_task_generation(self):
+        """Start background generation of remaining empty tasks"""
+        if not hasattr(self, 'current_project_id') or not self.current_project_id:
+            return
+        
+        if hasattr(self, 'background_generator') and self.background_generator.isRunning():
+            return 
+        
+        self.background_generator = BackgroundTaskGenerator(
+            self.task_names,
+            self.project_config.get('task_details', {}),
+            self.project_config.get('project_description', ''),
+            self.project_config.get('language', 'Python'),
+            self.current_task_number,
+            self.current_project_id,
+            self.project_ops
+        )
+        self.background_generator.task_generated.connect(self.on_background_task_generated)
+        self.background_generator.start()
+    
+    def on_background_task_generated(self, task_number, task_detail):
+        """Handle background task generation completion"""
+        if 'task_details' not in self.project_config:
+            self.project_config['task_details'] = {}
+        self.project_config['task_details'][task_number] = task_detail
+        logger.info(f"Background generated task {task_number}")
     
     def save_project_to_database(self):
         """Save current project to database"""
@@ -1035,8 +1103,13 @@ class ProjectWizardView(QWidget):
     
     def show_project_generation(self):
         """Show timer in existing QScrollArea, then replace with AI output"""
-        # Don't clear content - use existing QScrollArea
-        # Add timer and project content directly to the QScrollArea
+        # Check if we have an existing project first
+        if self.current_project_id and self.project_config.get('project_description'):
+            # We have a cached project, show it directly
+            self.show_cached_project()
+            return
+        
+        # No cached project, generate new one
         scroll_widget = QWidget()
         scroll_layout = QVBoxLayout(scroll_widget)
         
@@ -1057,6 +1130,22 @@ class ProjectWizardView(QWidget):
         
         self.start_status_timer()
         QTimer.singleShot(100, self.start_project_generation)
+    
+    def show_cached_project(self):
+        """Show existing project from cache instead of generating new one"""
+        # Switch from timer to project content
+        self.showing_timer = False
+        self.update_visibility()
+        
+        # Extract and format the cached project content
+        structured_content = self.extract_structured_content(self.project_config['project_description'])
+        formatted_description = self.convert_markdown_to_html(structured_content)
+        self.project_content.setHtml(formatted_description)
+        
+        self.next_button.setText("Continue Project →")
+        self.next_button.setVisible(True)
+        self.next_button.setEnabled(True)
+        self.back_button.setEnabled(True)
     
     def show_task_breakdown(self):
         """Show task breakdown generation step"""
@@ -1430,8 +1519,9 @@ class ProjectWizardView(QWidget):
         # Store the detail
         self.project_config['task_details'][task_number] = task_detail
         
-        # Show the complete task with evaluation prompt
         self.show_complete_current_task(task_name, task_detail)
+        
+        self.start_background_task_generation()
     
     def on_current_task_failed(self, task_number, task_name, error_message):
         """Handle failed generation of current task details"""
@@ -1823,3 +1913,23 @@ Please analyze my files now and give me feedback!"""
             }
         
         self.project_started.emit(self.project_config) 
+
+    def start_background_task_generation(self):
+        """Start background generation of remaining empty tasks"""
+        if not hasattr(self, 'current_project_id') or not self.current_project_id:
+            return
+        
+        if hasattr(self, 'background_generator') and self.background_generator.isRunning():
+            return 
+        
+        self.background_generator = BackgroundTaskGenerator(
+            self.task_names,
+            self.project_config.get('task_details', {}),
+            self.project_config.get('project_description', ''),
+            self.project_config.get('language', 'Python'),
+            self.current_task_number,
+            self.current_project_id,
+            self.project_ops
+        )
+        self.background_generator.task_generated.connect(self.on_background_task_generated)
+        self.background_generator.start() 

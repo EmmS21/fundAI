@@ -579,7 +579,8 @@ class ProjectOperations:
         try:
             project = session.query(Project).filter(
                 Project.user_id == user_id,
-                Project.status == 'active'
+                Project.status == 'active',
+                Project.is_completed == False
             ).order_by(Project.last_accessed.desc()).first()
             
             if not project:
@@ -682,6 +683,7 @@ class ProjectOperations:
             if project:
                 project.status = 'completed'
                 project.progress_percentage = 100.0
+                project.is_completed = True 
                 session.commit()
                 return True
             return False
