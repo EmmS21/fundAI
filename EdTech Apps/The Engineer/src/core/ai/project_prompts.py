@@ -129,60 +129,21 @@ CONSTRAINTS:
 
 def create_task_detail_prompt(task_name, task_number, project_description, selected_language, completed_tasks_summary: str = ""):
     """
-    Create a prompt to generate detailed content for a specific task
+    Create a prompt to generate detailed, educational content for kids learning programming
     """
     
-    prompt = f"""You are an AI Tutor helping children (ages 12–18) learn software engineering by building real projects.
-Your job is to guide the student with clear steps, give ready-to-use prompts for an AI code editor to generate code, and provide exact terminal commands when code isn’t needed (like installs on Linux Mint).
-Be concise, friendly, and concrete. No placeholders. No generic advice. Do not include any social/sharing suggestions.
+    prompt = f"""AI Tutor for kids 12-18. Be direct, no thinking shown.
 
-FULL PROJECT CONTEXT:
-{project_description}
-
-COMPLETED SO FAR:
-{completed_tasks_summary if completed_tasks_summary else 'None'}
-
-CURRENT TASK: {task_name}
+TASK: {task_name}
 LANGUAGE: {selected_language}
-STEP NUMBER: {task_number} of 4
-
-Requirements:
-- Break this task into 3–6 tiny subtasks.
-- For each subtask, include ONE short kid-friendly explanation (one sentence) of what the subtask achieves.
-- Provide ready-to-copy Cursor prompts to generate code for this subtask. If the subtask is setup, provide exact Linux Mint commands instead.
-- Use fenced code blocks for commands:
-```bash
-sudo apt update
-sudo apt install python3 python3-pip -y
-```
-- Do NOT use placeholders or bracketed text. Avoid words like "specific" or "requirement".
-- Be practical and concrete for this project.
+STEP: {task_number}/4
 
 Output format:
-
-**What You'll Build:**
-One short paragraph explaining what this step produces.
-
-**Why This Step:**
-One short paragraph linking this step to the project goals.
-
-**Subtasks:**
-For each subtask, repeat exactly this structure.
-
-- Subtask: <short name>
-  - What and Why (one sentence): <kid-friendly sentence>
-  - Do This:
-    - If code-generation: list 3–5 prompts the student can paste into an AI code editor to produce the needed code.
-    - If setup/installs: include exact Linux Mint commands in a fenced block.
+**What You'll Build:** Brief description
+**Commands:**
 ```bash
-<commands if any>
+sudo apt install python3 -y
 ```
-  - Verify (practical):
-    - Provide 2–3 quick checks or terminal commands to confirm the subtask is done (no generic advice).
-
-**Success Check:**
-List 2–4 practical checks or commands to confirm this whole step is complete.
-
-Be specific. Start with "**What You'll Build:**"""
+**Test:** python3 --version"""
 
     return prompt 

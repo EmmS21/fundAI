@@ -16,7 +16,7 @@ except ImportError:
     LLAMA_AVAILABLE = False
 
 from .project_prompts import create_project_generation_prompt
-from ..config.settings import AI_CONFIG
+from config.settings import AI_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -106,18 +106,54 @@ class LocalAIMarker:
             temp = temperature if temperature is not None else cfg.get("temperature", 0.7)
             top_p = cfg.get("top_p", 0.9)
             repeat_penalty = cfg.get("repeat_penalty", 1.1)
-            response = self.model(
+            
+            print(f"[DEBUG] Generation params: max_tokens={toks}, temp={temp}, top_p={top_p}")
+            print(f"[DEBUG] Prompt length: {len(prompt)} characters")
+            logger.info(f"Generation params: max_tokens={toks}, temp={temp}, top_p={top_p}")
+            logger.info(f"Prompt length: {len(prompt)} characters")
+            
+            # Use streaming to see content as it's generated
+            logger.info("Starting streaming generation...")
+            response_stream = self.model(
                 prompt,
                 max_tokens=toks,
                 temperature=temp,
                 top_p=top_p,
                 repeat_penalty=repeat_penalty,
                 stop=["Human:", "Assistant:", "\n\n---"],
-                echo=False
+                echo=False,
+                stream=True
             )
-            generated_text = response['choices'][0]['text'].strip()
-            logger.info(f"Local AI generated {len(generated_text)} characters")
-            return generated_text
+            
+            generated_text = ""
+            token_count = 0
+            chunk_count = 0
+            
+            logger.info("Processing stream chunks...")
+            for chunk in response_stream:
+                chunk_count += 1
+                if chunk_count == 1:
+                    logger.info("Received first chunk from stream")
+                
+                chunk_text = chunk['choices'][0]['text'] if chunk['choices'][0]['text'] else ""
+                if chunk_text:
+                    generated_text += chunk_text
+                    token_count += 1
+                    if token_count % 10 == 0:  # Log every 10 tokens for more detail
+                        logger.info(f"Token {token_count}: Generated {len(generated_text)} chars total")
+                
+                # Log if we get empty chunks
+                if not chunk_text and chunk_count <= 5:
+                    logger.info(f"Chunk {chunk_count}: Empty text")
+            
+            print(f"[DEBUG] Stream completed: {chunk_count} chunks, {token_count} tokens, {len(generated_text)} characters")
+            logger.info(f"Stream completed: {chunk_count} chunks, {token_count} tokens, {len(generated_text)} characters")
+            
+            if len(generated_text) == 0:
+                print("[DEBUG] Generated text is empty - model may have hit limits or failed to start")
+                logger.error("Generated text is empty - model may have hit limits or failed to start")
+                
+            return generated_text.strip()
         except Exception as e:
             logger.error(f"Local AI generation failed: {e}")
             return None

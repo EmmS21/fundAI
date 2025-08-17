@@ -17,7 +17,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Import database operations
-from ...data.database.operations import db_manager, ProjectOperations
+from data.database.operations import db_manager, ProjectOperations
 
 class ProjectGenerationWorker(QThread):
     """Worker thread for generating projects using AI"""
@@ -160,7 +160,7 @@ class ProjectWizardView(QWidget):
         if existing_project:
             self.current_project_id = existing_project['id']
             self.project_config = existing_project
-            self.current_step = 2  # Skip to task view
+            # Don't set current_step = 2, always start with introduction
             self.current_task_number = existing_project['current_task_number']
             self.task_names = existing_project['task_names']
             logger.info(f"Loaded existing project: {existing_project['title']}")
@@ -313,6 +313,7 @@ class ProjectWizardView(QWidget):
         
         # Create persistent elements
         self.create_persistent_elements()
+        
         
         # Show appropriate step based on existing project
         if self.current_step == 2 and hasattr(self, 'task_names') and self.task_names:
@@ -698,75 +699,75 @@ class ProjectWizardView(QWidget):
         self.project_config['language'] = language
         self.next_button.setEnabled(True)
     
-    def show_project_generation(self):
-        """Show project generation step with AI loading"""
-        self.clear_content()
-        content_layout = QVBoxLayout(self.content_area)
+    # def show_project_generation(self):
+    #     """Show project generation step with AI loading"""
+    #     self.clear_content()
+    #     content_layout = QVBoxLayout(self.content_area)
         
-        title = QLabel("Generating Your Project")
-        title.setStyleSheet("""
-            QLabel {
-                font-size: 24px;
-                font-weight: 600;
-                color: rgba(255, 255, 255, 0.95);
-                margin-bottom: 20px;
-            }
-        """)
-        content_layout.addWidget(title)
+    #     title = QLabel("Generating Your Project")
+    #     title.setStyleSheet("""
+    #         QLabel {
+    #             font-size: 24px;
+    #             font-weight: 600;
+    #             color: rgba(255, 255, 255, 0.95);
+    #             margin-bottom: 20px;
+    #         }
+    #     """)
+    #     content_layout.addWidget(title)
         
-        # Status message (will be updated by timer)
-        self.status_label = QLabel("🤖 AI is analyzing your assessment scores...")
-        self.status_label.setWordWrap(True)
-        self.status_label.setStyleSheet("""
-            QLabel {
-                font-size: 16px;
-                color: rgba(255, 255, 255, 0.8);
-                margin-bottom: 15px;
-            }
-        """)
-        content_layout.addWidget(self.status_label)
+    #     # Status message (will be updated by timer)
+    #     self.status_label = QLabel("🤖 AI is analyzing your assessment scores...")
+    #     self.status_label.setWordWrap(True)
+    #     self.status_label.setStyleSheet("""
+    #         QLabel {
+    #             font-size: 16px;
+    #             color: rgba(255, 255, 255, 0.8);
+    #             margin-bottom: 15px;
+    #         }
+    #     """)
+    #     content_layout.addWidget(self.status_label)
         
-        # Timer label (shows immediately)
-        self.timer_label = QLabel("Time elapsed: 00:00")
-        self.timer_label.setStyleSheet("""
-            QLabel {
-                font-size: 14px;
-                color: rgba(255, 255, 255, 0.6);
-                margin-bottom: 20px;
-            }
-        """)
-        content_layout.addWidget(self.timer_label)
+    #     # Timer label (shows immediately)
+    #     self.timer_label = QLabel("Time elapsed: 00:00")
+    #     self.timer_label.setStyleSheet("""
+    #         QLabel {
+    #             font-size: 14px;
+    #             color: rgba(255, 255, 255, 0.6);
+    #             margin-bottom: 20px;
+    #         }
+    #     """)
+    #     content_layout.addWidget(self.timer_label)
         
-        # Progress bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 0)  # Indeterminate progress
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                border: 1px solid rgba(255, 255, 255, 0.3);
-                border-radius: 8px;
-                background-color: rgba(255, 255, 255, 0.1);
-                height: 20px;
-            }
-            QProgressBar::chunk {
-                background-color: #3498db;
-                border-radius: 7px;
-            }
-        """)
-        content_layout.addWidget(self.progress_bar)
+    #     # Progress bar
+    #     self.progress_bar = QProgressBar()
+    #     self.progress_bar.setRange(0, 0)  # Indeterminate progress
+    #     self.progress_bar.setStyleSheet("""
+    #         QProgressBar {
+    #             border: 1px solid rgba(255, 255, 255, 0.3);
+    #             border-radius: 8px;
+    #             background-color: rgba(255, 255, 255, 0.1);
+    #             height: 20px;
+    #         }
+    #         QProgressBar::chunk {
+    #             background-color: #3498db;
+    #             border-radius: 7px;
+    #         }
+    #     """)
+    #     content_layout.addWidget(self.progress_bar)
         
-        content_layout.addStretch()
+    #     content_layout.addStretch()
         
-        # Hide navigation buttons during generation
-        self.next_button.setVisible(False)
-        self.back_button.setEnabled(False)
+    #     # Hide navigation buttons during generation
+    #     self.next_button.setVisible(False)
+    #     self.back_button.setEnabled(False)
         
-        self.content_area.repaint()
+    #     self.content_area.repaint()
         
-        # START TIMER IMMEDIATELY before starting AI generation
-        self.start_status_timer()
+    #     # START TIMER IMMEDIATELY before starting AI generation
+    #     self.start_status_timer()
         
-        # Start AI generation with a longer delay to ensure timer is visible
-        QTimer.singleShot(2000, self.start_project_generation)  # 2 second delay to test timer visibility
+    #     # Start AI generation with a longer delay to ensure timer is visible
+    #     QTimer.singleShot(2000, self.start_project_generation)  # 2 second delay to test timer visibility
     
     def start_project_generation(self):
         """Start the AI project generation process for one randomly selected language"""
@@ -1008,11 +1009,11 @@ class ProjectWizardView(QWidget):
     def next_step(self):
         """Go to next step"""
         if self.current_step == 0:
-            # Skip language selection, go directly to project generation
+            # User clicked "I Understand" from introduction
             self.current_step = 1
             self.show_project_generation()
         elif self.current_step == 1:
-            # Go to task breakdown step
+            # Go from project generation to task breakdown
             self.current_step = 2
             self.show_task_breakdown()
         elif self.current_step == 2:

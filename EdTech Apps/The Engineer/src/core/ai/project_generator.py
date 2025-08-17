@@ -106,7 +106,7 @@ class ProjectGenerator:
             return None
         
         try:
-            max_tokens = 2048 if len(prompt) > 2000 else 1536
+            max_tokens = 16384  # Use a much higher limit for detailed task generation
             temperature = 0.3  
             
             # Use the local AI marker's generation capability
