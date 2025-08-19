@@ -126,6 +126,7 @@ class TaskDetailWorker(QThread):
     
     detail_generated = Signal(int, str, str)  # Emits task_number, task_name, task_detail
     detail_failed = Signal(int, str, str)     # Emits task_number, task_name, error_message
+    detail_streaming = Signal(int, str, str)  # Emits task_number, task_name, partial_content
     
     def __init__(self, task_name, task_number, project_description, selected_language, use_local_only=False):
         super().__init__()
@@ -163,7 +164,8 @@ class TaskDetailWorker(QThread):
                 self.task_number,
                 self.project_description,
                 self.selected_language,
-                self.use_local_only
+                self.use_local_only,
+                streaming_callback=self._on_streaming_chunk
             )
             
             logger.info(f"📥 generate_task_detail() returned")
@@ -192,6 +194,10 @@ class TaskDetailWorker(QThread):
             logger.error(f"✅ detail_failed signal EMITTED due to exception")
         
         logger.info(f"🏁 TaskDetailWorker.run() COMPLETED")
+    
+    def _on_streaming_chunk(self, chunk):
+        """Callback for streaming updates from the generator"""
+        self.detail_streaming.emit(self.task_number, self.task_name, chunk)
 
 class BackgroundTaskGenerator(QThread):
     """Worker thread for sequentially generating remaining empty task details"""
@@ -1557,6 +1563,9 @@ class ProjectWizardView(QWidget):
         logger.info(f"🔗 Connecting detail_failed to on_current_task_failed") 
         self.current_task_worker.detail_failed.connect(self.on_current_task_failed)
         
+        logger.info(f"🔗 Connecting detail_streaming to on_current_task_streaming")
+        self.current_task_worker.detail_streaming.connect(self.on_current_task_streaming)
+        
         logger.info(f"🚀 Starting TaskDetailWorker thread")
         self.current_task_worker.start()
         
@@ -1767,6 +1776,29 @@ class ProjectWizardView(QWidget):
         
         self.start_background_task_generation()
     
+    def on_current_task_streaming(self, task_number, task_name, partial_content):
+        """Handle streaming updates for current task generation"""
+        logger.info(f"📡 Streaming update - Task {task_number}: {len(partial_content)} chars")
+        
+        # Update the UI with partial content if we have a task browser
+        if hasattr(self, 'current_task_browser'):
+            # Show loading message for first few characters, then stream content
+            if len(partial_content) < 50:
+                loading_html = f"""
+                <div style="text-align: center; padding: 20px;">
+                    <h3>🤖 Generating Task {task_number}: {task_name}</h3>
+                    <p style="color: rgba(255, 255, 255, 0.6);">AI is crafting your engineering task...</p>
+                    <div style="margin-top: 20px; padding: 15px; background-color: rgba(255, 255, 255, 0.05); border-radius: 8px;">
+                        <pre style="white-space: pre-wrap; font-family: monospace; font-size: 12px;">{partial_content}</pre>
+                    </div>
+                </div>
+                """
+                self.current_task_browser.setHtml(loading_html)
+            else:
+                # Stream the actual formatted content
+                formatted_content = self.convert_task_detail_to_html(partial_content)
+                self.current_task_browser.setHtml(formatted_content)
+    
     def on_current_task_failed(self, task_number, task_name, error_message):
         """Handle failed generation of current task details"""
         logger.error(f"💥 on_current_task_failed() SIGNAL RECEIVED!")
@@ -1852,10 +1884,10 @@ class ProjectWizardView(QWidget):
         scroll_layout.addWidget(task_header)
         
         # Task details
-        task_browser = QTextBrowser()
-        task_browser.setReadOnly(True)
-        task_browser.setOpenExternalLinks(False)
-        task_browser.setStyleSheet("""
+        self.current_task_browser = QTextBrowser()
+        self.current_task_browser.setReadOnly(True)
+        self.current_task_browser.setOpenExternalLinks(False)
+        self.current_task_browser.setStyleSheet("""
             QTextBrowser {
                 font-size: 14px;
                 line-height: 1.6;
@@ -1888,8 +1920,8 @@ class ProjectWizardView(QWidget):
         
         # Format and set task details
         formatted_detail = self.convert_task_detail_to_html(task_detail)
-        task_browser.setHtml(formatted_detail)
-        scroll_layout.addWidget(task_browser)
+        self.current_task_browser.setHtml(formatted_detail)
+        scroll_layout.addWidget(self.current_task_browser)
         
         # Cursor evaluation section
         self.add_cursor_evaluation_section(scroll_layout, task_name)
