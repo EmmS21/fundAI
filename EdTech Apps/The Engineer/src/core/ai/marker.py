@@ -93,7 +93,7 @@ class LocalAIMarker:
         """Check if local AI is available"""
         return self.model_ready and self.model is not None
     
-    def generate_response(self, prompt: str, max_tokens: int = None, temperature: float = None) -> Optional[str]:
+    def generate_response(self, prompt: str, max_tokens: int = None, temperature: float = None, streaming_callback=None) -> Optional[str]:
         """Generate a response using the local AI model"""
         import gc
         import time
@@ -103,6 +103,7 @@ class LocalAIMarker:
         logger.info(f"📏 Prompt length: {len(prompt)} characters")
         logger.info(f"⚙️ max_tokens param: {max_tokens}")
         logger.info(f"⚙️ temperature param: {temperature}")
+        logger.info(f"🔄 streaming_callback: {streaming_callback is not None}")
         
         # BASIC SYSTEM MONITORING (without psutil)
         print(f"[DEBUG] BEFORE GENERATION - Prompt length: {len(prompt)} chars")
@@ -186,6 +187,14 @@ class LocalAIMarker:
                 if chunk_text:
                     generated_text += chunk_text
                     token_count += 1
+                    
+                    # Call streaming callback if provided
+                    if streaming_callback:
+                        try:
+                            streaming_callback(generated_text)
+                        except Exception as e:
+                            logger.warning(f"Streaming callback error: {e}")
+                    
                     if token_count % 10 == 0:  # Log every 10 tokens for more detail
                         logger.info(f"Token {token_count}: Generated {len(generated_text)} chars total")
                 

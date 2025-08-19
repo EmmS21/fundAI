@@ -86,62 +86,33 @@ class ProjectGenerator:
             logger.error("Failed to generate project using both cloud and local AI")
             return None
     
-    def _try_cloud_generation(self, prompt: str) -> Optional[str]:
-        """Try to generate project using cloud AI"""
-        if not self.cloud_ai:
+    def _try_cloud_generation(self, prompt: str, streaming_callback=None) -> Optional[str]:
+        """Try generating using cloud AI"""
+        if not self.cloud_ai or not self.cloud_ai.is_available():
             return None
         
         try:
-            response = self.cloud_ai.generate_response(prompt)
-            if response and len(response.strip()) > 100:  # Basic validation
-                return response
+            # Cloud AI doesn't support streaming callback yet, so just generate normally
+            result = self.cloud_ai.generate_report_from_prompt(prompt)
+            if isinstance(result, dict) and "content" in result:
+                return result["content"]
+            elif isinstance(result, dict) and "error" not in result:
+                return str(result)
+            return None
         except Exception as e:
-            logger.warning(f"Cloud AI project generation failed: {e}")
-        
-        return None
+            logger.error(f"Cloud AI generation failed: {e}")
+            return None
     
-    def _try_local_generation(self, prompt: str) -> Optional[str]:
-        """Try to generate project using local AI"""
-        logger.info(f"🏠 _try_local_generation() CALLED")
-        logger.info(f"📏 Prompt length: {len(prompt)} characters")
-        
-        if not self.local_ai:
-            logger.error(f"❌ No local AI instance available")
+    def _try_local_generation(self, prompt: str, streaming_callback=None) -> Optional[str]:
+        """Try generating using local AI"""
+        if not self.local_ai or not self.local_ai.is_available():
             return None
         
-        logger.info(f"✅ Local AI instance available")
-        
         try:
-            max_tokens = 16384  # Use a much higher limit for detailed task generation
-            temperature = 0.3  
-            
-            logger.info(f"⚙️ Generation parameters: max_tokens={max_tokens}, temp={temperature}")
-            logger.info(f"📤 Calling local_ai.generate_response()")
-            
-            # Use the local AI marker's generation capability
-            response = self.local_ai.generate_response(
-                prompt, 
-                max_tokens=max_tokens, 
-                temperature=temperature
-            )
-            
-            logger.info(f"📥 local_ai.generate_response() RETURNED")
-            logger.info(f"📏 Response length: {len(response) if response else 0} characters")
-            logger.info(f"📄 Response content: {response[:300] if response else 'None'}...")
-            
-            if response and len(response.strip()) > 50:  
-                logger.info(f"✅ Local AI generated valid response: {len(response)} characters")
-                return response
-            else:
-                logger.warning(f"⚠️ Local AI response too short or empty: {len(response) if response else 0} characters")
+            return self.local_ai.generate_response(prompt, streaming_callback=streaming_callback)
         except Exception as e:
-            logger.error(f"💥 EXCEPTION in _try_local_generation: {str(e)}")
-            logger.error(f"🔍 Exception type: {type(e).__name__}")
-            import traceback
-            logger.error(f"📜 Full traceback: {traceback.format_exc()}")
-        
-        logger.info(f"❌ _try_local_generation() returning None")
-        return None
+            logger.error(f"Local AI generation failed: {e}")
+            return None
     
     def is_available(self) -> bool:
         """Check if any AI service is available for project generation"""
@@ -207,7 +178,8 @@ class ProjectGenerator:
             return None
     
     def generate_task_detail(self, task_name: str, task_number: int, project_description: str, 
-                            selected_language: str, use_local_only: bool = False, completed_tasks_summary: str = "") -> Optional[str]:
+                            selected_language: str, use_local_only: bool = False, completed_tasks_summary: str = "", 
+                            streaming_callback=None) -> Optional[str]:
         """
         Generate detailed content for a specific task
         
@@ -217,6 +189,7 @@ class ProjectGenerator:
             project_description: The full project description
             selected_language: Programming language for the project
             use_local_only: Whether to use only local AI
+            streaming_callback: Optional callback for streaming updates
             
         Returns:
             Generated task details or None if generation failed
@@ -225,19 +198,19 @@ class ProjectGenerator:
         logger.info(f"Task detail prompt length: {len(prompt)} characters")
         
         if use_local_only:
-            task_detail = self._try_local_generation(prompt)
+            task_detail = self._try_local_generation(prompt, streaming_callback)
             if task_detail:
                 logger.info(f"Task {task_number} details generated successfully using local AI")
                 return task_detail
             logger.error(f"Failed to generate task {task_number} details using local AI")
             return None
         else:
-            task_detail = self._try_cloud_generation(prompt)
+            task_detail = self._try_cloud_generation(prompt, streaming_callback)
             if task_detail:
                 logger.info(f"Task {task_number} details generated successfully using cloud AI")
                 return task_detail
             
-            task_detail = self._try_local_generation(prompt)
+            task_detail = self._try_local_generation(prompt, streaming_callback)
             if task_detail:
                 logger.info(f"Task {task_number} details generated successfully using local AI")
                 return task_detail

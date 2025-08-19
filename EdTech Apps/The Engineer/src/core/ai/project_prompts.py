@@ -152,114 +152,45 @@ def create_task_detail_prompt(task_name, task_number, project_description, selec
     Create a story-driven engineering ticket that teaches real software engineering concepts
     """
     
-    # Extract project context
-    project_lines = project_description.split('\n')
-    project_title = "this project"
-    problem_statement = "solve a real-world problem"
-    
-    # Try to extract project title and problem from description
-    for line in project_lines:
-        if "Project Title" in line or "Title:" in line:
-            project_title = line.split(':')[-1].strip() if ':' in line else line.strip()
-        elif "Problem Statement" in line:
-            problem_statement = line.split(':')[-1].strip() if ':' in line else line.strip()
-    
-    # Define engineering concepts for each ticket number
-    engineering_concepts = {
-        1: {
-            "primary": "Development Environment Setup",
-            "secondary": "Project Structure & Dependencies",
-            "real_world": "Every software team starts projects the same way - setting up consistent environments so all developers can collaborate effectively.",
-            "companies": "Google, Microsoft, Netflix"
-        },
-        2: {
-            "primary": "Data Modeling & Business Logic", 
-            "secondary": "API Design Patterns",
-            "real_world": "The core of any application is how it handles and processes data - this is what makes software actually useful.",
-            "companies": "Spotify, Instagram, WhatsApp"
-        },
-        3: {
-            "primary": "User Interface & Experience",
-            "secondary": "Frontend-Backend Integration", 
-            "real_world": "Great software isn't just functional - it needs to be intuitive and enjoyable for real people to use.",
-            "companies": "Apple, TikTok, Discord"
-        },
-        4: {
-            "primary": "Testing & Quality Assurance",
-            "secondary": "Deployment & DevOps Basics",
-            "real_world": "Professional software must be reliable and easily deployable - this is what separates hobby code from production systems.",
-            "companies": "Amazon, Uber, GitHub"
-        }
-    }
-    
-    concepts = engineering_concepts.get(task_number, engineering_concepts[1])
-    
     # Build completed context
     completed_context = ""
     if completed_tasks_summary:
         completed_context = f"You've already completed: {completed_tasks_summary}\n"
     
-    prompt = f"""You're helping a future software engineer (age 12-18) build real engineering skills through {project_title}.
+    prompt = f"""You are a senior engineer, your role is to break down the project {project_description} into manageable tasks. For context, you are helping kids aged 12-18 to help them learn how to code, how to build software and understand software engineering concepts. You need to break the project down into Jira like tickets.
 
-ENGINEERING STORY ARC:
-We're building {project_title} because {problem_statement}. 
+PROJECT CONTEXT:
+{project_description}
+
+Completed tasks:
 {completed_context}
-Next engineering challenge: Master {concepts['primary']} - a skill every professional software engineer needs.
 
-REAL-WORLD CONNECTION:
-Companies like {concepts['companies']} rely on {concepts['primary'].lower()} because {concepts['real_world']}
+Next engineering challenge: Create ticket #{task_number} - {task_name}
 
 CREATE ONE DETAILED JIRA-STYLE ENGINEERING TICKET:
 
-**[ENGINEERING TICKET {task_number}/4] {task_name}**
+**[ENGINEERING TICKET {task_number}] {task_name}**
 
 **THE ENGINEERING CHALLENGE:**
-In real software teams, engineers need to {concepts['primary'].lower()} because [explain the business/technical reason]. This ticket teaches you how professional developers approach this challenge.
+The ticket should break down the project into a manageable task based on what has already completed and what is left to complete.
 
-**YOUR MISSION:**
-Build {task_name} while mastering the engineering concepts that make you think like a software engineer, not just a coder.
+The ticket should contain prompts that the user will pass into Cursor AI to help them complete the task.
 
-**ENGINEERING CONCEPTS YOU'LL LEARN:**
-- **{concepts['primary']}:** Why engineers use this approach and how it fits in professional software development
-- **{concepts['secondary']}:** How this connects to industry best practices and team collaboration
+The prompts should; 
+- build on the previous task
+- not generate the full code solution, generate most of the code, but leave some for the user to complete 
+- guide the user through the task to understand what they need to think about and do to complete the task
+- the prompt should return information educating the user about everything they are doing. Concepts need to explained as simply as possible (explain like I'm 12 and then explain to an engineer)
+- the prompt should return other things the user should research and study to develop a deeper understanding of each concept covered
+- the prompt should explain why this concept is important in engineering and software development and how it fits into the bigger picture of the project
+- the prompt should ensure we follow best practices and industry patterns, explaining this to the end user
+- the prompt should also return questions for the user to answer to ensure they understand the concepts and are able to complete the task
 
-**ACCEPTANCE CRITERIA:**
-- [ ] Implement the core functionality with clean, readable code
-- [ ] Follow {selected_language} best practices and industry patterns
-- [ ] Understand and can explain the engineering decisions you made
-- [ ] Code works correctly and handles basic error cases
-
-**SETUP COMMANDS:**
-```bash
-# Purpose: [Explain why this setup is needed in professional software development]
-# What this does: [Explain the technical purpose and how it fits the bigger picture]
-[include specific installation/setup commands for {selected_language}]
-```
-
-**CURSOR AI COLLABORATION PROMPTS:**
-1. "Help me set up {concepts['primary'].lower()} for this project and explain why software engineers structure it this way"
-2. "Walk me through implementing {task_name} step by step, explaining the engineering decisions we're making"
-3. "Review my code and help me understand if I'm following {selected_language} best practices for {concepts['primary'].lower()}"
-4. "Explain how this {concepts['primary'].lower()} pattern is used in real companies and why it matters"
-
-**HINTS FOR SUCCESS:**
-- Think like an engineer: Ask "why" for every decision, not just "how"
-- Use Cursor AI to understand patterns, not just copy code
-- Focus on building understanding you can explain to someone else
-- Connect what you're building to real software you use daily
-
-**DEFINITION OF DONE:**
-- Feature works correctly and handles edge cases
-- Code follows engineering best practices for {selected_language}
-- You can teach someone else the engineering concepts you learned
-- Cursor AI confirms your implementation follows professional patterns
-- You understand how this connects to real-world software engineering
-
-**KNOWLEDGE VALIDATION:**
-After completing this ticket, you should be able to explain:
-1. Why engineers approach {concepts['primary'].lower()} this way
-2. How your implementation follows industry standards
-3. What problems this pattern solves in real software projects
-4. How this connects to what you'll build in future tickets"""
+Return ONLY the JSON object, no other text with:
+1. the ticket title and ticket number (ie. 1 out of 10/12/20)
+2. the ticket description
+3. the number of story points the ticket is worth (and explaining how much work would be required to complete the task)
+4. commands to run to test if the task is sufficiently complete
+"""
 
     return prompt 
