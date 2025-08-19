@@ -128,14 +128,20 @@ ENGINEERING PROGRESSION PRINCIPLES:
 4. Complete with testing and deployment concepts
 
 OUTPUT REQUIREMENTS:
-Return ONLY a JSON array of engineering ticket titles that:
+Return ONLY a JSON array of ticket objects that:
 - Follow logical dependency order (each builds on previous)
 - Teach core software engineering concepts
 - Are specific and actionable for {selected_language}
 - Connect to real-world engineering practices
 - Break complex work into manageable 1-2 hour chunks
 
-EXAMPLE FORMAT: ["Set up development environment and project structure", "Build core data models and business logic", "Create user interface and API endpoints", "Implement testing and deployment pipeline"]
+EXAMPLE FORMAT: [
+  {{"title": "Set up development environment", "story_points": 2}},
+  {{"title": "Build core data models", "story_points": 3}}, 
+  {{"title": "Create user interface", "story_points": 5}}
+]
+
+Story points scale: 1=30min, 2=1hr, 3=2hrs, 5=4hrs, 8=full day
 
 Output ONLY the JSON array, no other text."""
 
@@ -207,18 +213,53 @@ CREATE ONE DETAILED JIRA-STYLE ENGINEERING TICKET:
 
 **[ENGINEERING TICKET {task_number}/4] {task_name}**
 
-OUTPUT FORMAT: Return ONLY valid JSON in this exact structure:
+**THE ENGINEERING CHALLENGE:**
+In real software teams, engineers need to {concepts['primary'].lower()} because [explain the business/technical reason]. This ticket teaches you how professional developers approach this challenge.
 
-{{
-  "title": "{task_name}",
-  "story_points": [1-8 based on complexity],
-  "story_points_explanation": "Brief explanation of why this point value and what it represents for students",
-  "prerequisites": [List of what should be completed before this ticket],
-  "ticket_content": "**OBJECTIVE:**\\nWhat you'll build and why this is critical in professional software development.\\n\\n**ENGINEERING CONCEPTS:**\\n- {concepts['primary']}: [Why engineers use this approach]\\n- {concepts['secondary']}: [How this connects to industry best practices]\\n\\n**SETUP COMMANDS:**\\n```bash\\n# Purpose: [Why this setup is needed]\\n[specific command for {selected_language}]\\n```\\n\\n**IMPLEMENTATION STEPS:**\\n1. [Specific step with engineering explanation]\\n2. [Next step building on the first]\\n3. [Final step to complete the feature]\\n\\n**CURSOR AI PROMPTS:**\\n- \\"Help me understand [specific concept] and explain why engineers structure it this way\\"\\n- \\"Walk me through implementing [specific feature] with best practices for {selected_language}\\"\\n- \\"Review my code and suggest improvements following industry standards\\"\\n\\n**ACCEPTANCE CRITERIA:**\\n- [ ] Feature works correctly and handles edge cases\\n- [ ] Code follows {selected_language} best practices\\n- [ ] You can explain the engineering concepts to someone else\\n- [ ] Implementation follows industry patterns\\n\\n**REAL-WORLD CONNECTION:**\\nHow this connects to what professional engineers do at companies like {concepts['companies']}.\\n\\n**NEXT STEPS:**\\nBrief preview of what the next ticket will build on this foundation.",
-  "builds_on": [List of previous ticket titles this depends on],
-  "enables_next": [List of what future tickets this will enable]
-}}
+**YOUR MISSION:**
+Build {task_name} while mastering the engineering concepts that make you think like a software engineer, not just a coder.
 
-Return ONLY the JSON object, no other text."""
+**ENGINEERING CONCEPTS YOU'LL LEARN:**
+- **{concepts['primary']}:** Why engineers use this approach and how it fits in professional software development
+- **{concepts['secondary']}:** How this connects to industry best practices and team collaboration
+
+**ACCEPTANCE CRITERIA:**
+- [ ] Implement the core functionality with clean, readable code
+- [ ] Follow {selected_language} best practices and industry patterns
+- [ ] Understand and can explain the engineering decisions you made
+- [ ] Code works correctly and handles basic error cases
+
+**SETUP COMMANDS:**
+```bash
+# Purpose: [Explain why this setup is needed in professional software development]
+# What this does: [Explain the technical purpose and how it fits the bigger picture]
+[include specific installation/setup commands for {selected_language}]
+```
+
+**CURSOR AI COLLABORATION PROMPTS:**
+1. "Help me set up {concepts['primary'].lower()} for this project and explain why software engineers structure it this way"
+2. "Walk me through implementing {task_name} step by step, explaining the engineering decisions we're making"
+3. "Review my code and help me understand if I'm following {selected_language} best practices for {concepts['primary'].lower()}"
+4. "Explain how this {concepts['primary'].lower()} pattern is used in real companies and why it matters"
+
+**HINTS FOR SUCCESS:**
+- Think like an engineer: Ask "why" for every decision, not just "how"
+- Use Cursor AI to understand patterns, not just copy code
+- Focus on building understanding you can explain to someone else
+- Connect what you're building to real software you use daily
+
+**DEFINITION OF DONE:**
+- Feature works correctly and handles edge cases
+- Code follows engineering best practices for {selected_language}
+- You can teach someone else the engineering concepts you learned
+- Cursor AI confirms your implementation follows professional patterns
+- You understand how this connects to real-world software engineering
+
+**KNOWLEDGE VALIDATION:**
+After completing this ticket, you should be able to explain:
+1. Why engineers approach {concepts['primary'].lower()} this way
+2. How your implementation follows industry standards
+3. What problems this pattern solves in real software projects
+4. How this connects to what you'll build in future tickets"""
 
     return prompt 
