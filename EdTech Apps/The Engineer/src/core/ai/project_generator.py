@@ -102,12 +102,21 @@ class ProjectGenerator:
     
     def _try_local_generation(self, prompt: str) -> Optional[str]:
         """Try to generate project using local AI"""
+        logger.info(f"🏠 _try_local_generation() CALLED")
+        logger.info(f"📏 Prompt length: {len(prompt)} characters")
+        
         if not self.local_ai:
+            logger.error(f"❌ No local AI instance available")
             return None
+        
+        logger.info(f"✅ Local AI instance available")
         
         try:
             max_tokens = 16384  # Use a much higher limit for detailed task generation
             temperature = 0.3  
+            
+            logger.info(f"⚙️ Generation parameters: max_tokens={max_tokens}, temp={temperature}")
+            logger.info(f"📤 Calling local_ai.generate_response()")
             
             # Use the local AI marker's generation capability
             response = self.local_ai.generate_response(
@@ -115,14 +124,23 @@ class ProjectGenerator:
                 max_tokens=max_tokens, 
                 temperature=temperature
             )
+            
+            logger.info(f"📥 local_ai.generate_response() RETURNED")
+            logger.info(f"📏 Response length: {len(response) if response else 0} characters")
+            logger.info(f"📄 Response content: {response[:300] if response else 'None'}...")
+            
             if response and len(response.strip()) > 50:  
-                logger.info(f"Local AI generated response: {len(response)} characters")
+                logger.info(f"✅ Local AI generated valid response: {len(response)} characters")
                 return response
             else:
-                logger.warning(f"Local AI response too short or empty: {len(response) if response else 0} characters")
+                logger.warning(f"⚠️ Local AI response too short or empty: {len(response) if response else 0} characters")
         except Exception as e:
-            logger.error(f"Local AI generation failed: {e}")
+            logger.error(f"💥 EXCEPTION in _try_local_generation: {str(e)}")
+            logger.error(f"🔍 Exception type: {type(e).__name__}")
+            import traceback
+            logger.error(f"📜 Full traceback: {traceback.format_exc()}")
         
+        logger.info(f"❌ _try_local_generation() returning None")
         return None
     
     def is_available(self) -> bool:
@@ -151,26 +169,35 @@ class ProjectGenerator:
         Returns:
             Generated task headers or None if generation failed
         """
+        logger.info(f"🚀 ProjectGenerator.generate_task_headers() CALLED")
+        logger.info(f"📝 Project description length: {len(project_description)} chars")
+        logger.info(f"🔧 Language: {selected_language}")
+        logger.info(f"🏠 Use local only: {use_local_only}")
         
         # Create the simple task headers prompt
+        logger.info(f"📝 Creating task headers prompt")
         prompt = create_task_headers_prompt(project_description, selected_language)
         logger.info(f"Task headers prompt length: {len(prompt)} characters")
+        logger.info(f"📄 Prompt content: {prompt[:300]}...")
         
         if use_local_only:
+            logger.info(f"🏠 Using LOCAL AI ONLY for task headers")
             # Use only local AI
             task_headers = self._try_local_generation(prompt)
             if task_headers:
-                logger.info("Task headers generated successfully using local AI")
+                logger.info("✅ Task headers generated successfully using local AI")
                 return task_headers
-            logger.error("Failed to generate task headers using local AI")
+            logger.error("❌ Failed to generate task headers using local AI")
             return None
         else:
+            logger.info(f"☁️ Trying CLOUD AI first for task headers")
             # Try cloud AI first for better quality, then fallback to local
             task_headers = self._try_cloud_generation(prompt)
             if task_headers:
-                logger.info("Task headers generated successfully using cloud AI")
+                logger.info("✅ Task headers generated successfully using cloud AI")
                 return task_headers
             
+            logger.info(f"🔄 Cloud AI failed, falling back to LOCAL AI")
             task_headers = self._try_local_generation(prompt)
             if task_headers:
                 logger.info("Task headers generated successfully using local AI")
