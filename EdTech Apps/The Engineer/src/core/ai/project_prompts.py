@@ -107,82 +107,118 @@ Generate a project that will genuinely excite and engage a young African learner
 
 def create_task_headers_prompt(project_description, selected_language):
     """
-    Create a simple prompt to generate just task titles as strict JSON
+    Create a prompt to generate engineering-focused task breakdown that teaches real software engineering
     """
-    project_lines = project_description.split('\n')[:5]
+    project_lines = project_description.split('\n')[:8]  # Get more context for better engineering breakdown
     project_summary = '\n'.join(project_lines)
     
-    prompt = f"""You must output ONLY valid JSON. No preamble, no explanations.
-Return a JSON array with EXACTLY 4 UNIQUE short task titles (strings), derived from the project below.
+    prompt = f"""You are a Senior Software Engineer breaking down a project for junior engineers (age 12-18) learning full-stack development.
 
-PROJECT SUMMARY:
+PROJECT TO BREAK DOWN:
 {project_summary}
 
-CONSTRAINTS:
-- Output only JSON (e.g., ["Title 1", "Title 2", "Title 3", "Title 4"]).
-- Each title must be unique, context-specific, and actionable.
-- No placeholders, no examples, no markdown, no extra text.
-- Keep titles concise (max ~60 chars).
-"""
+LANGUAGE: {selected_language}
+
+Your task: Create a logical engineering progression that teaches real software engineering practices. Determine how many tickets are needed based on project complexity (typically 4-8 tickets, but could be more for complex projects).
+
+ENGINEERING PROGRESSION PRINCIPLES:
+1. Start with foundational setup (environment, basic structure)
+2. Build core functionality (business logic, data handling)  
+3. Add user interaction (frontend, APIs)
+4. Complete with testing and deployment concepts
+
+OUTPUT REQUIREMENTS:
+Return ONLY a JSON array of engineering ticket titles that:
+- Follow logical dependency order (each builds on previous)
+- Teach core software engineering concepts
+- Are specific and actionable for {selected_language}
+- Connect to real-world engineering practices
+- Break complex work into manageable 1-2 hour chunks
+
+EXAMPLE FORMAT: ["Set up development environment and project structure", "Build core data models and business logic", "Create user interface and API endpoints", "Implement testing and deployment pipeline"]
+
+Output ONLY the JSON array, no other text."""
 
     return prompt
 
 def create_task_detail_prompt(task_name, task_number, project_description, selected_language, completed_tasks_summary: str = ""):
     """
-    Create a prompt to generate detailed content for a specific task
+    Create a story-driven engineering ticket that teaches real software engineering concepts
     """
     
-    prompt = f"""You are an AI Tutor helping children (ages 12–18) learn software engineering by building real projects.
-Your job is to guide the student with clear steps, give ready-to-use prompts for an AI code editor to generate code, and provide exact terminal commands when code isn’t needed (like installs on Linux Mint).
-Be concise, friendly, and concrete. No placeholders. No generic advice. Do not include any social/sharing suggestions.
+    # Extract project context
+    project_lines = project_description.split('\n')
+    project_title = "this project"
+    problem_statement = "solve a real-world problem"
+    
+    # Try to extract project title and problem from description
+    for line in project_lines:
+        if "Project Title" in line or "Title:" in line:
+            project_title = line.split(':')[-1].strip() if ':' in line else line.strip()
+        elif "Problem Statement" in line:
+            problem_statement = line.split(':')[-1].strip() if ':' in line else line.strip()
+    
+    # Define engineering concepts for each ticket number
+    engineering_concepts = {
+        1: {
+            "primary": "Development Environment Setup",
+            "secondary": "Project Structure & Dependencies",
+            "real_world": "Every software team starts projects the same way - setting up consistent environments so all developers can collaborate effectively.",
+            "companies": "Google, Microsoft, Netflix"
+        },
+        2: {
+            "primary": "Data Modeling & Business Logic", 
+            "secondary": "API Design Patterns",
+            "real_world": "The core of any application is how it handles and processes data - this is what makes software actually useful.",
+            "companies": "Spotify, Instagram, WhatsApp"
+        },
+        3: {
+            "primary": "User Interface & Experience",
+            "secondary": "Frontend-Backend Integration", 
+            "real_world": "Great software isn't just functional - it needs to be intuitive and enjoyable for real people to use.",
+            "companies": "Apple, TikTok, Discord"
+        },
+        4: {
+            "primary": "Testing & Quality Assurance",
+            "secondary": "Deployment & DevOps Basics",
+            "real_world": "Professional software must be reliable and easily deployable - this is what separates hobby code from production systems.",
+            "companies": "Amazon, Uber, GitHub"
+        }
+    }
+    
+    concepts = engineering_concepts.get(task_number, engineering_concepts[1])
+    
+    # Build completed context
+    completed_context = ""
+    if completed_tasks_summary:
+        completed_context = f"You've already completed: {completed_tasks_summary}\n"
+    
+    prompt = f"""You're helping a future software engineer (age 12-18) build real engineering skills through {project_title}.
 
-FULL PROJECT CONTEXT:
-{project_description}
+ENGINEERING STORY ARC:
+We're building {project_title} because {problem_statement}. 
+{completed_context}
+Next engineering challenge: Master {concepts['primary']} - a skill every professional software engineer needs.
 
-COMPLETED SO FAR:
-{completed_tasks_summary if completed_tasks_summary else 'None'}
+REAL-WORLD CONNECTION:
+Companies like {concepts['companies']} rely on {concepts['primary'].lower()} because {concepts['real_world']}
 
-CURRENT TASK: {task_name}
-LANGUAGE: {selected_language}
-STEP NUMBER: {task_number} of 4
+CREATE ONE DETAILED JIRA-STYLE ENGINEERING TICKET:
 
-Requirements:
-- Break this task into 3–6 tiny subtasks.
-- For each subtask, include ONE short kid-friendly explanation (one sentence) of what the subtask achieves.
-- Provide ready-to-copy Cursor prompts to generate code for this subtask. If the subtask is setup, provide exact Linux Mint commands instead.
-- Use fenced code blocks for commands:
-```bash
-sudo apt update
-sudo apt install python3 python3-pip -y
-```
-- Do NOT use placeholders or bracketed text. Avoid words like "specific" or "requirement".
-- Be practical and concrete for this project.
+**[ENGINEERING TICKET {task_number}/4] {task_name}**
 
-Output format:
+OUTPUT FORMAT: Return ONLY valid JSON in this exact structure:
 
-**What You'll Build:**
-One short paragraph explaining what this step produces.
+{{
+  "title": "{task_name}",
+  "story_points": [1-8 based on complexity],
+  "story_points_explanation": "Brief explanation of why this point value and what it represents for students",
+  "prerequisites": [List of what should be completed before this ticket],
+  "ticket_content": "**OBJECTIVE:**\\nWhat you'll build and why this is critical in professional software development.\\n\\n**ENGINEERING CONCEPTS:**\\n- {concepts['primary']}: [Why engineers use this approach]\\n- {concepts['secondary']}: [How this connects to industry best practices]\\n\\n**SETUP COMMANDS:**\\n```bash\\n# Purpose: [Why this setup is needed]\\n[specific command for {selected_language}]\\n```\\n\\n**IMPLEMENTATION STEPS:**\\n1. [Specific step with engineering explanation]\\n2. [Next step building on the first]\\n3. [Final step to complete the feature]\\n\\n**CURSOR AI PROMPTS:**\\n- \\"Help me understand [specific concept] and explain why engineers structure it this way\\"\\n- \\"Walk me through implementing [specific feature] with best practices for {selected_language}\\"\\n- \\"Review my code and suggest improvements following industry standards\\"\\n\\n**ACCEPTANCE CRITERIA:**\\n- [ ] Feature works correctly and handles edge cases\\n- [ ] Code follows {selected_language} best practices\\n- [ ] You can explain the engineering concepts to someone else\\n- [ ] Implementation follows industry patterns\\n\\n**REAL-WORLD CONNECTION:**\\nHow this connects to what professional engineers do at companies like {concepts['companies']}.\\n\\n**NEXT STEPS:**\\nBrief preview of what the next ticket will build on this foundation.",
+  "builds_on": [List of previous ticket titles this depends on],
+  "enables_next": [List of what future tickets this will enable]
+}}
 
-**Why This Step:**
-One short paragraph linking this step to the project goals.
-
-**Subtasks:**
-For each subtask, repeat exactly this structure.
-
-- Subtask: <short name>
-  - What and Why (one sentence): <kid-friendly sentence>
-  - Do This:
-    - If code-generation: list 3–5 prompts the student can paste into an AI code editor to produce the needed code.
-    - If setup/installs: include exact Linux Mint commands in a fenced block.
-```bash
-<commands if any>
-```
-  - Verify (practical):
-    - Provide 2–3 quick checks or terminal commands to confirm the subtask is done (no generic advice).
-
-**Success Check:**
-List 2–4 practical checks or commands to confirm this whole step is complete.
-
-Be specific. Start with "**What You'll Build:**"""
+Return ONLY the JSON object, no other text."""
 
     return prompt 

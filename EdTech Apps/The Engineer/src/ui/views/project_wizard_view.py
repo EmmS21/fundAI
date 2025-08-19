@@ -17,7 +17,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Import database operations
-from ...data.database.operations import db_manager, ProjectOperations
+from data.database.operations import db_manager, ProjectOperations
 
 class ProjectGenerationWorker(QThread):
     """Worker thread for generating projects using AI"""
@@ -70,12 +70,24 @@ class TaskHeadersWorker(QThread):
     
     def run(self):
         """Run task headers generation in background thread"""
+        logger.info(f"🔧 TaskHeadersWorker.run() STARTED")
+        logger.info(f"🧵 Thread object: {self}")
+        logger.info(f"📝 Project description length: {len(self.project_description)} chars")
+        logger.info(f"🔧 Language: {self.selected_language}")
+        logger.info(f"🏠 Use local only: {self.use_local_only}")
+        
         try:
+            logger.info(f"🏗️ Creating ProjectGenerator instance")
             generator = ProjectGenerator()
             
+            logger.info(f"🔍 Checking if AI generator is available")
             if not generator.is_available():
+                logger.error(f"❌ No AI services available for task headers")
                 self.headers_failed.emit("No AI services available for task headers")
                 return
+            
+            logger.info(f"✅ AI generator is available, starting task headers generation")
+            logger.info(f"📤 Calling generator.generate_task_headers()")
             
             task_headers = generator.generate_task_headers(
                 self.project_description,
@@ -83,13 +95,31 @@ class TaskHeadersWorker(QThread):
                 self.use_local_only
             )
             
+            logger.info(f"📥 generate_task_headers() returned")
+            logger.info(f"📏 Response length: {len(task_headers) if task_headers else 0} chars")
+            logger.info(f"📄 Response content: {task_headers[:200] if task_headers else 'None'}...")
+            
             if task_headers:
+                logger.info(f"✅ Task headers generated successfully, emitting signal")
+                logger.info(f"📤 EMITTING headers_generated signal with {len(task_headers)} chars")
                 self.headers_generated.emit(task_headers)
+                logger.info(f"✅ headers_generated signal EMITTED successfully")
             else:
+                logger.error(f"❌ Task headers generation returned empty/None")
+                logger.error(f"📤 EMITTING headers_failed signal")
                 self.headers_failed.emit("Failed to generate task headers. Please try again.")
+                logger.error(f"✅ headers_failed signal EMITTED successfully")
                 
         except Exception as e:
+            logger.error(f"💥 EXCEPTION in TaskHeadersWorker: {str(e)}")
+            logger.error(f"🔍 Exception type: {type(e).__name__}")
+            import traceback
+            logger.error(f"📜 Full traceback: {traceback.format_exc()}")
+            logger.error(f"📤 EMITTING headers_failed signal due to exception")
             self.headers_failed.emit(f"Error generating task headers: {str(e)}")
+            logger.error(f"✅ headers_failed signal EMITTED due to exception")
+        
+        logger.info(f"🏁 TaskHeadersWorker.run() COMPLETED")
 
 class TaskDetailWorker(QThread):
     """Worker thread for generating individual task details using AI"""
@@ -107,12 +137,26 @@ class TaskDetailWorker(QThread):
     
     def run(self):
         """Run task detail generation in background thread"""
+        logger.info(f"🔧 TaskDetailWorker.run() STARTED")
+        logger.info(f"🧵 Thread object: {self}")
+        logger.info(f"🎯 Task name: {self.task_name}")
+        logger.info(f"🔢 Task number: {self.task_number}")
+        logger.info(f"📝 Project description length: {len(self.project_description)} chars")
+        logger.info(f"🔧 Language: {self.selected_language}")
+        logger.info(f"🏠 Use local only: {self.use_local_only}")
+        
         try:
+            logger.info(f"🏗️ Creating ProjectGenerator instance")
             generator = ProjectGenerator()
             
+            logger.info(f"🔍 Checking if AI generator is available")
             if not generator.is_available():
+                logger.error(f"❌ No AI services available for task details")
                 self.detail_failed.emit(self.task_number, self.task_name, "No AI services available")
                 return
+            
+            logger.info(f"✅ AI generator is available, starting task detail generation")
+            logger.info(f"📤 Calling generator.generate_task_detail()")
             
             task_detail = generator.generate_task_detail(
                 self.task_name,
@@ -122,13 +166,75 @@ class TaskDetailWorker(QThread):
                 self.use_local_only
             )
             
+            logger.info(f"📥 generate_task_detail() returned")
+            logger.info(f"📏 Response length: {len(task_detail) if task_detail else 0} chars")
+            logger.info(f"📄 Response content: {task_detail[:200] if task_detail else 'None'}...")
+            
             if task_detail:
+                logger.info(f"✅ Task detail generated successfully, emitting signal")
+                logger.info(f"📤 EMITTING detail_generated signal - task {self.task_number}: {self.task_name}")
+                logger.info(f"📤 Signal data: {len(task_detail)} chars")
                 self.detail_generated.emit(self.task_number, self.task_name, task_detail)
+                logger.info(f"✅ detail_generated signal EMITTED successfully")
             else:
+                logger.error(f"❌ Task detail generation returned empty/None")
+                logger.error(f"📤 EMITTING detail_failed signal - task {self.task_number}: {self.task_name}")
                 self.detail_failed.emit(self.task_number, self.task_name, "Failed to generate task details")
+                logger.error(f"✅ detail_failed signal EMITTED successfully")
                 
         except Exception as e:
+            logger.error(f"💥 EXCEPTION in TaskDetailWorker: {str(e)}")
+            logger.error(f"🔍 Exception type: {type(e).__name__}")
+            import traceback
+            logger.error(f"📜 Full traceback: {traceback.format_exc()}")
+            logger.error(f"📤 EMITTING detail_failed signal due to exception")
             self.detail_failed.emit(self.task_number, self.task_name, f"Error: {str(e)}")
+            logger.error(f"✅ detail_failed signal EMITTED due to exception")
+        
+        logger.info(f"🏁 TaskDetailWorker.run() COMPLETED")
+
+class BackgroundTaskGenerator(QThread):
+    """Worker thread for sequentially generating remaining empty task details"""
+    
+    task_generated = Signal(int, str) 
+    all_tasks_complete = Signal()
+    
+    def __init__(self, task_names, existing_task_details, project_description, selected_language, current_task_number, project_id, project_ops):
+        super().__init__()
+        self.task_names = task_names
+        self.existing_task_details = existing_task_details
+        self.project_description = project_description
+        self.selected_language = selected_language
+        self.current_task_number = current_task_number
+        self.project_id = project_id
+        self.project_ops = project_ops
+    
+    def run(self):
+        """Generate remaining empty tasks sequentially"""
+        try:
+            generator = ProjectGenerator()
+            
+            if not generator.is_available():
+                return
+            
+            for i, task_name in enumerate(self.task_names, 1):
+                if i == self.current_task_number or self.existing_task_details.get(i):
+                    continue
+                
+                task_detail = generator.generate_task_detail(
+                    task_name, i, self.project_description, self.selected_language, use_local_only=True
+                )
+                
+                if task_detail:
+                    self.project_ops.update_project_progress(
+                        self.project_id, self.current_task_number, {i: task_detail}
+                    )
+                    self.task_generated.emit(i, task_detail)
+            
+            self.all_tasks_complete.emit()
+            
+        except Exception as e:
+            logger.error(f"Background task generation failed: {e}")
 
 class ProjectWizardView(QWidget):
     """Wizard for setting up AI-assisted project building"""
@@ -160,7 +266,6 @@ class ProjectWizardView(QWidget):
         if existing_project:
             self.current_project_id = existing_project['id']
             self.project_config = existing_project
-            self.current_step = 2  # Skip to task view
             self.current_task_number = existing_project['current_task_number']
             self.task_names = existing_project['task_names']
             logger.info(f"Loaded existing project: {existing_project['title']}")
@@ -171,16 +276,42 @@ class ProjectWizardView(QWidget):
             self.show_introduction()
             return
         
-        # Check if we have task details for current task
         current_task_name = self.task_names[self.current_task_number - 1]
         current_task_detail = self.project_config.get('task_details', {}).get(self.current_task_number)
         
         if current_task_detail:
-            # Show the complete task
             self.show_complete_current_task(current_task_name, current_task_detail)
         else:
-            # Generate the current task details
             self.generate_and_show_current_task()
+        
+        self.start_background_task_generation()
+    
+    def start_background_task_generation(self):
+        """Start background generation of remaining empty tasks"""
+        if not hasattr(self, 'current_project_id') or not self.current_project_id:
+            return
+        
+        if hasattr(self, 'background_generator') and self.background_generator.isRunning():
+            return 
+        
+        self.background_generator = BackgroundTaskGenerator(
+            self.task_names,
+            self.project_config.get('task_details', {}),
+            self.project_config.get('project_description', ''),
+            self.project_config.get('language', 'Python'),
+            self.current_task_number,
+            self.current_project_id,
+            self.project_ops
+        )
+        self.background_generator.task_generated.connect(self.on_background_task_generated)
+        self.background_generator.start()
+    
+    def on_background_task_generated(self, task_number, task_detail):
+        """Handle background task generation completion"""
+        if 'task_details' not in self.project_config:
+            self.project_config['task_details'] = {}
+        self.project_config['task_details'][task_number] = task_detail
+        logger.info(f"Background generated task {task_number}")
     
     def save_project_to_database(self):
         """Save current project to database"""
@@ -313,6 +444,7 @@ class ProjectWizardView(QWidget):
         
         # Create persistent elements
         self.create_persistent_elements()
+        
         
         # Show appropriate step based on existing project
         if self.current_step == 2 and hasattr(self, 'task_names') and self.task_names:
@@ -698,75 +830,75 @@ class ProjectWizardView(QWidget):
         self.project_config['language'] = language
         self.next_button.setEnabled(True)
     
-    def show_project_generation(self):
-        """Show project generation step with AI loading"""
-        self.clear_content()
-        content_layout = QVBoxLayout(self.content_area)
+    # def show_project_generation(self):
+    #     """Show project generation step with AI loading"""
+    #     self.clear_content()
+    #     content_layout = QVBoxLayout(self.content_area)
         
-        title = QLabel("Generating Your Project")
-        title.setStyleSheet("""
-            QLabel {
-                font-size: 24px;
-                font-weight: 600;
-                color: rgba(255, 255, 255, 0.95);
-                margin-bottom: 20px;
-            }
-        """)
-        content_layout.addWidget(title)
+    #     title = QLabel("Generating Your Project")
+    #     title.setStyleSheet("""
+    #         QLabel {
+    #             font-size: 24px;
+    #             font-weight: 600;
+    #             color: rgba(255, 255, 255, 0.95);
+    #             margin-bottom: 20px;
+    #         }
+    #     """)
+    #     content_layout.addWidget(title)
         
-        # Status message (will be updated by timer)
-        self.status_label = QLabel("🤖 AI is analyzing your assessment scores...")
-        self.status_label.setWordWrap(True)
-        self.status_label.setStyleSheet("""
-            QLabel {
-                font-size: 16px;
-                color: rgba(255, 255, 255, 0.8);
-                margin-bottom: 15px;
-            }
-        """)
-        content_layout.addWidget(self.status_label)
+    #     # Status message (will be updated by timer)
+    #     self.status_label = QLabel("🤖 AI is analyzing your assessment scores...")
+    #     self.status_label.setWordWrap(True)
+    #     self.status_label.setStyleSheet("""
+    #         QLabel {
+    #             font-size: 16px;
+    #             color: rgba(255, 255, 255, 0.8);
+    #             margin-bottom: 15px;
+    #         }
+    #     """)
+    #     content_layout.addWidget(self.status_label)
         
-        # Timer label (shows immediately)
-        self.timer_label = QLabel("Time elapsed: 00:00")
-        self.timer_label.setStyleSheet("""
-            QLabel {
-                font-size: 14px;
-                color: rgba(255, 255, 255, 0.6);
-                margin-bottom: 20px;
-            }
-        """)
-        content_layout.addWidget(self.timer_label)
+    #     # Timer label (shows immediately)
+    #     self.timer_label = QLabel("Time elapsed: 00:00")
+    #     self.timer_label.setStyleSheet("""
+    #         QLabel {
+    #             font-size: 14px;
+    #             color: rgba(255, 255, 255, 0.6);
+    #             margin-bottom: 20px;
+    #         }
+    #     """)
+    #     content_layout.addWidget(self.timer_label)
         
-        # Progress bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 0)  # Indeterminate progress
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                border: 1px solid rgba(255, 255, 255, 0.3);
-                border-radius: 8px;
-                background-color: rgba(255, 255, 255, 0.1);
-                height: 20px;
-            }
-            QProgressBar::chunk {
-                background-color: #3498db;
-                border-radius: 7px;
-            }
-        """)
-        content_layout.addWidget(self.progress_bar)
+    #     # Progress bar
+    #     self.progress_bar = QProgressBar()
+    #     self.progress_bar.setRange(0, 0)  # Indeterminate progress
+    #     self.progress_bar.setStyleSheet("""
+    #         QProgressBar {
+    #             border: 1px solid rgba(255, 255, 255, 0.3);
+    #             border-radius: 8px;
+    #             background-color: rgba(255, 255, 255, 0.1);
+    #             height: 20px;
+    #         }
+    #         QProgressBar::chunk {
+    #             background-color: #3498db;
+    #             border-radius: 7px;
+    #         }
+    #     """)
+    #     content_layout.addWidget(self.progress_bar)
         
-        content_layout.addStretch()
+    #     content_layout.addStretch()
         
-        # Hide navigation buttons during generation
-        self.next_button.setVisible(False)
-        self.back_button.setEnabled(False)
+    #     # Hide navigation buttons during generation
+    #     self.next_button.setVisible(False)
+    #     self.back_button.setEnabled(False)
         
-        self.content_area.repaint()
+    #     self.content_area.repaint()
         
-        # START TIMER IMMEDIATELY before starting AI generation
-        self.start_status_timer()
+    #     # START TIMER IMMEDIATELY before starting AI generation
+    #     self.start_status_timer()
         
-        # Start AI generation with a longer delay to ensure timer is visible
-        QTimer.singleShot(2000, self.start_project_generation)  # 2 second delay to test timer visibility
+    #     # Start AI generation with a longer delay to ensure timer is visible
+    #     QTimer.singleShot(2000, self.start_project_generation)  # 2 second delay to test timer visibility
     
     def start_project_generation(self):
         """Start the AI project generation process for one randomly selected language"""
@@ -1008,11 +1140,11 @@ class ProjectWizardView(QWidget):
     def next_step(self):
         """Go to next step"""
         if self.current_step == 0:
-            # Skip language selection, go directly to project generation
+            # User clicked "I Understand" from introduction
             self.current_step = 1
             self.show_project_generation()
         elif self.current_step == 1:
-            # Go to task breakdown step
+            # Go from project generation to task breakdown
             self.current_step = 2
             self.show_task_breakdown()
         elif self.current_step == 2:
@@ -1034,8 +1166,152 @@ class ProjectWizardView(QWidget):
     
     def show_project_generation(self):
         """Show timer in existing QScrollArea, then replace with AI output"""
-        # Don't clear content - use existing QScrollArea
-        # Add timer and project content directly to the QScrollArea
+        # Check if we have an existing project first
+        if self.current_project_id and self.project_config.get('project_description'):
+            # We have a cached project, show choice
+            self.show_project_choice()
+            return
+        
+        # No cached project, generate new one
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        # Add timer and project content to scroll area
+        scroll_layout.addWidget(self.timer_label)
+        scroll_layout.addWidget(self.project_content)
+        scroll_layout.addStretch()
+        
+        # Set this widget as the QScrollArea content
+        self.scroll_area.setWidget(scroll_widget)
+        
+        # Show timer immediately in QScrollArea
+        self.showing_timer = True
+        self.update_visibility()
+        
+        self.next_button.setVisible(False)
+        self.back_button.setEnabled(False)
+        
+        self.start_status_timer()
+        QTimer.singleShot(100, self.start_project_generation)
+    
+    def show_project_choice(self):
+        """Show choice between continuing existing project or starting new one"""
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        # Title
+        title = QLabel("Project Found")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("""
+            QLabel {
+                font-size: 24px;
+                font-weight: 600;
+                color: rgba(255, 255, 255, 0.95);
+                margin-bottom: 20px;
+            }
+        """)
+        scroll_layout.addWidget(title)
+        
+        # Current project info
+        current_task_name = self.task_names[self.current_task_number - 1] if hasattr(self, 'current_task_number') else "your project"
+        notice_text = QLabel(f"You have an active project in progress.\nCurrently on: {current_task_name}")
+        notice_text.setAlignment(Qt.AlignCenter)
+        notice_text.setWordWrap(True)
+        notice_text.setStyleSheet("""
+            QLabel {
+                font-size: 16px;
+                color: rgba(255, 255, 255, 0.8);
+                margin-bottom: 30px;
+                padding: 20px;
+                background-color: rgba(255, 255, 255, 0.05);
+                border-radius: 10px;
+            }
+        """)
+        scroll_layout.addWidget(notice_text)
+        
+        # Choice buttons
+        button_layout = QHBoxLayout()
+        
+        continue_btn = QPushButton("Continue Project")
+        continue_btn.setStyleSheet("""
+            QPushButton {
+                font-size: 16px;
+                color: white;
+                background-color: #2ecc71;
+                border: none;
+                border-radius: 8px;
+                padding: 15px 30px;
+                margin: 10px;
+            }
+            QPushButton:hover {
+                background-color: #27ae60;
+            }
+        """)
+        continue_btn.clicked.connect(self.continue_existing_project)
+        button_layout.addWidget(continue_btn)
+        
+        restart_btn = QPushButton("Start New Project")
+        restart_btn.setStyleSheet("""
+            QPushButton {
+                font-size: 16px;
+                color: rgba(255, 255, 255, 0.8);
+                background-color: transparent;
+                border: 2px solid rgba(255, 255, 255, 0.3);
+                border-radius: 8px;
+                padding: 15px 30px;
+                margin: 10px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.1);
+            }
+        """)
+        restart_btn.clicked.connect(self.start_new_project)
+        button_layout.addWidget(restart_btn)
+        
+        scroll_layout.addLayout(button_layout)
+        scroll_layout.addStretch()
+        
+        # Set this widget as the QScrollArea content
+        self.scroll_area.setWidget(scroll_widget)
+        
+        # Hide navigation buttons
+        self.next_button.setVisible(False)
+        self.back_button.setEnabled(True)
+    
+    def continue_existing_project(self):
+        """Continue with existing project by showing cached content"""
+        # Switch from choice to project content
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        # Add project content to scroll area
+        scroll_layout.addWidget(self.project_content)
+        scroll_layout.addStretch()
+        
+        # Set this widget as the QScrollArea content
+        self.scroll_area.setWidget(scroll_widget)
+        
+        # Extract and format the cached project content
+        structured_content = self.extract_structured_content(self.project_config['project_description'])
+        formatted_description = self.convert_markdown_to_html(structured_content)
+        self.project_content.setHtml(formatted_description)
+        
+        self.next_button.setText("Continue Project →")
+        self.next_button.setVisible(True)
+        self.next_button.setEnabled(True)
+        self.back_button.setEnabled(True)
+    
+    def start_new_project(self):
+        """Start a new project by skipping current and generating new one"""
+        if self.current_project_id:
+            self.project_ops.skip_project(self.current_project_id)
+        
+        # Reset state
+        self.current_project_id = None
+        self.project_config = {}
+        self.current_task_number = 1
+        
+        # Generate new project
         scroll_widget = QWidget()
         scroll_layout = QVBoxLayout(scroll_widget)
         
@@ -1146,29 +1422,58 @@ class ProjectWizardView(QWidget):
     
     def start_task_breakdown_generation(self):
         """Start the AI task headers generation process (Phase 1)"""
+        logger.info(f"🎬 start_task_breakdown_generation() CALLED")
+        
         # Get the project description and language from project_config
         project_description = self.project_config.get('project_description', '')
         selected_language = self.project_config.get('language', 'Python')
         
+        logger.info(f"📝 Project description length: {len(project_description)} chars")
+        logger.info(f"🔧 Language: {selected_language}")
+        logger.info(f"📋 Project config keys: {list(self.project_config.keys())}")
+        
         # Start worker thread for task headers (local AI only)
+        logger.info(f"🏗️ Creating TaskHeadersWorker instance")
         self.headers_worker = TaskHeadersWorker(
             project_description, selected_language, use_local_only=True
         )
+        
+        logger.info(f"🔗 Connecting TaskHeadersWorker signals")
+        logger.info(f"🔗 Connecting headers_generated to on_task_headers_generated")
         self.headers_worker.headers_generated.connect(self.on_task_headers_generated)
+        
+        logger.info(f"🔗 Connecting headers_failed to on_task_headers_failed")
         self.headers_worker.headers_failed.connect(self.on_task_headers_failed)
+        
+        logger.info(f"🚀 Starting TaskHeadersWorker thread")
         self.headers_worker.start()
+        
+        logger.info(f"✅ TaskHeadersWorker thread started successfully")
     
     def on_task_headers_generated(self, task_headers):
         """Handle successful task headers generation (Phase 1 complete)"""
-        if hasattr(self, 'breakdown_status_timer'):
-            self.breakdown_status_timer.stop()
+        logger.info(f"🎉 on_task_headers_generated() SIGNAL RECEIVED!")
+        logger.info(f"📥 Signal parameter type: {type(task_headers)}")
+        logger.info(f"📏 Signal parameter length: {len(task_headers) if task_headers else 0}")
         
-        logger.info(f"Task headers generated: {task_headers}")
+        if hasattr(self, 'breakdown_status_timer'):
+            logger.info(f"⏹️ Stopping breakdown status timer")
+            self.breakdown_status_timer.stop()
+        else:
+            logger.warning(f"⚠️ No breakdown_status_timer found")
+        
+        logger.info(f"✅ TASK HEADERS API RESPONSE RECEIVED")
+        logger.info(f"📄 Full task headers response: {task_headers}")
+        logger.info(f"📏 Response length: {len(task_headers)} characters")
         
         # Parse task names from headers
         self.task_names = self.parse_task_names(task_headers)
         
+        logger.info(f"🔍 Parsed task names: {self.task_names}")
+        logger.info(f"📊 Number of tasks parsed: {len(self.task_names) if self.task_names else 0}")
+        
         if not self.task_names:
+            logger.error(f"❌ TASK PARSING FAILED - No task names extracted")
             self.on_task_headers_failed(f"Could not parse task names from AI response. AI returned: {task_headers[:200]}...")
             return
         
@@ -1216,8 +1521,13 @@ class ProjectWizardView(QWidget):
     
     def generate_and_show_current_task(self):
         """Generate and display the current task details"""
+        logger.info(f"🎬 STARTING TASK DETAIL GENERATION")
+        logger.info(f"📋 Current task number: {self.current_task_number}")
+        logger.info(f"📋 Total tasks available: {len(self.task_names) if hasattr(self, 'task_names') else 'None'}")
+        
         if self.current_task_number > len(self.task_names):
             # All tasks completed
+            logger.info(f"✅ All tasks completed, showing project completion")
             self.show_project_completion()
             return
         
@@ -1229,14 +1539,28 @@ class ProjectWizardView(QWidget):
         project_description = self.project_config.get('project_description', '')
         selected_language = self.project_config.get('language', 'Python')
         
+        logger.info(f"🎯 Generating details for task: {current_task_name}")
+        logger.info(f"🔧 Using language: {selected_language}")
+        logger.info(f"📝 Project description length: {len(project_description)} chars")
+        
         # Start worker for current task
+        logger.info(f"🏗️ Creating TaskDetailWorker instance")
         self.current_task_worker = TaskDetailWorker(
             current_task_name, self.current_task_number, 
             project_description, selected_language, use_local_only=True
         )
+        
+        logger.info(f"🔗 Connecting TaskDetailWorker signals")
+        logger.info(f"🔗 Connecting detail_generated to on_current_task_generated")
         self.current_task_worker.detail_generated.connect(self.on_current_task_generated)
+        
+        logger.info(f"🔗 Connecting detail_failed to on_current_task_failed") 
         self.current_task_worker.detail_failed.connect(self.on_current_task_failed)
+        
+        logger.info(f"🚀 Starting TaskDetailWorker thread")
         self.current_task_worker.start()
+        
+        logger.info(f"✅ TaskDetailWorker thread started successfully")
     
     def show_current_task_loading(self):
         """Show loading screen for current task"""
@@ -1424,17 +1748,34 @@ class ProjectWizardView(QWidget):
     
     def on_current_task_generated(self, task_number, task_name, task_detail):
         """Handle successful generation of current task details"""
-        logger.info(f"Current task {task_number} details generated")
+        logger.info(f"🎉 on_current_task_generated() SIGNAL RECEIVED!")
+        logger.info(f"📥 Signal parameters - task_number: {task_number}, task_name type: {type(task_name)}")
+        logger.info(f"📥 Signal parameters - task_detail type: {type(task_detail)}, length: {len(task_detail) if task_detail else 0}")
+        
+        logger.info(f"✅ TASK DETAIL API RESPONSE RECEIVED")
+        logger.info(f"🎯 Task {task_number}: {task_name}")
+        logger.info(f"📄 Full task detail response: {task_detail}")
+        logger.info(f"📏 Task detail length: {len(task_detail)} characters")
         
         # Store the detail
         self.project_config['task_details'][task_number] = task_detail
         
-        # Show the complete task with evaluation prompt
+        logger.info(f"💾 Task detail stored in project_config")
+        logger.info(f"🚀 Calling show_complete_current_task()")
+        
         self.show_complete_current_task(task_name, task_detail)
+        
+        self.start_background_task_generation()
     
     def on_current_task_failed(self, task_number, task_name, error_message):
         """Handle failed generation of current task details"""
-        logger.error(f"Current task {task_number} generation failed: {error_message}")
+        logger.error(f"💥 on_current_task_failed() SIGNAL RECEIVED!")
+        logger.error(f"📥 Signal parameters - task_number: {task_number}, task_name: {task_name}")
+        logger.error(f"📥 Signal parameters - error_message type: {type(error_message)}")
+        
+        logger.error(f"❌ TASK DETAIL GENERATION FAILED")
+        logger.error(f"🎯 Task {task_number}: {task_name}")
+        logger.error(f"💥 Error: {error_message}")
         
         # Show error and retry option
         scroll_widget = QWidget()
@@ -1475,6 +1816,11 @@ class ProjectWizardView(QWidget):
     
     def show_complete_current_task(self, task_name, task_detail):
         """Show the complete current task with evaluation prompt for Cursor"""
+        logger.info(f"🎨 RENDERING COMPLETE TASK UI")
+        logger.info(f"🎯 Task name: {task_name}")
+        logger.info(f"📏 Task detail length: {len(task_detail)} chars")
+        logger.info(f"📋 Task number: {self.current_task_number}")
+        
         scroll_widget = QWidget()
         scroll_layout = QVBoxLayout(scroll_widget)
         
@@ -1822,3 +2168,22 @@ Please analyze my files now and give me feedback!"""
             }
         
         self.project_started.emit(self.project_config) 
+    def start_background_task_generation(self):
+        """Start background generation of remaining empty tasks"""
+        if not hasattr(self, 'current_project_id') or not self.current_project_id:
+            return
+        
+        if hasattr(self, 'background_generator') and self.background_generator.isRunning():
+            return 
+        
+        self.background_generator = BackgroundTaskGenerator(
+            self.task_names,
+            self.project_config.get('task_details', {}),
+            self.project_config.get('project_description', ''),
+            self.project_config.get('language', 'Python'),
+            self.current_task_number,
+            self.current_project_id,
+            self.project_ops
+        )
+        self.background_generator.task_generated.connect(self.on_background_task_generated)
+        self.background_generator.start() 

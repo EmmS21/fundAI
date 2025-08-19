@@ -341,6 +341,7 @@ class Project(Base):
     status = Column(String(50), default='active')  
     current_task_number = Column(Integer, default=1)
     total_tasks = Column(Integer, default=4)
+    is_completed = Column(Boolean, default=False)
     
     # User progress
     progress_percentage = Column(Float, default=0.0)

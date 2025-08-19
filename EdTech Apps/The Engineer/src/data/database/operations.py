@@ -534,8 +534,8 @@ class ProjectOperations:
                 title=project_data.get('title', 'Untitled Project'),
                 description=project_data.get('description', ''),
                 language=project_data.get('language', 'Python'),
-                difficulty_level=project_data.get('difficulty_level', 'junior'),
-                domain=project_data.get('domain', 'software'),
+                difficulty_level=DifficultyLevel.JUNIOR,
+                domain=EngineeringDomain.SOFTWARE,
                 project_description=project_data.get('project_description', ''),
                 task_headers=project_data.get('task_headers', ''),
                 current_task_number=project_data.get('current_task_number', 1),
@@ -579,7 +579,8 @@ class ProjectOperations:
         try:
             project = session.query(Project).filter(
                 Project.user_id == user_id,
-                Project.status == 'active'
+                Project.status == 'active',
+                Project.is_completed == False
             ).order_by(Project.last_accessed.desc()).first()
             
             if not project:
@@ -682,6 +683,7 @@ class ProjectOperations:
             if project:
                 project.status = 'completed'
                 project.progress_percentage = 100.0
+                project.is_completed = True 
                 session.commit()
                 return True
             return False
