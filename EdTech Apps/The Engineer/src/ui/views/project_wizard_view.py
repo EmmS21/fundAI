@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QTextBrowser
 )
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QTextCursor
 from core.ai.project_generator import ProjectGenerator
 import re
 import logging
@@ -150,6 +150,12 @@ class TaskDetailWorker(QThread):
             logger.info(f"🏗️ Creating ProjectGenerator instance")
             generator = ProjectGenerator()
             
+            # Set up streaming callback
+            def streaming_callback(partial_content):
+                self.detail_streaming.emit(self.task_number, self.task_name, partial_content)
+            
+            generator.set_streaming_callback(streaming_callback)
+            
             logger.info(f"🔍 Checking if AI generator is available")
             if not generator.is_available():
                 logger.error(f"❌ No AI services available for task details")
@@ -159,14 +165,26 @@ class TaskDetailWorker(QThread):
             logger.info(f"✅ AI generator is available, starting task detail generation")
             logger.info(f"📤 Calling generator.generate_task_detail()")
             
-            task_detail = generator.generate_task_detail(
-                self.task_name,
-                self.task_number,
-                self.project_description,
-                self.selected_language,
-                self.use_local_only,
-                streaming_callback=self._on_streaming_chunk
-            )
+            # Custom generation with streaming and GBNF grammar
+            from core.ai.project_prompts import create_task_detail_prompt, create_task_detail_gbnf_grammar
+            prompt = create_task_detail_prompt(self.task_name, self.task_number, self.project_description, self.selected_language)
+            grammar = create_task_detail_gbnf_grammar()
+            
+            # Call local AI directly with our streaming callback and grammar constraint
+            if generator.local_ai and generator.local_ai.is_available():
+                def qt_safe_callback(partial_content):
+                    # Emit signal from worker thread - Qt will marshal to main thread
+                    self.detail_streaming.emit(self.task_number, self.task_name, partial_content)
+                
+                task_detail = generator.local_ai.generate_response(
+                    prompt, 
+                    max_tokens=16384, 
+                    temperature=0.3,
+                    streaming_callback=qt_safe_callback,
+                    grammar=grammar  # Force JSON output with GBNF
+                )
+            else:
+                task_detail = None
             
             logger.info(f"📥 generate_task_detail() returned")
             logger.info(f"📏 Response length: {len(task_detail) if task_detail else 0} chars")
@@ -194,10 +212,6 @@ class TaskDetailWorker(QThread):
             logger.error(f"✅ detail_failed signal EMITTED due to exception")
         
         logger.info(f"🏁 TaskDetailWorker.run() COMPLETED")
-    
-    def _on_streaming_chunk(self, chunk):
-        """Callback for streaming updates from the generator"""
-        self.detail_streaming.emit(self.task_number, self.task_name, chunk)
 
 class BackgroundTaskGenerator(QThread):
     """Worker thread for sequentially generating remaining empty task details"""
@@ -1423,268 +1437,112 @@ class ProjectWizardView(QWidget):
         minutes = self.breakdown_timer_seconds // 60
         seconds = self.breakdown_timer_seconds % 60
         
-        self.breakdown_timer_label.setText(f"Time elapsed: {minutes:02d}:{seconds:02d}")
+        # Safety check to prevent crashes if widget was deleted
+        if hasattr(self, 'breakdown_timer_label') and self.breakdown_timer_label:
+            try:
+                self.breakdown_timer_label.setText(f"Time elapsed: {minutes:02d}:{seconds:02d}")
+            except RuntimeError:
+                # Widget was deleted, stop the timer
+                if hasattr(self, 'breakdown_status_timer'):
+                    self.breakdown_status_timer.stop()
+        
         self.breakdown_timer_seconds += 1
     
     def start_task_breakdown_generation(self):
-        """Start the AI task headers generation process (Phase 1)"""
-        logger.info(f"🎬 start_task_breakdown_generation() CALLED")
+        """Start generating task breakdown using AI"""
+        logger.info(f"🚀 start_task_breakdown_generation() CALLED")
         
-        # Get the project description and language from project_config
-        project_description = self.project_config.get('project_description', '')
-        selected_language = self.project_config.get('language', 'Python')
+        # Show loading state
+        self.show_task_breakdown_loading()
         
-        logger.info(f"📝 Project description length: {len(project_description)} chars")
-        logger.info(f"🔧 Language: {selected_language}")
-        logger.info(f"📋 Project config keys: {list(self.project_config.keys())}")
-        
-        # Start worker thread for task headers (local AI only)
-        logger.info(f"🏗️ Creating TaskHeadersWorker instance")
-        self.headers_worker = TaskHeadersWorker(
-            project_description, selected_language, use_local_only=True
-        )
-        
-        logger.info(f"🔗 Connecting TaskHeadersWorker signals")
-        logger.info(f"🔗 Connecting headers_generated to on_task_headers_generated")
-        self.headers_worker.headers_generated.connect(self.on_task_headers_generated)
-        
-        logger.info(f"🔗 Connecting headers_failed to on_task_headers_failed")
-        self.headers_worker.headers_failed.connect(self.on_task_headers_failed)
-        
-        logger.info(f"🚀 Starting TaskHeadersWorker thread")
-        self.headers_worker.start()
-        
-        logger.info(f"✅ TaskHeadersWorker thread started successfully")
-    
-    def on_task_headers_generated(self, task_headers):
-        """Handle successful task headers generation (Phase 1 complete)"""
-        logger.info(f"🎉 on_task_headers_generated() SIGNAL RECEIVED!")
-        logger.info(f"📥 Signal parameter type: {type(task_headers)}")
-        logger.info(f"📏 Signal parameter length: {len(task_headers) if task_headers else 0}")
-        
-        if hasattr(self, 'breakdown_status_timer'):
-            logger.info(f"⏹️ Stopping breakdown status timer")
-            self.breakdown_status_timer.stop()
-        else:
-            logger.warning(f"⚠️ No breakdown_status_timer found")
-        
-        logger.info(f"✅ TASK HEADERS API RESPONSE RECEIVED")
-        logger.info(f"📄 Full task headers response: {task_headers}")
-        logger.info(f"📏 Response length: {len(task_headers)} characters")
-        
-        # Parse task names from headers
-        self.task_names = self.parse_task_names(task_headers)
-        
-        logger.info(f"🔍 Parsed task names: {self.task_names}")
-        logger.info(f"📊 Number of tasks parsed: {len(self.task_names) if self.task_names else 0}")
-        
-        if not self.task_names:
-            logger.error(f"❌ TASK PARSING FAILED - No task names extracted")
-            self.on_task_headers_failed(f"Could not parse task names from AI response. AI returned: {task_headers[:200]}...")
-            return
-        
-        # Store the headers and initialize current task tracking
-        self.project_config['task_headers'] = task_headers
-        self.project_config['task_details'] = {}
+        # Skip headers generation - go directly to first task detail
+        current_task_name = "Task 1"  # We'll get the real name from the AI response
         self.current_task_number = 1
-        
-        # Save project to database
-        self.save_project_to_database()
-        
-        # Generate and show only the first task details
-        self.generate_and_show_current_task()
-    
-    def parse_task_names(self, task_headers):
-        """Extract task names from headers - handle various AI response formats"""
-        import re
-        task_names = []
-        
-        # Multiple patterns to handle different AI response formats
-        patterns = [
-            r'\*\*Task\s+(\d+):\*\*\s*(.+?)(?=\n|\*\*|$)',  
-            r'Task\s+(\d+):\s*(.+?)(?=\n|Task\s+\d+|$)',    
-            r'(\d+)\.\s*(.+?)(?=\n|\d+\.|$)',               
-            r'Step\s+(\d+):\s*(.+?)(?=\n|Step\s+\d+|$)',    
-        ]
-        
-        for pattern in patterns:
-            matches = re.findall(pattern, task_headers, re.IGNORECASE | re.MULTILINE)
-            if matches:
-                for task_num, task_name in matches:
-                    task_names.append((int(task_num), task_name.strip()))
-                break
-        
-        # If no structured format found, just create simple task names
-        if not task_names:
-            lines = [line.strip() for line in task_headers.split('\n') if line.strip()]
-            for i, line in enumerate(lines[:4], 1):  # Take first 4 non-empty lines
-                if line:  # Skip empty lines
-                    task_names.append((i, line))
-        
-        # Sort by task number and return just the names
-        task_names.sort(key=lambda x: x[0])
-        return [name for _, name in task_names]
-    
-    def generate_and_show_current_task(self):
-        """Generate and display the current task details"""
-        logger.info(f"🎬 STARTING TASK DETAIL GENERATION")
-        logger.info(f"📋 Current task number: {self.current_task_number}")
-        logger.info(f"📋 Total tasks available: {len(self.task_names) if hasattr(self, 'task_names') else 'None'}")
-        
-        if self.current_task_number > len(self.task_names):
-            # All tasks completed
-            logger.info(f"✅ All tasks completed, showing project completion")
-            self.show_project_completion()
-            return
-        
-        # Show loading for current task
-        self.show_current_task_loading()
-        
-        # Generate current task details
-        current_task_name = self.task_names[self.current_task_number - 1]
         project_description = self.project_config.get('project_description', '')
         selected_language = self.project_config.get('language', 'Python')
         
-        logger.info(f"🎯 Generating details for task: {current_task_name}")
-        logger.info(f"🔧 Using language: {selected_language}")
-        logger.info(f"📝 Project description length: {len(project_description)} chars")
+        logger.info(f"🎯 Generating first task detail directly")
         
-        # Start worker for current task
-        logger.info(f"🏗️ Creating TaskDetailWorker instance")
+        # Start worker for first task
         self.current_task_worker = TaskDetailWorker(
             current_task_name, self.current_task_number, 
             project_description, selected_language, use_local_only=True
         )
         
-        logger.info(f"🔗 Connecting TaskDetailWorker signals")
-        logger.info(f"🔗 Connecting detail_generated to on_current_task_generated")
+        # Connect signals
         self.current_task_worker.detail_generated.connect(self.on_current_task_generated)
-        
-        logger.info(f"🔗 Connecting detail_failed to on_current_task_failed") 
         self.current_task_worker.detail_failed.connect(self.on_current_task_failed)
-        
-        logger.info(f"🔗 Connecting detail_streaming to on_current_task_streaming")
         self.current_task_worker.detail_streaming.connect(self.on_current_task_streaming)
         
-        logger.info(f"🚀 Starting TaskDetailWorker thread")
         self.current_task_worker.start()
         
         logger.info(f"✅ TaskDetailWorker thread started successfully")
     
-    def show_current_task_loading(self):
-        """Show loading screen for current task"""
-        current_task_name = self.task_names[self.current_task_number - 1]
-        
+    def show_task_breakdown_loading(self):
+        """Show loading screen for task breakdown generation"""
         scroll_widget = QWidget()
         scroll_layout = QVBoxLayout(scroll_widget)
         
-        # Task progress indicator
-        progress_label = QLabel(f"Task {self.current_task_number} of {len(self.task_names)}")
-        progress_label.setAlignment(Qt.AlignCenter)
-        progress_label.setStyleSheet("""
-            QLabel {
-                font-size: 16px;
-                color: rgba(255, 255, 255, 0.7);
-                margin-bottom: 10px;
-            }
-        """)
-        scroll_layout.addWidget(progress_label)
-        
-        # Current task header
-        task_header = QLabel(f"**Task {self.current_task_number}:** {current_task_name}")
-        task_header.setAlignment(Qt.AlignCenter)
-        task_header.setStyleSheet("""
+        # Title
+        title = QLabel("Generating Task Breakdown")
+        title.setStyleSheet("""
             QLabel {
                 font-size: 24px;
-                font-weight: bold;
-                color: rgba(255, 255, 255, 1.0);
+                font-weight: 600;
+                color: rgba(255, 255, 255, 0.95);
                 margin-bottom: 20px;
-                padding: 20px;
-                background-color: rgba(255, 255, 255, 0.05);
-                border-radius: 12px;
             }
         """)
-        scroll_layout.addWidget(task_header)
+        scroll_layout.addWidget(title)
         
-        # Loading message
-        loading_label = QLabel("🔄 Generating detailed instructions for this task...")
-        loading_label.setAlignment(Qt.AlignCenter)
-        loading_label.setStyleSheet("""
+        # Status message
+        self.breakdown_status_label = QLabel("AI is generating task breakdown...")
+        self.breakdown_status_label.setWordWrap(True)
+        self.breakdown_status_label.setStyleSheet("""
             QLabel {
                 font-size: 16px;
                 color: rgba(255, 255, 255, 0.8);
-                margin: 40px;
+                margin-bottom: 15px;
             }
         """)
-        scroll_layout.addWidget(loading_label)
+        scroll_layout.addWidget(self.breakdown_status_label)
+        
+        # Timer label for breakdown generation
+        self.breakdown_timer_label = QLabel("Time elapsed: 00:00")
+        self.breakdown_timer_label.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                color: rgba(255, 255, 255, 0.6);
+                margin-bottom: 20px;
+            }
+        """)
+        scroll_layout.addWidget(self.breakdown_timer_label)
+        
+        # Progress bar
+        self.breakdown_progress_bar = QProgressBar()
+        self.breakdown_progress_bar.setRange(0, 0)  # Indeterminate progress
+        self.breakdown_progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                border-radius: 8px;
+                background-color: rgba(255, 255, 255, 0.1);
+                height: 20px;
+            }
+            QProgressBar::chunk {
+                background-color: #3498db;
+                border-radius: 7px;
+            }
+        """)
+        scroll_layout.addWidget(self.breakdown_progress_bar)
         
         scroll_layout.addStretch()
         
         # Set this widget as the QScrollArea content
         self.scroll_area.setWidget(scroll_widget)
         
-        # Hide navigation during loading
+        # Hide navigation buttons during generation
         self.next_button.setVisible(False)
-        self.back_button.setEnabled(True)
-    
-    def show_task_headers_with_loading_details(self):
-        """Show task headers immediately with placeholders for details being generated"""
-        # Create new scroll widget
-        scroll_widget = QWidget()
-        scroll_layout = QVBoxLayout(scroll_widget)
-        
-        # Store references to detail areas for updating
-        self.task_detail_areas = {}
-        
-        for i, task_name in enumerate(self.task_names, 1):
-            # Task header
-            task_header = QLabel(f"**Task {i}:** {task_name}")
-            task_header.setStyleSheet("""
-                QLabel {
-                    font-size: 18px;
-                    font-weight: bold;
-                    color: rgba(255, 255, 255, 1.0);
-                    margin-top: 20px;
-                    margin-bottom: 10px;
-                    padding: 10px;
-                    background-color: rgba(255, 255, 255, 0.05);
-                    border-radius: 8px;
-                }
-            """)
-            scroll_layout.addWidget(task_header)
-            
-            # Detail area (initially shows loading)
-            detail_area = QTextBrowser()
-            detail_area.setReadOnly(True)
-            detail_area.setMaximumHeight(300)
-            detail_area.setStyleSheet("""
-                QTextBrowser {
-                    font-size: 14px;
-                    line-height: 1.6;
-                    color: rgba(255, 255, 255, 0.8);
-                    background-color: rgba(255, 255, 255, 0.02);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    border-radius: 8px;
-                    padding: 15px;
-                    margin-bottom: 20px;
-                }
-            """)
-            detail_area.setHtml(f"<i>🔄 Generating details for Task {i}...</i>")
-            scroll_layout.addWidget(detail_area)
-            
-            # Store reference for updating
-            self.task_detail_areas[i] = detail_area
-        
-        scroll_layout.addStretch()
-        
-        # Set this widget as the QScrollArea content
-        self.scroll_area.setWidget(scroll_widget)
-        
-        # Update navigation
-        self.next_button.setText("Begin First Task →")
-        self.next_button.setVisible(True)
-        self.next_button.setEnabled(True)
-        self.back_button.setEnabled(True)
+        self.back_button.setEnabled(False)
     
     def start_generating_task_details(self):
         """Start generating details for each task (Phase 2)"""
@@ -1776,29 +1634,6 @@ class ProjectWizardView(QWidget):
         
         self.start_background_task_generation()
     
-    def on_current_task_streaming(self, task_number, task_name, partial_content):
-        """Handle streaming updates for current task generation"""
-        logger.info(f"📡 Streaming update - Task {task_number}: {len(partial_content)} chars")
-        
-        # Update the UI with partial content if we have a task browser
-        if hasattr(self, 'current_task_browser'):
-            # Show loading message for first few characters, then stream content
-            if len(partial_content) < 50:
-                loading_html = f"""
-                <div style="text-align: center; padding: 20px;">
-                    <h3>🤖 Generating Task {task_number}: {task_name}</h3>
-                    <p style="color: rgba(255, 255, 255, 0.6);">AI is crafting your engineering task...</p>
-                    <div style="margin-top: 20px; padding: 15px; background-color: rgba(255, 255, 255, 0.05); border-radius: 8px;">
-                        <pre style="white-space: pre-wrap; font-family: monospace; font-size: 12px;">{partial_content}</pre>
-                    </div>
-                </div>
-                """
-                self.current_task_browser.setHtml(loading_html)
-            else:
-                # Stream the actual formatted content
-                formatted_content = self.convert_task_detail_to_html(partial_content)
-                self.current_task_browser.setHtml(formatted_content)
-    
     def on_current_task_failed(self, task_number, task_name, error_message):
         """Handle failed generation of current task details"""
         logger.error(f"💥 on_current_task_failed() SIGNAL RECEIVED!")
@@ -1884,10 +1719,10 @@ class ProjectWizardView(QWidget):
         scroll_layout.addWidget(task_header)
         
         # Task details
-        self.current_task_browser = QTextBrowser()
-        self.current_task_browser.setReadOnly(True)
-        self.current_task_browser.setOpenExternalLinks(False)
-        self.current_task_browser.setStyleSheet("""
+        task_browser = QTextBrowser()
+        task_browser.setReadOnly(True)
+        task_browser.setOpenExternalLinks(False)
+        task_browser.setStyleSheet("""
             QTextBrowser {
                 font-size: 14px;
                 line-height: 1.6;
@@ -1920,8 +1755,8 @@ class ProjectWizardView(QWidget):
         
         # Format and set task details
         formatted_detail = self.convert_task_detail_to_html(task_detail)
-        self.current_task_browser.setHtml(formatted_detail)
-        scroll_layout.addWidget(self.current_task_browser)
+        task_browser.setHtml(formatted_detail)
+        scroll_layout.addWidget(task_browser)
         
         # Cursor evaluation section
         self.add_cursor_evaluation_section(scroll_layout, task_name)
@@ -2219,3 +2054,126 @@ Please analyze my files now and give me feedback!"""
         )
         self.background_generator.task_generated.connect(self.on_background_task_generated)
         self.background_generator.start() 
+    
+    def on_current_task_streaming(self, task_number, task_name, partial_content):
+        """Handle streaming updates for current task generation"""
+        logger.info(f"📡 Streaming update - Task {task_number}: {len(partial_content)} chars")
+        print(f"[STREAM] Task {task_number}: {len(partial_content)} characters generated")
+        print(f"[STREAM] Content preview: {partial_content[:200]}...")
+        print(f"[STREAM] Content ending: ...{partial_content[-100:]}")
+        
+        # Update UI with streaming content
+        if not hasattr(self, 'streaming_text_browser'):
+            # Create streaming UI on first update
+            self._create_streaming_ui(task_number, task_name)
+        
+        # Update the text browser with current content
+        self.streaming_text_browser.setPlainText(partial_content)
+        
+        # Auto-scroll to bottom to show latest content
+        cursor = self.streaming_text_browser.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        self.streaming_text_browser.setTextCursor(cursor)
+    
+    def _create_streaming_ui(self, task_number, task_name):
+        """Create UI elements for displaying streaming content"""
+        from PySide6.QtWidgets import QTextBrowser, QVBoxLayout, QWidget, QLabel
+        
+        # Create new scroll widget for streaming content
+        scroll_widget = QWidget()
+        layout = QVBoxLayout(scroll_widget)
+        
+        # Task header
+        header = QLabel(f"Task {task_number}: {task_name}")
+        header.setStyleSheet("""
+            QLabel {
+                font-size: 20px;
+                font-weight: bold;
+                color: rgba(255, 255, 255, 1.0);
+                margin-bottom: 15px;
+                padding: 10px;
+                background-color: rgba(255, 255, 255, 0.05);
+                border-radius: 8px;
+            }
+        """)
+        layout.addWidget(header)
+        
+        # Streaming text browser
+        self.streaming_text_browser = QTextBrowser()
+        self.streaming_text_browser.setReadOnly(True)
+        self.streaming_text_browser.setStyleSheet("""
+            QTextBrowser {
+                font-size: 14px;
+                font-family: 'Courier New', monospace;
+                line-height: 1.4;
+                color: rgba(255, 255, 255, 0.9);
+                background-color: rgba(0, 0, 0, 0.3);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 8px;
+                padding: 15px;
+            }
+        """)
+        layout.addWidget(self.streaming_text_browser)
+        
+        # Replace current scroll area content
+        self.scroll_area.setWidget(scroll_widget)
+    
+    def generate_and_show_current_task(self):
+        """Generate and display the current task details"""
+        logger.info(f"🎬 STARTING TASK DETAIL GENERATION")
+        logger.info(f"📋 Current task number: {self.current_task_number}")
+        
+        # Show loading for current task
+        self.show_current_task_loading()
+        
+        # Generate current task details
+        current_task_name = f"Task {self.current_task_number}"  # Don't reference task_names array
+        project_description = self.project_config.get('project_description', '')
+        selected_language = self.project_config.get('language', 'Python')
+        
+        logger.info(f"🎯 Generating details for task: {current_task_name}")
+        logger.info(f"🔧 Using language: {selected_language}")
+        logger.info(f"📝 Project description length: {len(project_description)} chars")
+        
+        # Start worker for current task
+        logger.info(f"🏗️ Creating TaskDetailWorker instance")
+        self.current_task_worker = TaskDetailWorker(
+            current_task_name, self.current_task_number, 
+            project_description, selected_language, use_local_only=True
+        )
+        
+        logger.info(f"🔗 Connecting TaskDetailWorker signals")
+        self.current_task_worker.detail_generated.connect(self.on_current_task_generated)
+        self.current_task_worker.detail_failed.connect(self.on_current_task_failed)
+        self.current_task_worker.detail_streaming.connect(self.on_current_task_streaming)
+        
+        logger.info(f"🚀 Starting TaskDetailWorker thread")
+        self.current_task_worker.start()
+        
+        logger.info(f"✅ TaskDetailWorker thread started successfully")
+
+    def show_current_task_loading(self):
+        """Show loading screen for current task generation"""
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        # Simple loading message
+        loading_label = QLabel("🔄 Generating task details...")
+        loading_label.setAlignment(Qt.AlignCenter)
+        loading_label.setStyleSheet("""
+            QLabel {
+                font-size: 18px;
+                color: rgba(255, 255, 255, 0.8);
+                margin: 40px;
+            }
+        """)
+        scroll_layout.addWidget(loading_label)
+        
+        scroll_layout.addStretch()
+        
+        # Set this widget as the QScrollArea content
+        self.scroll_area.setWidget(scroll_widget)
+        
+        # Hide navigation during loading
+        self.next_button.setVisible(False)
+        self.back_button.setEnabled(True)

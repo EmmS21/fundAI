@@ -93,7 +93,7 @@ class LocalAIMarker:
         """Check if local AI is available"""
         return self.model_ready and self.model is not None
     
-    def generate_response(self, prompt: str, max_tokens: int = None, temperature: float = None, streaming_callback=None) -> Optional[str]:
+    def generate_response(self, prompt: str, max_tokens: int = None, temperature: float = None, streaming_callback=None, grammar: str = None) -> Optional[str]:
         """Generate a response using the local AI model"""
         import gc
         import time
@@ -103,7 +103,7 @@ class LocalAIMarker:
         logger.info(f"📏 Prompt length: {len(prompt)} characters")
         logger.info(f"⚙️ max_tokens param: {max_tokens}")
         logger.info(f"⚙️ temperature param: {temperature}")
-        logger.info(f"🔄 streaming_callback: {streaming_callback is not None}")
+        logger.info(f"⚙️ grammar param: {'Yes' if grammar else 'No'}")
         
         # BASIC SYSTEM MONITORING (without psutil)
         print(f"[DEBUG] BEFORE GENERATION - Prompt length: {len(prompt)} chars")
@@ -150,16 +150,25 @@ class LocalAIMarker:
             print(f"[DEBUG] ABOUT TO CALL self.model() - this is where it might hang")
             print(f"[DEBUG] Current time: {time.time()}")
             
-            response_stream = self.model(
-                prompt,
-                max_tokens=toks,
-                temperature=temp,
-                top_p=top_p,
-                repeat_penalty=repeat_penalty,
-                stop=["Human:", "Assistant:", "\n\n---"],
-                echo=False,
-                stream=True
-            )
+            # Build model call parameters
+            model_params = {
+                "prompt": prompt,
+                "max_tokens": toks,
+                "temperature": temp,
+                "top_p": top_p,
+                "repeat_penalty": repeat_penalty,
+                "stop": ["Human:", "Assistant:", "\n\n---"],
+                "echo": False,
+                "stream": True
+            }
+            
+            # Add grammar if provided
+            if grammar:
+                logger.info("🔒 Adding GBNF grammar constraint to model call")
+                from llama_cpp import LlamaGrammar
+                model_params["grammar"] = LlamaGrammar.from_string(grammar)
+            
+            response_stream = self.model(**model_params)
             
             # If we reach here, the model call returned successfully
             timeout_occurred.set()  # Cancel timeout monitoring
@@ -173,6 +182,8 @@ class LocalAIMarker:
             
             logger.info("🔄 Starting to process stream chunks...")
             print(f"[DEBUG] Starting chunk processing loop")
+            print(f"[DEBUG] streaming_callback is: {streaming_callback}")
+            print(f"[DEBUG] streaming_callback type: {type(streaming_callback)}")
             
             for chunk in response_stream:
                 chunk_count += 1
@@ -188,12 +199,18 @@ class LocalAIMarker:
                     generated_text += chunk_text
                     token_count += 1
                     
-                    # Call streaming callback if provided
-                    if streaming_callback:
+                    # Debug: Show token count and callback check
+                    if token_count <= 5 or token_count % 25 == 0:
+                        print(f"[DEBUG] Token {token_count}: callback={streaming_callback is not None}, modulo_check={token_count % 50 == 0}")
+                    
+                    if streaming_callback and token_count % 50 == 0:
                         try:
+                            print(f"[DEBUG] Calling streaming callback with {len(generated_text)} chars")
                             streaming_callback(generated_text)
+                            print(f"[DEBUG] Streaming callback completed successfully")
                         except Exception as e:
                             logger.warning(f"Streaming callback error: {e}")
+                            print(f"[DEBUG] Streaming callback error: {e}")
                     
                     if token_count % 10 == 0:  # Log every 10 tokens for more detail
                         logger.info(f"Token {token_count}: Generated {len(generated_text)} chars total")

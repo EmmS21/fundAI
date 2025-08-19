@@ -147,6 +147,28 @@ Output ONLY the JSON array, no other text."""
 
     return prompt
 
+def create_task_detail_gbnf_grammar():
+    """
+    Create GBNF grammar for task detail JSON output.
+    This ensures the model can ONLY output valid JSON in the expected format.
+    """
+    return '''root ::= "{" space title-kv "," space ticket-number-kv "," space description-kv "," space story-points-kv "," space test-commands-kv "}" space
+
+title-kv ::= "\\"title\\":" space string
+ticket-number-kv ::= "\\"ticket_number\\":" space string
+description-kv ::= "\\"description\\":" space string
+story-points-kv ::= "\\"story_points\\":" space integer
+test-commands-kv ::= "\\"test_commands\\":" space string-array
+
+string ::= "\\"" char* "\\""
+char ::= [^"\\\\\\x00-\\x1F] | "\\\\" (["\\\\bfnrt] | "u" [0-9a-fA-F]{4})
+
+integer ::= [0-9]+
+
+string-array ::= "[" space (string ("," space string)*)? "]" space
+
+space ::= [ \\t\\n]*'''
+
 def create_task_detail_prompt(task_name, task_number, project_description, selected_language, completed_tasks_summary: str = ""):
     """
     Create a story-driven engineering ticket that teaches real software engineering concepts
@@ -186,11 +208,13 @@ The prompts should;
 - the prompt should ensure we follow best practices and industry patterns, explaining this to the end user
 - the prompt should also return questions for the user to answer to ensure they understand the concepts and are able to complete the task
 
-Return ONLY the JSON object, no other text with:
-1. the ticket title and ticket number (ie. 1 out of 10/12/20)
-2. the ticket description
-3. the number of story points the ticket is worth (and explaining how much work would be required to complete the task)
-4. commands to run to test if the task is sufficiently complete
-"""
+Return ONLY a JSON object with exactly these fields:
+- "title": The ticket title
+- "ticket_number": Format as "X out of Y" (e.g., "1 out of 8") 
+- "description": Detailed ticket description with all the educational content
+- "story_points": Integer representing effort level (1-8 scale)
+- "test_commands": Array of strings with commands to test completion
+
+Output must be valid JSON only, no other text."""
 
     return prompt 
