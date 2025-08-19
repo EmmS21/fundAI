@@ -95,7 +95,6 @@ class LocalAIMarker:
     
     def generate_response(self, prompt: str, max_tokens: int = None, temperature: float = None) -> Optional[str]:
         """Generate a response using the local AI model"""
-        import psutil
         import gc
         import time
         import threading
@@ -105,18 +104,8 @@ class LocalAIMarker:
         logger.info(f"⚙️ max_tokens param: {max_tokens}")
         logger.info(f"⚙️ temperature param: {temperature}")
         
-        # SYSTEM RESOURCE MONITORING
-        process = psutil.Process()
-        memory_info = process.memory_info()
-        print(f"[DEBUG] BEFORE GENERATION - Memory RSS: {memory_info.rss / 1024 / 1024:.1f} MB")
-        print(f"[DEBUG] BEFORE GENERATION - Memory VMS: {memory_info.vms / 1024 / 1024:.1f} MB")
-        print(f"[DEBUG] BEFORE GENERATION - CPU percent: {process.cpu_percent():.1f}%")
-        print(f"[DEBUG] BEFORE GENERATION - System memory: {psutil.virtual_memory().percent:.1f}% used")
-        print(f"[DEBUG] BEFORE GENERATION - Available memory: {psutil.virtual_memory().available / 1024 / 1024:.1f} MB")
-        
-        # GARBAGE COLLECTION STATUS
-        gc_stats = gc.get_stats()
-        print(f"[DEBUG] BEFORE GENERATION - GC stats: {gc_stats}")
+        # BASIC SYSTEM MONITORING (without psutil)
+        print(f"[DEBUG] BEFORE GENERATION - Prompt length: {len(prompt)} chars")
         print(f"[DEBUG] BEFORE GENERATION - GC count: {gc.get_count()}")
         
         if not self.is_available():
@@ -150,9 +139,6 @@ class LocalAIMarker:
                 time.sleep(30)  # 30 second timeout
                 if not timeout_occurred.is_set():
                     print(f"[DEBUG] TIMEOUT WARNING: Model call has been running for 30+ seconds")
-                    memory_info_timeout = process.memory_info()
-                    print(f"[DEBUG] TIMEOUT - Memory RSS: {memory_info_timeout.rss / 1024 / 1024:.1f} MB")
-                    print(f"[DEBUG] TIMEOUT - CPU percent: {process.cpu_percent():.1f}%")
             
             timeout_thread = threading.Thread(target=timeout_monitor, daemon=True)
             timeout_thread.start()
@@ -162,10 +148,6 @@ class LocalAIMarker:
             logger.info(f"🔍 Model object: {type(self.model)}")
             print(f"[DEBUG] ABOUT TO CALL self.model() - this is where it might hang")
             print(f"[DEBUG] Current time: {time.time()}")
-            
-            # Memory snapshot right before model call
-            memory_before_call = process.memory_info()
-            print(f"[DEBUG] JUST BEFORE MODEL CALL - Memory RSS: {memory_before_call.rss / 1024 / 1024:.1f} MB")
             
             response_stream = self.model(
                 prompt,
@@ -181,11 +163,6 @@ class LocalAIMarker:
             # If we reach here, the model call returned successfully
             timeout_occurred.set()  # Cancel timeout monitoring
             print(f"[DEBUG] SUCCESS: self.model() returned! Time: {time.time()}")
-            
-            # Memory snapshot after model call
-            memory_after_call = process.memory_info()
-            print(f"[DEBUG] AFTER MODEL CALL - Memory RSS: {memory_after_call.rss / 1024 / 1024:.1f} MB")
-            print(f"[DEBUG] MEMORY DELTA: {(memory_after_call.rss - memory_before_call.rss) / 1024 / 1024:.1f} MB")
             
             logger.info(f"📥 self.model() returned stream object: {type(response_stream)}")
             
@@ -203,9 +180,7 @@ class LocalAIMarker:
                     print(f"[DEBUG] First chunk received: {chunk}")
                 elif chunk_count % 10 == 0:
                     logger.info(f"📊 Processed {chunk_count} chunks so far")
-                    # Memory check during processing
-                    current_memory = process.memory_info()
-                    print(f"[DEBUG] Chunk {chunk_count} - Memory RSS: {current_memory.rss / 1024 / 1024:.1f} MB")
+                    print(f"[DEBUG] Processed {chunk_count} chunks so far")
                 
                 chunk_text = chunk['choices'][0]['text'] if chunk['choices'][0]['text'] else ""
                 if chunk_text:
@@ -222,11 +197,6 @@ class LocalAIMarker:
             print(f"[DEBUG] Stream completed: {chunk_count} chunks, {token_count} tokens, {len(generated_text)} characters")
             logger.info(f"Stream completed: {chunk_count} chunks, {token_count} tokens, {len(generated_text)} characters")
             
-            # Final memory check
-            final_memory = process.memory_info()
-            print(f"[DEBUG] FINAL - Memory RSS: {final_memory.rss / 1024 / 1024:.1f} MB")
-            print(f"[DEBUG] TOTAL MEMORY DELTA: {(final_memory.rss - memory_info.rss) / 1024 / 1024:.1f} MB")
-            
             if len(generated_text) == 0:
                 print("[DEBUG] Generated text is empty - model may have hit limits or failed to start")
                 logger.error("Generated text is empty - model may have hit limits or failed to start")
@@ -238,10 +208,6 @@ class LocalAIMarker:
             print(f"[DEBUG] Exception type: {type(e).__name__}")
             import traceback
             print(f"[DEBUG] Full traceback: {traceback.format_exc()}")
-            
-            # Memory check during exception
-            exception_memory = process.memory_info()
-            print(f"[DEBUG] EXCEPTION - Memory RSS: {exception_memory.rss / 1024 / 1024:.1f} MB")
             
             logger.error(f"Error in local AI generation: {str(e)}")
             return None

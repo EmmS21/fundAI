@@ -26,7 +26,6 @@ python-dotenv  # Environment variable management
 requests>=2.31.0
 aiohttp>=3.8.0  # Async HTTP for better performance
 loguru>=0.7.0  # Better logging
-psutil>=5.9.0  # System and process monitoring
 
 # Testing & Development
 pytest>=7.0.0
