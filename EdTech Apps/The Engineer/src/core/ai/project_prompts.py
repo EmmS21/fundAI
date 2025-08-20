@@ -3,7 +3,7 @@ Project Generation Prompts for The Engineer AI Tutor
 Prompts for generating contextual programming projects for young African learners
 """
 
-def create_project_generation_prompt(user_scores, selected_language, user_data):
+def create_project_generation_prompt(user_scores, selected_language, user_data, project_theme=None):
     """
     Create a prompt for AI to generate a contextual project for young African learners
     
@@ -11,31 +11,48 @@ def create_project_generation_prompt(user_scores, selected_language, user_data):
         user_scores: Dict containing initial assessment and project scores
         selected_language: The programming language chosen by the user
         user_data: User profile information including age, location context
+        project_theme: Optional theme to guide project generation for variety
     """
     
-    # Extract scores
-    initial_score = user_scores.get('initial_assessment_score', 0)
+    # Extract scores safely
+    initial_score = user_scores.get('overall_score', user_scores.get('initial_assessment_score', 0))
     section_scores = user_scores.get('section_scores', {})
     username = user_scores.get('username', 'Student')
     
-    # Format section scores for the prompt
+    # Format section scores for the prompt (handle different data structures)
     score_breakdown = []
-    for section, score in section_scores.items():
-        score_breakdown.append(f"- {section}: {score:.1f}%")
+    try:
+        if isinstance(section_scores, dict):
+            for section, score_data in section_scores.items():
+                if isinstance(score_data, dict) and 'correct' in score_data and 'total' in score_data:
+                    # Handle format: {"section": {"correct": 2, "total": 4}}
+                    percentage = (score_data['correct'] / score_data['total']) * 100 if score_data['total'] > 0 else 0
+                    score_breakdown.append(f"- {section}: {percentage:.1f}%")
+                elif isinstance(score_data, (int, float)):
+                    # Handle format: {"section": 85.5}
+                    score_breakdown.append(f"- {section}: {score_data:.1f}%")
+    except (TypeError, KeyError, ZeroDivisionError):
+        pass  # If parsing fails, just use default
     
     score_summary = "\n".join(score_breakdown) if score_breakdown else "No detailed scores available"
+    
+    # Ensure all variables are safe for f-string formatting
+    safe_username = str(username) if username else "Student"
+    safe_initial_score = float(initial_score) if isinstance(initial_score, (int, float)) else 0.0
+    safe_selected_language = str(selected_language) if selected_language else "Python"
+    safe_score_summary = str(score_summary) if score_summary else "No detailed scores available"
     
     prompt = f"""You are an AI Tutor creating a programming project for a young learner in Africa aged 12-18. 
 
 STUDENT PROFILE:
-- Name: {username}
+- Name: {safe_username}
 - Age Range: 12-18 years old
 - Location Context: Africa (consider local challenges, opportunities, and cultural context)
-- Overall Engineering Thinking Score: {initial_score:.1f}%
+- Overall Engineering Thinking Score: {safe_initial_score:.1f}%
 - Detailed Assessment Scores:
-{score_summary}
+{safe_score_summary}
 
-SELECTED PROGRAMMING LANGUAGE: {selected_language}
+SELECTED PROGRAMMING LANGUAGE: {safe_selected_language}
 
 PROJECT REQUIREMENTS:
 1. **Context-Specific**: The project must solve a real problem that young people in Africa can relate to and understand. Consider challenges like:
@@ -45,6 +62,8 @@ PROJECT REQUIREMENTS:
    - Agricultural or environmental challenges
    - Transportation or logistics issues
    - Local entrepreneurship opportunities
+
+{"FOCUS THEME: Pay special attention to " + str(project_theme) + " when designing this project." if project_theme else ""}
 
 2. **Technical Scope**: 
    - Frontend: Simple, clean user interface (no heavy frameworks)
@@ -147,27 +166,23 @@ Output ONLY the JSON array, no other text."""
 
     return prompt
 
-def create_task_detail_gbnf_grammar():
+
+
+def extract_json_from_reasoning_response(response: str) -> str:
     """
-    Create GBNF grammar for task detail JSON output.
-    This ensures the model can ONLY output valid JSON in the expected format.
+    Extract JSON object from a response that may contain reasoning before the JSON.
+    Returns only the JSON part for parsing.
     """
-    return '''root ::= "{" space title-kv "," space ticket-number-kv "," space description-kv "," space story-points-kv "," space test-commands-kv "}" space
-
-title-kv ::= "\\"title\\":" space string
-ticket-number-kv ::= "\\"ticket_number\\":" space string
-description-kv ::= "\\"description\\":" space string
-story-points-kv ::= "\\"story_points\\":" space integer
-test-commands-kv ::= "\\"test_commands\\":" space string-array
-
-string ::= "\\"" char* "\\""
-char ::= [^"\\\\\\x00-\\x1F] | "\\\\" (["\\\\bfnrt] | "u" [0-9a-fA-F]{4})
-
-integer ::= [0-9]+
-
-string-array ::= "[" space (string ("," space string)*)? "]" space
-
-space ::= [ \\t\\n]*'''
+    if not response:
+        return ""
+    
+    json_start = response.find('{"')
+    if json_start == -1:
+        return response
+    
+    # Extract from the JSON start to the end
+    json_part = response[json_start:].strip()
+    return json_part
 
 def create_task_detail_prompt(task_name, task_number, project_description, selected_language, completed_tasks_summary: str = ""):
     """
@@ -209,11 +224,11 @@ The prompts should;
 - the prompt should also return questions for the user to answer to ensure they understand the concepts and are able to complete the task
 
 Return ONLY a JSON object with exactly these fields:
-- "title": The ticket title
+- "title": Clear, specific task title describing what will be built
 - "ticket_number": Format as "X out of Y" (e.g., "1 out of 8") 
-- "description": Detailed ticket description with all the educational content
-- "story_points": Integer representing effort level (1-8 scale)
-- "test_commands": Array of strings with commands to test completion
+- "description": Write as a single text string containing: What specific code to build, 3-4 exact prompts to paste into Cursor AI (start each with "Cursor prompt:"), engineering concepts explained simply, why these concepts matter for real software projects, specific things to research, technical questions about the implementation
+- "story_points": Integer representing effort level (1-8 scale, where 1=30min, 8=full day)
+- "test_commands": Array of 2-3 specific terminal commands to verify task completion
 
 Output must be valid JSON only, no other text."""
 

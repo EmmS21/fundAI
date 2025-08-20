@@ -14,8 +14,8 @@ AI_CONFIG = {
     },
     "cloud": {
         "groq_model": "deepseek-r1-distill-llama-70b",
-        "max_tokens": 2048,
-        "temperature": 0.7,
+        "max_tokens": 16384,  
+        "temperature": 0.3,  
     }
 }
 

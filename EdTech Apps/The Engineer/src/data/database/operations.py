@@ -525,9 +525,16 @@ class ProjectOperations:
     def save_project(self, user_id: int, project_data: dict) -> Optional[int]:
         """Save a new project to the database"""
         from .models import Project, ProjectTask
+        import json
+        from core.ai.project_prompts import extract_json_from_reasoning_response
         
         session = self.db.get_session()
         try:
+            raw_description = project_data.get('project_description', '')
+            clean_description = extract_json_from_reasoning_response(raw_description)
+            
+            project_content = self._parse_project_content(clean_description)
+            
             # Create project record
             project = Project(
                 user_id=user_id,
@@ -536,7 +543,12 @@ class ProjectOperations:
                 language=project_data.get('language', 'Python'),
                 difficulty_level=DifficultyLevel.JUNIOR,
                 domain=EngineeringDomain.SOFTWARE,
-                project_description=project_data.get('project_description', ''),
+                project_title=project_content.get('project_title', ''),
+                problem_statement=project_content.get('problem_statement', ''),
+                project_description=project_content.get('project_description', ''),
+                key_features=json.dumps(project_content.get('key_features', [])),
+                technology_stack=project_content.get('technology_stack', ''),
+                difficulty_assessment=project_content.get('difficulty_assessment', ''),
                 task_headers=project_data.get('task_headers', ''),
                 current_task_number=project_data.get('current_task_number', 1),
                 total_tasks=len(project_data.get('task_names', [])),
@@ -571,6 +583,51 @@ class ProjectOperations:
         finally:
             self.db.close_session(session)
     
+    def _parse_project_content(self, content: str) -> dict:
+        """Parse AI-generated project content into structured fields"""
+        import re
+        
+        project_data = {
+            'project_title': '',
+            'problem_statement': '',
+            'project_description': '',
+            'key_features': [],
+            'technology_stack': '',
+            'difficulty_assessment': ''
+        }
+        
+        try:
+            title_match = re.search(r'\*\*Project Title\*\*:\s*"([^"]+)"', content)
+            if title_match:
+                project_data['project_title'] = title_match.group(1)
+            
+            problem_match = re.search(r'\*\*Problem Statement\*\*:\s*(.+?)(?=\n\n|\*\*|$)', content, re.DOTALL)
+            if problem_match:
+                project_data['problem_statement'] = problem_match.group(1).strip()
+            
+            desc_match = re.search(r'\*\*Project Description\*\*:\s*(.+?)(?=\n\n|\*\*|$)', content, re.DOTALL)
+            if desc_match:
+                project_data['project_description'] = desc_match.group(1).strip()
+            
+            features_match = re.search(r'\*\*Key Features\*\*:\s*(.+?)(?=\n\n|\*\*|$)', content, re.DOTALL)
+            if features_match:
+                features_text = features_match.group(1).strip()
+                features = re.findall(r'-\s*(.+)', features_text)
+                project_data['key_features'] = [f.strip() for f in features]
+            
+            tech_match = re.search(r'\*\*Recommended Technology Stack\*\*:\s*(.+?)(?=\n\n|\*\*|$)', content, re.DOTALL)
+            if tech_match:
+                project_data['technology_stack'] = tech_match.group(1).strip()
+            
+            diff_match = re.search(r'\*\*Difficulty Assessment\*\*:\s*(.+?)(?=\n\n|\*\*|$)', content, re.DOTALL)
+            if diff_match:
+                project_data['difficulty_assessment'] = diff_match.group(1).strip()
+                
+        except Exception as e:
+            logger.error(f"Error parsing project content: {e}")
+        
+        return project_data
+    
     def get_active_project(self, user_id: int) -> Optional[dict]:
         """Get the user's current active project"""
         from .models import Project, ProjectTask
@@ -579,7 +636,6 @@ class ProjectOperations:
         try:
             project = session.query(Project).filter(
                 Project.user_id == user_id,
-                Project.status == 'active',
                 Project.is_completed == False
             ).order_by(Project.last_accessed.desc()).first()
             

@@ -93,7 +93,7 @@ class LocalAIMarker:
         """Check if local AI is available"""
         return self.model_ready and self.model is not None
     
-    def generate_response(self, prompt: str, max_tokens: int = None, temperature: float = None, streaming_callback=None, grammar: str = None) -> Optional[str]:
+    def generate_response(self, prompt: str, max_tokens: int = None, temperature: float = None, streaming_callback=None) -> Optional[str]:
         """Generate a response using the local AI model"""
         import gc
         import time
@@ -103,7 +103,6 @@ class LocalAIMarker:
         logger.info(f"📏 Prompt length: {len(prompt)} characters")
         logger.info(f"⚙️ max_tokens param: {max_tokens}")
         logger.info(f"⚙️ temperature param: {temperature}")
-        logger.info(f"⚙️ grammar param: {'Yes' if grammar else 'No'}")
         
         # BASIC SYSTEM MONITORING (without psutil)
         print(f"[DEBUG] BEFORE GENERATION - Prompt length: {len(prompt)} chars")
@@ -150,25 +149,16 @@ class LocalAIMarker:
             print(f"[DEBUG] ABOUT TO CALL self.model() - this is where it might hang")
             print(f"[DEBUG] Current time: {time.time()}")
             
-            # Build model call parameters
-            model_params = {
-                "prompt": prompt,
-                "max_tokens": toks,
-                "temperature": temp,
-                "top_p": top_p,
-                "repeat_penalty": repeat_penalty,
-                "stop": ["Human:", "Assistant:", "\n\n---"],
-                "echo": False,
-                "stream": True
-            }
-            
-            # Add grammar if provided
-            if grammar:
-                logger.info("🔒 Adding GBNF grammar constraint to model call")
-                from llama_cpp import LlamaGrammar
-                model_params["grammar"] = LlamaGrammar.from_string(grammar)
-            
-            response_stream = self.model(**model_params)
+            response_stream = self.model(
+                prompt,
+                max_tokens=toks,
+                temperature=temp,
+                top_p=top_p,
+                repeat_penalty=repeat_penalty,
+                stop=["Human:", "Assistant:", "\n\n---"],
+                echo=False,
+                stream=True
+            )
             
             # If we reach here, the model call returned successfully
             timeout_occurred.set()  # Cancel timeout monitoring
