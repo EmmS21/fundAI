@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
+from ..utils import create_offline_warning_banner
 
 class DashboardView(QWidget):
     """Main dashboard for learning activities"""
@@ -18,11 +19,16 @@ class DashboardView(QWidget):
         self.main_window = main_window
         self.setup_ui()
     
+
+    
     def setup_ui(self):
         """Setup the dashboard UI"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
+        
+        # Check for offline warning
+        create_offline_warning_banner(layout)
         
         # Welcome header
         self.create_welcome_header(layout)

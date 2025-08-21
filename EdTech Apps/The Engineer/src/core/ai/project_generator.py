@@ -110,6 +110,7 @@ class ProjectGenerator:
         Returns:
             True if cloud AI should be preferred, False otherwise
         """
+        # Default to cloud AI (Groq) when available and online
         if not self.cloud_ai or not self.cloud_ai.is_available():
             return False
         

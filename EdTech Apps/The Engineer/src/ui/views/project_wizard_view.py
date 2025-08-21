@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
 from PySide6.QtGui import QFont, QTextCursor
 from core.ai.project_generator import ProjectGenerator
+from ..utils import create_offline_warning_banner
 import re
 import logging
 
@@ -478,6 +479,9 @@ class ProjectWizardView(QWidget):
     def create_header(self, layout):
         """Create wizard header"""
         header_layout = QVBoxLayout()
+        
+        # Check for offline warning
+        create_offline_warning_banner(header_layout)
         
         title = QLabel("AI Project Tutor")
         title.setAlignment(Qt.AlignCenter)
@@ -1357,8 +1361,48 @@ class ProjectWizardView(QWidget):
         scroll_widget = QWidget()
         scroll_layout = QVBoxLayout(scroll_widget)
         
-        # Add project content to scroll area
-        scroll_layout.addWidget(self.project_content)
+        # Create a new QTextBrowser for project content instead of reusing the deleted one
+        project_browser = QTextBrowser()
+        project_browser.setReadOnly(True)
+        project_browser.setOpenExternalLinks(False)
+        project_browser.setStyleSheet("""
+            QTextBrowser {
+                font-size: 14px;
+                line-height: 1.6;
+                color: rgba(255, 255, 255, 0.9);
+                background-color: transparent;
+                border: none;
+                padding: 20px;
+            }
+            QTextBrowser b {
+                color: rgba(255, 255, 255, 1.0);
+                font-size: 16px;
+                font-weight: bold;
+            }
+            QTextBrowser i {
+                color: rgba(255, 255, 255, 0.8);
+                font-style: italic;
+            }
+            QTextBrowser pre {
+                background-color: rgba(0, 0, 0, 0.3);
+                border-radius: 5px;
+                padding: 10px;
+                font-family: 'Courier New', monospace;
+                color: rgba(255, 255, 255, 0.95);
+            }
+            QTextBrowser ul {
+                margin-left: 20px;
+                margin-top: 10px;
+                margin-bottom: 10px;
+            }
+            QTextBrowser li {
+                margin-bottom: 5px;
+                color: rgba(255, 255, 255, 0.9);
+            }
+        """)
+        
+        # Add project browser to scroll area
+        scroll_layout.addWidget(project_browser)
         scroll_layout.addStretch()
         
         # Set this widget as the QScrollArea content
@@ -1367,9 +1411,12 @@ class ProjectWizardView(QWidget):
         # Extract and format the cached project content
         structured_content = self.extract_structured_content(self.project_config['project_description'])
         formatted_description = self.convert_markdown_to_html(structured_content)
-        self.project_content.setHtml(formatted_description)
+        project_browser.setHtml(formatted_description)
         
-        self.next_button.setText("Continue Project →")
+        # Set current step to 2 so next_step() will proceed to task breakdown
+        self.current_step = 2
+        
+        self.next_button.setText("Step 1 →")
         self.next_button.setVisible(True)
         self.next_button.setEnabled(True)
         self.back_button.setEnabled(True)

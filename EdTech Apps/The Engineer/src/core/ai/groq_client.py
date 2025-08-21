@@ -14,7 +14,7 @@ except ImportError:
     Groq = None
     GROQ_AVAILABLE = False
 
-from ..ai.prompt_examples import get_programming_prompt
+from .prompt_examples import get_programming_prompt
 from ...config.secrets import get_groq_api_key
 from ...config.settings import AI_CONFIG
 
