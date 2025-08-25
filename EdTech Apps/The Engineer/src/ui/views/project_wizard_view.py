@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
 from PySide6.QtGui import QFont, QTextCursor
 from core.ai.project_generator import ProjectGenerator
+from ..utils import create_offline_warning_banner
 import re
 import logging
 
@@ -25,12 +26,13 @@ class ProjectGenerationWorker(QThread):
     project_generated = Signal(str)  # Emits generated project description
     generation_failed = Signal(str)  # Emits error message
     
-    def __init__(self, user_scores, selected_language, user_data, use_local_only=False):
+    def __init__(self, user_scores, selected_language, user_data, use_local_only=False, project_theme=None):
         super().__init__()
         self.user_scores = user_scores
         self.selected_language = selected_language
         self.user_data = user_data
         self.use_local_only = use_local_only
+        self.project_theme = project_theme
     
     def run(self):
         """Run project generation in background thread"""
@@ -45,7 +47,8 @@ class ProjectGenerationWorker(QThread):
                 self.user_scores, 
                 self.selected_language, 
                 self.user_data,
-                self.use_local_only
+                self.use_local_only,
+                self.project_theme
             )
             
             if project_description:
@@ -165,26 +168,25 @@ class TaskDetailWorker(QThread):
             logger.info(f"✅ AI generator is available, starting task detail generation")
             logger.info(f"📤 Calling generator.generate_task_detail()")
             
-            # Custom generation with streaming and GBNF grammar
-            from core.ai.project_prompts import create_task_detail_prompt, create_task_detail_gbnf_grammar
+            # Custom generation with streaming
+            from core.ai.project_prompts import create_task_detail_prompt, extract_json_from_reasoning_response
             prompt = create_task_detail_prompt(self.task_name, self.task_number, self.project_description, self.selected_language)
-            grammar = create_task_detail_gbnf_grammar()
             
-            # Call local AI directly with our streaming callback and grammar constraint
-            if generator.local_ai and generator.local_ai.is_available():
-                def qt_safe_callback(partial_content):
-                    # Emit signal from worker thread - Qt will marshal to main thread
-                    self.detail_streaming.emit(self.task_number, self.task_name, partial_content)
-                
-                task_detail = generator.local_ai.generate_response(
-                    prompt, 
-                    max_tokens=16384, 
-                    temperature=0.3,
-                    streaming_callback=qt_safe_callback,
-                    grammar=grammar  # Force JSON output with GBNF
-                )
-            else:
-                task_detail = None
+            # Use generator's smart routing (cloud first when online, then local)
+            def qt_safe_callback(partial_content):
+                # Emit signal from worker thread - Qt will marshal to main thread
+                self.detail_streaming.emit(self.task_number, self.task_name, partial_content)
+            
+            generator.set_streaming_callback(qt_safe_callback)
+            
+            # Let the generator decide which AI to use based on connectivity
+            task_detail = generator.generate_task_detail(
+                self.task_name, 
+                self.task_number, 
+                self.project_description, 
+                self.selected_language,
+                use_local_only=False  # Allow smart routing
+            )
             
             logger.info(f"📥 generate_task_detail() returned")
             logger.info(f"📏 Response length: {len(task_detail) if task_detail else 0} chars")
@@ -242,7 +244,7 @@ class BackgroundTaskGenerator(QThread):
                     continue
                 
                 task_detail = generator.generate_task_detail(
-                    task_name, i, self.project_description, self.selected_language, use_local_only=True
+                    task_name, i, self.project_description, self.selected_language, use_local_only=False
                 )
                 
                 if task_detail:
@@ -286,18 +288,60 @@ class ProjectWizardView(QWidget):
         if existing_project:
             self.current_project_id = existing_project['id']
             self.project_config = existing_project
-            self.current_task_number = existing_project['current_task_number']
             self.task_names = existing_project['task_names']
+            
+            # Find the first uncompleted task instead of trusting stored current_task_number
+            self.current_task_number = self.find_first_uncompleted_task()
+            print(f"🔍 DEBUG: Loaded existing project: {existing_project['title']}")
+            print(f"🔍 DEBUG: Current task number set to: {self.current_task_number}")
+            print(f"🔍 DEBUG: Task names: {self.task_names}")
             logger.info(f"Loaded existing project: {existing_project['title']}")
+            logger.info(f"Current task number set to: {self.current_task_number}")
+    
+    def find_first_uncompleted_task(self):
+        """Find the first task that hasn't been completed"""
+        if not self.current_project_id or not self.task_names:
+            print(f"🔍 DEBUG: No project ID or task names, returning 1")
+            return 1
+        
+        print(f"🔍 DEBUG: Checking completion status for {len(self.task_names)} tasks...")
+        
+        # Check each task in order
+        for task_number in range(1, len(self.task_names) + 1):
+            is_completed = self.project_ops.is_task_completed(self.current_project_id, task_number)
+            print(f"🔍 DEBUG: Task {task_number}: completed = {is_completed}")
+            if not is_completed:
+                print(f"🔍 DEBUG: Found first uncompleted task: {task_number}")
+                return task_number
+        
+        # If all tasks are completed, return the last task
+        print(f"🔍 DEBUG: All tasks completed, returning last task: {len(self.task_names)}")
+        return len(self.task_names)
     
     def show_existing_project_task(self):
         """Show the current task for an existing project"""
+        print(f"🔍 DEBUG: show_existing_project_task() called with task number: {getattr(self, 'current_task_number', 'NOT SET')}")
         if not hasattr(self, 'current_task_number') or not self.task_names:
+            print(f"🔍 DEBUG: Missing current_task_number or task_names, showing introduction")
             self.show_introduction()
             return
         
         current_task_name = self.task_names[self.current_task_number - 1]
         current_task_detail = self.project_config.get('task_details', {}).get(self.current_task_number)
+        
+        print(f"🔍 DEBUG: Showing task {self.current_task_number}")
+        print(f"🔍 DEBUG: Task name: {current_task_name}")
+        print(f"🔍 DEBUG: Has task detail: {current_task_detail is not None}")
+        if current_task_detail:
+            print(f"🔍 DEBUG: Task detail preview: {current_task_detail[:100]}...")
+        
+        # Mark task as in_progress when user starts viewing it
+        if self.current_project_id:
+            self.project_ops.update_task_status(
+                self.current_project_id, 
+                self.current_task_number, 
+                'in_progress'
+            )
         
         if current_task_detail:
             self.show_complete_current_task(current_task_name, current_task_detail)
@@ -467,9 +511,9 @@ class ProjectWizardView(QWidget):
         
         
         # Show appropriate step based on existing project
-        if self.current_step == 2 and hasattr(self, 'task_names') and self.task_names:
-            # User has existing project, show current task
-            self.show_existing_project_task()
+        if self.current_project_id and hasattr(self, 'task_names') and self.task_names:
+            # User has existing project, show choice between continue or restart
+            self.show_project_choice()
         else:
             # Show first step
             self.show_introduction()
@@ -477,6 +521,9 @@ class ProjectWizardView(QWidget):
     def create_header(self, layout):
         """Create wizard header"""
         header_layout = QVBoxLayout()
+        
+        # Check for offline warning
+        create_offline_warning_banner(header_layout)
         
         title = QLabel("AI Project Tutor")
         title.setAlignment(Qt.AlignCenter)
@@ -589,6 +636,29 @@ class ProjectWizardView(QWidget):
         self.back_button.clicked.connect(self.previous_step)
         self.back_button.setEnabled(False)
         nav_layout.addWidget(self.back_button)
+        
+        # Add Complete Task button (initially hidden)
+        self.complete_button = QPushButton("Mark Task as Complete")
+        self.complete_button.setStyleSheet("""
+            QPushButton {
+                font-size: 14px;
+                color: white;
+                background-color: #27AE60;
+                border: none;
+                border-radius: 8px;
+                padding: 12px 24px;
+            }
+            QPushButton:hover {
+                background-color: #229954;
+            }
+            QPushButton:disabled {
+                background-color: rgba(255, 255, 255, 0.1);
+                color: rgba(255, 255, 255, 0.3);
+            }
+        """)
+        self.complete_button.clicked.connect(self.complete_current_task)
+        self.complete_button.setVisible(False)
+        nav_layout.addWidget(self.complete_button)
         
         nav_layout.addStretch()
         
@@ -719,6 +789,7 @@ class ProjectWizardView(QWidget):
         # Initially hide the next button until user scrolls to bottom
         self.next_button.setText("I Understand →")
         self.next_button.setVisible(False)
+        self.complete_button.setVisible(False)  # Hide complete button on introduction
         
         # Connect scroll area to check if user has scrolled to bottom
         self.scroll_area.verticalScrollBar().valueChanged.connect(self.check_scroll_position)
@@ -773,6 +844,7 @@ class ProjectWizardView(QWidget):
         self.next_button.setText("Next →")
         self.next_button.setVisible(True)  # Make sure button is visible on language selection
         self.next_button.setEnabled(False)  # Enable when selection made
+        self.complete_button.setVisible(False)  # Hide complete button on language selection
     
     def create_language_option(self, language, icon, description):
         """Create a language selection option"""
@@ -924,18 +996,32 @@ class ProjectWizardView(QWidget):
         """Start the AI project generation process for one randomly selected language"""
         import random
         
-        # Prepare user scores and data
-        user_scores = self.project_config.get('user_scores', {})
+        # Prepare user scores and data from actual user data
+        user_scores = self.user_data if self.user_data else {}
         
         # Randomly select either Python or JavaScript
         selected_language = random.choice(['Python', 'JavaScript'])
         
-        # Store the selected language
-        self.project_config['language'] = selected_language
+        # Add variety by randomly selecting a project theme
+        project_themes = [
+            "local entrepreneurship and small business solutions",
+            "community health and wellness tracking", 
+            "educational tools for rural schools",
+            "agricultural productivity and farming assistance",
+            "local transportation and logistics coordination",
+            "environmental conservation and sustainability",
+            "community communication and social connection",
+            "financial literacy and micro-savings tools"
+        ]
+        selected_theme = random.choice(project_themes)
         
-        # Start worker thread for the selected language (local AI only)
+        # Store the selected language and theme
+        self.project_config['language'] = selected_language
+        self.project_config['theme'] = selected_theme
+        
+        # Start worker thread for the selected language (cloud first when online)
         self.generation_worker = ProjectGenerationWorker(
-            user_scores, selected_language, self.user_data, use_local_only=True
+            user_scores, selected_language, self.user_data, use_local_only=False, project_theme=selected_theme
         )
         self.generation_worker.project_generated.connect(lambda desc: self.on_project_generated(selected_language, desc))
         self.generation_worker.generation_failed.connect(lambda err: self.on_generation_failed(selected_language, err))
@@ -971,11 +1057,18 @@ class ProjectWizardView(QWidget):
             self.status_timer.stop()
         
         # Hide progress bar and timer
-        self.progress_bar.setVisible(False)
+        if hasattr(self, 'breakdown_progress_bar'):
+            self.breakdown_progress_bar.setVisible(False)
         if hasattr(self, 'timer_label'):
             self.timer_label.setVisible(False)
         
         print(f"Failed to generate {language} project: {error_message}")
+        
+        # Create status_label if it doesn't exist
+        if not hasattr(self, 'status_label'):
+            self.status_label = QLabel()
+            self.status_label.setAlignment(Qt.AlignCenter)
+            self.status_label.setWordWrap(True)
         
         self.status_label.setText(f"Failed to generate {language} project. Please try again.")
         self.status_label.setStyleSheet("""
@@ -983,6 +1076,10 @@ class ProjectWizardView(QWidget):
                 font-size: 16px;
                 color: rgba(255, 100, 100, 0.9);
                 margin-bottom: 30px;
+                padding: 15px;
+                background-color: rgba(255, 100, 100, 0.1);
+                border-radius: 8px;
+                border: 1px solid rgba(255, 100, 100, 0.3);
             }
         """)
         
@@ -1003,8 +1100,27 @@ class ProjectWizardView(QWidget):
         """)
         retry_button.clicked.connect(self.start_project_generation)
         
-        layout = self.content_area.layout()
-        layout.insertWidget(layout.count() - 1, retry_button)  # Insert before stretch
+        # Safely add widgets to layout
+        try:
+            layout = self.content_area.layout()
+            if layout:
+                # Add status label if not already in layout
+                if hasattr(self, 'status_label') and self.status_label.parent() != self.content_area:
+                    layout.insertWidget(0, self.status_label)
+                # Add retry button
+                layout.insertWidget(layout.count() - 1, retry_button)  # Insert before stretch
+        except RuntimeError as e:
+            print(f"Layout error (objects may be deleted): {e}")
+            # Create a simple fallback UI
+            scroll_widget = QWidget()
+            scroll_layout = QVBoxLayout(scroll_widget)
+            scroll_layout.addWidget(self.status_label)
+            scroll_layout.addWidget(retry_button)
+            scroll_layout.addStretch()
+            try:
+                self.scroll_area.setWidget(scroll_widget)
+            except:
+                print("Could not create fallback UI")
         
         self.back_button.setEnabled(True)
     
@@ -1159,10 +1275,20 @@ class ProjectWizardView(QWidget):
     
     def next_step(self):
         """Go to next step"""
+        if getattr(self, 'continuing_existing_project', False):
+            self.show_existing_project_task()
+            self.continuing_existing_project = False  
+            return
+            
         if self.current_step == 0:
             # User clicked "I Understand" from introduction
-            self.current_step = 1
-            self.show_project_generation()
+            if self.current_project_id and hasattr(self, 'task_names') and self.task_names:
+                # User has existing project, show choice between continue or restart
+                self.show_project_choice()
+            else:
+                # No existing project, proceed with project generation
+                self.current_step = 1
+                self.show_project_generation()
         elif self.current_step == 1:
             # Go from project generation to task breakdown
             self.current_step = 2
@@ -1177,7 +1303,8 @@ class ProjectWizardView(QWidget):
                         self.current_project_id, 
                         self.current_task_number
                     )
-                self.generate_and_show_current_task()
+                # Load existing task or generate new one
+                self.show_existing_project_task()
             else:
                 # All tasks completed - mark project as complete
                 if self.current_project_id:
@@ -1210,6 +1337,7 @@ class ProjectWizardView(QWidget):
         
         self.next_button.setVisible(False)
         self.back_button.setEnabled(False)
+        self.complete_button.setVisible(False)  # Hide complete button during project generation
         
         self.start_status_timer()
         QTimer.singleShot(100, self.start_project_generation)
@@ -1300,12 +1428,56 @@ class ProjectWizardView(QWidget):
     
     def continue_existing_project(self):
         """Continue with existing project by showing cached content"""
+        # Set state to track that we're viewing continued project
+        self.viewing_continued_project = True
+        self.continuing_existing_project = True
+        
         # Switch from choice to project content
         scroll_widget = QWidget()
         scroll_layout = QVBoxLayout(scroll_widget)
         
-        # Add project content to scroll area
-        scroll_layout.addWidget(self.project_content)
+        # Create a new QTextBrowser for project content instead of reusing the deleted one
+        project_browser = QTextBrowser()
+        project_browser.setReadOnly(True)
+        project_browser.setOpenExternalLinks(False)
+        project_browser.setStyleSheet("""
+            QTextBrowser {
+                font-size: 14px;
+                line-height: 1.6;
+                color: rgba(255, 255, 255, 0.9);
+                background-color: transparent;
+                border: none;
+                padding: 20px;
+            }
+            QTextBrowser b {
+                color: rgba(255, 255, 255, 1.0);
+                font-size: 16px;
+                font-weight: bold;
+            }
+            QTextBrowser i {
+                color: rgba(255, 255, 255, 0.8);
+                font-style: italic;
+            }
+            QTextBrowser pre {
+                background-color: rgba(0, 0, 0, 0.3);
+                border-radius: 5px;
+                padding: 10px;
+                font-family: 'Courier New', monospace;
+                color: rgba(255, 255, 255, 0.95);
+            }
+            QTextBrowser ul {
+                margin-left: 20px;
+                margin-top: 10px;
+                margin-bottom: 10px;
+            }
+            QTextBrowser li {
+                margin-bottom: 5px;
+                color: rgba(255, 255, 255, 0.9);
+            }
+        """)
+        
+        # Add project browser to scroll area
+        scroll_layout.addWidget(project_browser)
         scroll_layout.addStretch()
         
         # Set this widget as the QScrollArea content
@@ -1314,9 +1486,12 @@ class ProjectWizardView(QWidget):
         # Extract and format the cached project content
         structured_content = self.extract_structured_content(self.project_config['project_description'])
         formatted_description = self.convert_markdown_to_html(structured_content)
-        self.project_content.setHtml(formatted_description)
+        project_browser.setHtml(formatted_description)
         
-        self.next_button.setText("Continue Project →")
+        # Set current step to 2 so next_step() will proceed to task breakdown
+        self.current_step = 2
+        
+        self.next_button.setText("Step 1 →")
         self.next_button.setVisible(True)
         self.next_button.setEnabled(True)
         self.back_button.setEnabled(True)
@@ -1328,12 +1503,30 @@ class ProjectWizardView(QWidget):
         
         # Reset state
         self.current_project_id = None
-        self.project_config = {}
+        self.project_config = {
+            'task_details': {}  
+        }
         self.current_task_number = 1
+        self.current_step = 1  
         
         # Generate new project
         scroll_widget = QWidget()
         scroll_layout = QVBoxLayout(scroll_widget)
+        
+        # Recreate project_content if it was deleted
+        if not self.project_content or not self.project_content.parent():
+            self.project_content = QTextBrowser()
+            self.project_content.setStyleSheet("""
+                QTextBrowser {
+                    background-color: rgba(255, 255, 255, 0.05);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 10px;
+                    padding: 20px;
+                    color: rgba(255, 255, 255, 0.9);
+                    font-size: 14px;
+                    line-height: 1.6;
+                }
+            """)
         
         # Add timer and project content to scroll area
         scroll_layout.addWidget(self.timer_label)
@@ -1466,7 +1659,7 @@ class ProjectWizardView(QWidget):
         # Start worker for first task
         self.current_task_worker = TaskDetailWorker(
             current_task_name, self.current_task_number, 
-            project_description, selected_language, use_local_only=True
+            project_description, selected_language, use_local_only=False
         )
         
         # Connect signals
@@ -1552,7 +1745,7 @@ class ProjectWizardView(QWidget):
         for i, task_name in enumerate(self.task_names, 1):
             # Start worker for this task
             worker = TaskDetailWorker(
-                task_name, i, project_description, selected_language, use_local_only=True
+                task_name, i, project_description, selected_language, use_local_only=False
             )
             worker.detail_generated.connect(self.on_task_detail_generated)
             worker.detail_failed.connect(self.on_task_detail_failed)
@@ -1624,13 +1817,17 @@ class ProjectWizardView(QWidget):
         logger.info(f"📄 Full task detail response: {task_detail}")
         logger.info(f"📏 Task detail length: {len(task_detail)} characters")
         
-        # Store the detail
-        self.project_config['task_details'][task_number] = task_detail
+        # Extract JSON from the full response for clean display
+        from src.core.ai.project_prompts import extract_task_json_from_response
+        clean_json = extract_task_json_from_response(task_detail)
+        
+        # Store the clean JSON detail
+        self.project_config['task_details'][task_number] = clean_json
         
         logger.info(f"💾 Task detail stored in project_config")
-        logger.info(f"🚀 Calling show_complete_current_task()")
+        logger.info(f"🚀 Calling show_complete_current_task() with clean JSON")
         
-        self.show_complete_current_task(task_name, task_detail)
+        self.show_complete_current_task(task_name, clean_json)
         
         self.start_background_task_generation()
     
@@ -1767,7 +1964,10 @@ class ProjectWizardView(QWidget):
         scroll_layout.addStretch()
         self.scroll_area.setWidget(scroll_widget)
         
-        # Update navigation
+        # Update navigation - show complete button and control next button
+        task_completed = self.project_ops.is_task_completed(self.current_project_id, self.current_task_number) if self.current_project_id else False
+        self.update_task_navigation(task_completed)
+        
         if self.current_task_number < len(self.task_names):
             next_step = self.current_task_number + 1
             self.next_button.setText(f"Step {next_step} →")
@@ -1775,8 +1975,112 @@ class ProjectWizardView(QWidget):
             self.next_button.setText("Complete Project →")
         
         self.next_button.setVisible(True)
-        self.next_button.setEnabled(True)
+        self.next_button.setEnabled(task_completed)
         self.back_button.setEnabled(True)
+    
+    def update_task_navigation(self, task_completed):
+        """Update the navigation buttons based on task completion status"""
+        if task_completed:
+            # Task is completed - hide complete button, show completed status in button text
+            self.complete_button.setText("Task Completed")
+            self.complete_button.setEnabled(False)
+            self.complete_button.setStyleSheet("""
+                QPushButton {
+                    font-size: 14px;
+                    color: #27AE60;
+                    background-color: rgba(39, 174, 96, 0.1);
+                    border: 2px solid #27AE60;
+                    border-radius: 8px;
+                    padding: 12px 24px;
+                }
+            """)
+        else:
+            # Task is not completed - show complete button
+            self.complete_button.setText("Mark Task as Complete")
+            self.complete_button.setEnabled(True)
+            self.complete_button.setStyleSheet("""
+                QPushButton {
+                    font-size: 14px;
+                    color: white;
+                    background-color: #27AE60;
+                    border: none;
+                    border-radius: 8px;
+                    padding: 12px 24px;
+                }
+                QPushButton:hover {
+                    background-color: #229954;
+                }
+            """)
+        
+        # Always show the complete button when viewing a task
+        self.complete_button.setVisible(True)
+    
+    def add_complete_task_button(self, layout):
+        """Add Complete Task button"""
+        # Check if task is already completed
+        task_completed = self.project_ops.is_task_completed(self.current_project_id, self.current_task_number) if self.current_project_id else False
+        
+        button_container = QWidget()
+        button_layout = QHBoxLayout(button_container)
+        button_layout.setContentsMargins(0, 20, 0, 20)
+        
+        if task_completed:
+            # Show completed status
+            complete_label = QLabel("Task Completed")
+            complete_label.setAlignment(Qt.AlignCenter)
+            complete_label.setStyleSheet("""
+                QLabel {
+                    font-size: 16px;
+                    font-weight: bold;
+                    color: #27AE60;
+                    padding: 15px 30px;
+                    background-color: rgba(39, 174, 96, 0.1);
+                    border: 2px solid #27AE60;
+                    border-radius: 25px;
+                }
+            """)
+            button_layout.addWidget(complete_label)
+        else:
+            # Show complete button
+            complete_button = QPushButton("Mark Task as Complete")
+            complete_button.setStyleSheet("""
+                QPushButton {
+                    font-size: 16px;
+                    font-weight: bold;
+                    color: white;
+                    background-color: #27AE60;
+                    border: none;
+                    border-radius: 25px;
+                    padding: 15px 30px;
+                    margin: 10px;
+                }
+                QPushButton:hover {
+                    background-color: #229954;
+                    transform: translateY(-1px);
+                }
+                QPushButton:pressed {
+                    background-color: #1E8449;
+                }
+            """)
+            complete_button.clicked.connect(self.complete_current_task)
+            button_layout.addWidget(complete_button)
+        
+        layout.addWidget(button_container)
+    
+    def complete_current_task(self):
+        """Mark the current task as completed"""
+        if self.current_project_id and hasattr(self, 'current_task_number'):
+            # Update task status to completed
+            success = self.project_ops.update_task_status(
+                self.current_project_id, 
+                self.current_task_number, 
+                'completed'
+            )
+            
+            if success:
+                # Update navigation to show completed status and enable next button
+                self.update_task_navigation(task_completed=True)
+                self.next_button.setEnabled(True)
     
     def add_cursor_evaluation_section(self, layout, task_name):
         """Add the Cursor AI evaluation section"""
@@ -1996,7 +2300,10 @@ Please analyze my files now and give me feedback!"""
     
     def previous_step(self):
         """Go to previous step"""
-        if self.current_step == 1:
+        if hasattr(self, 'viewing_continued_project') and self.viewing_continued_project:
+            self.viewing_continued_project = False
+            self.show_project_choice()
+        elif self.current_step == 1:
             # Don't go back to introduction/terms - go back to dashboard instead
             self.main_window.show_dashboard()
         elif self.current_step == 2:
@@ -2139,7 +2446,7 @@ Please analyze my files now and give me feedback!"""
         logger.info(f"🏗️ Creating TaskDetailWorker instance")
         self.current_task_worker = TaskDetailWorker(
             current_task_name, self.current_task_number, 
-            project_description, selected_language, use_local_only=True
+            project_description, selected_language, use_local_only=False
         )
         
         logger.info(f"🔗 Connecting TaskDetailWorker signals")

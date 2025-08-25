@@ -3,7 +3,7 @@ Project Generation Prompts for The Engineer AI Tutor
 Prompts for generating contextual programming projects for young African learners
 """
 
-def create_project_generation_prompt(user_scores, selected_language, user_data):
+def create_project_generation_prompt(user_scores, selected_language, user_data, project_theme=None):
     """
     Create a prompt for AI to generate a contextual project for young African learners
     
@@ -11,31 +11,48 @@ def create_project_generation_prompt(user_scores, selected_language, user_data):
         user_scores: Dict containing initial assessment and project scores
         selected_language: The programming language chosen by the user
         user_data: User profile information including age, location context
+        project_theme: Optional theme to guide project generation for variety
     """
     
-    # Extract scores
-    initial_score = user_scores.get('initial_assessment_score', 0)
+    # Extract scores safely
+    initial_score = user_scores.get('overall_score', user_scores.get('initial_assessment_score', 0))
     section_scores = user_scores.get('section_scores', {})
     username = user_scores.get('username', 'Student')
     
-    # Format section scores for the prompt
+    # Format section scores for the prompt (handle different data structures)
     score_breakdown = []
-    for section, score in section_scores.items():
-        score_breakdown.append(f"- {section}: {score:.1f}%")
+    try:
+        if isinstance(section_scores, dict):
+            for section, score_data in section_scores.items():
+                if isinstance(score_data, dict) and 'correct' in score_data and 'total' in score_data:
+                    # Handle format: {"section": {"correct": 2, "total": 4}}
+                    percentage = (score_data['correct'] / score_data['total']) * 100 if score_data['total'] > 0 else 0
+                    score_breakdown.append(f"- {section}: {percentage:.1f}%")
+                elif isinstance(score_data, (int, float)):
+                    # Handle format: {"section": 85.5}
+                    score_breakdown.append(f"- {section}: {score_data:.1f}%")
+    except (TypeError, KeyError, ZeroDivisionError):
+        pass  # If parsing fails, just use default
     
     score_summary = "\n".join(score_breakdown) if score_breakdown else "No detailed scores available"
+    
+    # Ensure all variables are safe for f-string formatting
+    safe_username = str(username) if username else "Student"
+    safe_initial_score = float(initial_score) if isinstance(initial_score, (int, float)) else 0.0
+    safe_selected_language = str(selected_language) if selected_language else "Python"
+    safe_score_summary = str(score_summary) if score_summary else "No detailed scores available"
     
     prompt = f"""You are an AI Tutor creating a programming project for a young learner in Africa aged 12-18. 
 
 STUDENT PROFILE:
-- Name: {username}
+- Name: {safe_username}
 - Age Range: 12-18 years old
 - Location Context: Africa (consider local challenges, opportunities, and cultural context)
-- Overall Engineering Thinking Score: {initial_score:.1f}%
+- Overall Engineering Thinking Score: {safe_initial_score:.1f}%
 - Detailed Assessment Scores:
-{score_summary}
+{safe_score_summary}
 
-SELECTED PROGRAMMING LANGUAGE: {selected_language}
+SELECTED PROGRAMMING LANGUAGE: {safe_selected_language}
 
 PROJECT REQUIREMENTS:
 1. **Context-Specific**: The project must solve a real problem that young people in Africa can relate to and understand. Consider challenges like:
@@ -45,6 +62,8 @@ PROJECT REQUIREMENTS:
    - Agricultural or environmental challenges
    - Transportation or logistics issues
    - Local entrepreneurship opportunities
+
+{"FOCUS THEME: Pay special attention to " + str(project_theme) + " when designing this project." if project_theme else ""}
 
 2. **Technical Scope**: 
    - Frontend: Simple, clean user interface (no heavy frameworks)
@@ -147,27 +166,69 @@ Output ONLY the JSON array, no other text."""
 
     return prompt
 
-def create_task_detail_gbnf_grammar():
+
+
+def extract_json_from_reasoning_response(response: str) -> str:
     """
-    Create GBNF grammar for task detail JSON output.
-    This ensures the model can ONLY output valid JSON in the expected format.
+    Extract JSON object from a response that may contain reasoning before the JSON.
+    Returns only the JSON part for parsing.
     """
-    return '''root ::= "{" space title-kv "," space ticket-number-kv "," space description-kv "," space story-points-kv "," space test-commands-kv "}" space
+    if not response:
+        return ""
+    
+    json_start = response.find('{"')
+    if json_start == -1:
+        return response
+    
+    # Extract from the JSON start to the end
+    json_part = response[json_start:].strip()
+    return json_part
 
-title-kv ::= "\\"title\\":" space string
-ticket-number-kv ::= "\\"ticket_number\\":" space string
-description-kv ::= "\\"description\\":" space string
-story-points-kv ::= "\\"story_points\\":" space integer
-test-commands-kv ::= "\\"test_commands\\":" space string-array
-
-string ::= "\\"" char* "\\""
-char ::= [^"\\\\\\x00-\\x1F] | "\\\\" (["\\\\bfnrt] | "u" [0-9a-fA-F]{4})
-
-integer ::= [0-9]+
-
-string-array ::= "[" space (string ("," space string)*)? "]" space
-
-space ::= [ \\t\\n]*'''
+def extract_task_json_from_response(response: str) -> str:
+    """
+    Extract JSON from AI task generation responses with robust brace matching.
+    Specifically designed for task detail extraction.
+    """
+    if not response:
+        return ""
+    
+    # Remove code block markers if present
+    response = response.replace('```json', '').replace('```', '')
+    
+    # Find JSON start
+    json_start = response.find('{')
+    if json_start == -1:
+        # Fallback to original function logic
+        return extract_json_from_reasoning_response(response)
+    
+    # Count braces to find the matching closing brace
+    brace_count = 0
+    json_end = json_start
+    
+    for i in range(json_start, len(response)):
+        if response[i] == '{':
+            brace_count += 1
+        elif response[i] == '}':
+            brace_count -= 1
+            if brace_count == 0:
+                json_end = i + 1
+                break
+    
+    # Extract the balanced JSON
+    if brace_count == 0:  # Found matching closing brace
+        json_part = response[json_start:json_end].strip()
+        
+        # Validate it's valid JSON by trying to parse
+        try:
+            import json
+            json.loads(json_part)
+            return json_part
+        except json.JSONDecodeError:
+            # If invalid, fall back to original logic
+            pass
+    
+    # Fallback to original function logic
+    return extract_json_from_reasoning_response(response)
 
 def create_task_detail_prompt(task_name, task_number, project_description, selected_language, completed_tasks_summary: str = ""):
     """
@@ -179,42 +240,47 @@ def create_task_detail_prompt(task_name, task_number, project_description, selec
     if completed_tasks_summary:
         completed_context = f"You've already completed: {completed_tasks_summary}\n"
     
-    prompt = f"""You are a senior engineer, your role is to break down the project {project_description} into manageable tasks. For context, you are helping kids aged 12-18 to help them learn how to code, how to build software and understand software engineering concepts. You need to break the project down into Jira like tickets.
+    prompt = f"""You are a senior software engineer creating a development step for students aged 12-18 to build the project.
 
-PROJECT CONTEXT:
-{project_description}
+PROJECT: {project_description}
 
-Completed tasks:
+CURRENT STEP: {task_name} (Step #{task_number} of 7-10 total steps)
+
 {completed_context}
 
-Next engineering challenge: Create ticket #{task_number} - {task_name}
+EXAMPLES LIBRARY:
+{open('prompt_examples_library.md', 'r').read()}
 
-CREATE ONE DETAILED JIRA-STYLE ENGINEERING TICKET:
+FOLLOW THE EXAMPLES ABOVE for:
+- How to structure Cursor AI prompts
+- The level of detail and educational content
+- How to explain engineering concepts simply
+- The format and style of instructions
 
-**[ENGINEERING TICKET {task_number}] {task_name}**
+REQUIREMENTS:
+- Create buildable development steps where necessary
+- Use the technology stack specified in the project
+- Include 4-6 Cursor AI prompts following the examples above - add these to the description
+- Explain engineering concepts simply for beginners
+- Build on previously completed tasks when applicable
 
-**THE ENGINEERING CHALLENGE:**
-The ticket should break down the project into a manageable task based on what has already completed and what is left to complete.
+DESCRIPTION MUST CONTAIN:
+1. What to build: [specific feature description]
+2. Why it matters: [educational value and real-world connection]
+3. Cursor prompts: [4-6 specific prompts starting with "Cursor prompt:"]
+4. Engineering concepts: [simple explanations for beginners]
+5. Real-world connection: [how this applies to actual software]
+6. Research topics: [what students should explore next]
 
-The ticket should contain prompts that the user will pass into Cursor AI to help them complete the task.
+OUTPUT FORMAT - Return ONLY valid JSON:
+{{
+  "title": "Specific, actionable development step",
+  "ticket_number": "{task_number} out of X",
+  "description": "DESCRIPTION OUTPUT HERE",
+  "story_points": 1-8,
+  "test_commands": ["command1", "command2", "command3"]
+}}
 
-The prompts should; 
-- build on the previous task
-- not generate the full code solution, generate most of the code, but leave some for the user to complete 
-- guide the user through the task to understand what they need to think about and do to complete the task
-- the prompt should return information educating the user about everything they are doing. Concepts need to explained as simply as possible (explain like I'm 12 and then explain to an engineer)
-- the prompt should return other things the user should research and study to develop a deeper understanding of each concept covered
-- the prompt should explain why this concept is important in engineering and software development and how it fits into the bigger picture of the project
-- the prompt should ensure we follow best practices and industry patterns, explaining this to the end user
-- the prompt should also return questions for the user to answer to ensure they understand the concepts and are able to complete the task
-
-Return ONLY a JSON object with exactly these fields:
-- "title": The ticket title
-- "ticket_number": Format as "X out of Y" (e.g., "1 out of 8") 
-- "description": Detailed ticket description with all the educational content
-- "story_points": Integer representing effort level (1-8 scale)
-- "test_commands": Array of strings with commands to test completion
-
-Output must be valid JSON only, no other text."""
+Use the examples above as your guide for quality and format."""
 
     return prompt 

@@ -334,7 +334,12 @@ class Project(Base):
     domain = Column(SQLEnum(EngineeringDomain), nullable=False)
     
     # AI-generated content
-    project_description = Column(Text, nullable=False)  
+    project_title = Column(Text, nullable=False)
+    problem_statement = Column(Text, nullable=False)
+    project_description = Column(Text, nullable=False)
+    key_features = Column(Text, nullable=False)  
+    technology_stack = Column(Text, nullable=False)
+    difficulty_assessment = Column(Text, nullable=False)
     task_headers = Column(Text)  
     
     # Project status
