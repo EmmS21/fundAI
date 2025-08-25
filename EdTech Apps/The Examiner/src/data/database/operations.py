@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session, sessionmaker, joinedload
 from sqlalchemy import create_engine, select
-from .models import User, Subject, UserSubject, ExamResult, PaperCache, CachedQuestion, CachedAnswer
+from .models import User, Subject, UserSubject, ExamResult, PaperCache, CachedQuestion, CachedAnswer, QuestionResponse
 from src.utils.db import engine, Session, get_db_session
 from src.utils.hardware_identifier import HardwareIdentifier
 from src.core.queue_manager import QueueManager, QueuePriority
@@ -428,219 +428,85 @@ class UserOperations:
     @staticmethod
     def get_performance_history(user_id: int) -> List[Dict]:
         """
-        Fetch performance history for a given user directly from answer_history.
-        NOTE: This version cannot filter by subject/level and lacks detailed paper info
-              due to missing data in cached_questions table.
-
-        Args:
-            user_id: The ID of the current user.
-
-        Returns:
-            A list of dictionaries, each representing a past answer attempt with
-            timestamp and report status. Returns an empty list on error.
+        Fetch performance history for a given user using exam_results and question_responses.
+        Returns a list of dictionaries, each representing a past answer attempt with
+        timestamp and report status. Returns an empty list on error.
         """
-        logger.debug(f"Fetching *basic* performance history for user {user_id}")
+        logger.debug(f"Fetching performance history for user {user_id} (ORM version)")
         history = []
-
-        conn = None
         try:
-            conn = sqlite3.connect(STUDENT_PROFILE_DB_PATH)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            # Simplified query - only select from answer_history
-            sql = """
-                SELECT
-                    ah.history_id,
-                    ah.answer_timestamp,
-                    ah.cloud_report_received,
-                    ah.cached_question_id, -- This is now unique_question_key
-                    cq.paper_document_id, -- Keep paper_document_id if needed
-                    cq.question_number_str,
-                    cq.subject,
-                    cq.level,
-                    cq.paper_year,
-                    cq.topic,            -- Added topic
-                    cq.subtopic,         -- Added subtopic
-                    cq.content AS question_content, -- Added question content
-                    cq.marks AS question_marks,     -- Added question marks
-                    ah.user_answer_json, -- Added user's answer
-                    ah.local_ai_grade,   -- Added local AI grade
-                    ah.local_ai_rationale -- Added local AI rationale
-                FROM
-                    answer_history ah
-                JOIN
-                    cached_questions cq ON ah.cached_question_id = cq.unique_question_key
-                WHERE
-                    ah.user_id = ?
-                ORDER BY
-                    ah.answer_timestamp DESC;
-            """
-
-            params = [user_id]
-            logger.debug(f"Executing SQL: {sql} with params: {params}")
-            cursor.execute(sql, params)
-            rows = cursor.fetchall()
-            logger.info(f"Found {len(rows)} history records for user {user_id}.")
-
-            for row in rows:
-                history.append({
-                    "history_id": row["history_id"],
-                    "cached_question_id": row["cached_question_id"],
-                    "timestamp": row["answer_timestamp"],
-                    # Convert DB boolean (0/1) to Python bool
-                    "is_final": bool(row["cloud_report_received"]),
-                    # We cannot reliably get subject/level/paper info here
-                    "subject": row["subject"],
-                    "level": row["level"],
-                    "paper_year": row["paper_year"],
-                    "paper_number": row["question_number_str"],
-                })
-
-        except sqlite3.Error as e:
-            logger.error(f"Database error fetching basic performance history: {e}", exc_info=True)
+            with get_db_session() as session:
+                exam_results = session.query(ExamResult).filter_by(user_id=user_id).order_by(ExamResult.exam_date.desc()).all()
+                for exam in exam_results:
+                    for qr in exam.question_responses:
+                        history.append({
+                            "exam_result_id": exam.id,
+                            "question_response_id": qr.id,
+                            "timestamp": exam.exam_date,
+                            "subject": exam.subject,
+                            "level": exam.level,
+                            "paper_year": exam.exam_date.year if exam.exam_date else None,
+                            "question_text": qr.question_text,
+                            "is_final": bool(qr.feedback is not None),
+                            "marks_achieved": qr.marks_achieved,
+                            "marks_possible": qr.marks_possible,
+                        })
         except Exception as e:
-            logger.error(f"Unexpected error fetching basic performance history: {e}", exc_info=True)
-        finally:
-            if conn:
-                conn.close()
-
+            logger.error(f"Error fetching performance history: {e}", exc_info=True)
         return history
 
     @staticmethod
-    def get_single_report_item_details(history_id_to_find: int) -> Optional[Dict]:
+    def get_single_report_item_details(question_response_id: int) -> Optional[Dict]:
         """
         Fetches detailed information for a single report item (answered question)
-        from the answer_history (SQLite) and cached_questions (SQLite join),
-        and also fetches the correct answer from cached_answers (main DB).
-        It now returns distinct fields for local and cloud AI feedback.
+        from question_responses and exam_results, and also fetches the correct answer from cached_answers (main DB).
+        Returns distinct fields for local and cloud AI feedback.
         """
-        logger.debug(f"Fetching single report item details for history_id {history_id_to_find}")
-        report_item_dict: Optional[Dict] = None # Initialize to ensure it's a Dict or None
-        conn_sqlite = None 
-        
+        logger.debug(f"Fetching single report item details for question_response_id {question_response_id}")
+        report_item_dict: Optional[Dict] = None
         try:
-            conn_sqlite = sqlite3.connect(STUDENT_PROFILE_DB_PATH)
-            conn_sqlite.row_factory = sqlite3.Row 
-            cursor = conn_sqlite.cursor()
-
-            sql_history = """
-                SELECT
-                    ah.history_id, 
-                    ah.user_id, 
-                    ah.answer_timestamp, 
-                    ah.cloud_report_received,
-                    ah.cloud_report_viewed_timestamp, -- Added for UI logic if needed
-                    ah.cached_question_id, 
-                    ah.user_answer_json, 
-                    ah.local_ai_grade,
-                    ah.local_ai_rationale,
-                    ah.local_ai_study_topics_json, -- Added
-                    ah.cloud_ai_grade,             -- Added
-                    ah.cloud_ai_rationale,         -- Added
-                    ah.cloud_ai_study_topics_json, -- Added
-                    cq.question_number_str, 
-                    cq.subject AS cq_subject,       
-                    cq.level AS cq_level,           
-                    cq.paper_year AS cq_paper_year, 
-                    cq.content AS question_text, 
-                    cq.marks AS question_total_marks
-                FROM answer_history ah
-                JOIN cached_questions cq ON ah.cached_question_id = cq.unique_question_key
-                WHERE ah.history_id = ?;
-            """
-            cursor.execute(sql_history, [history_id_to_find])
-            row = cursor.fetchone()
-
-            if row:
-                user_answer = None
-                try:
-                    if row["user_answer_json"]:
-                        user_answer = json.loads(row["user_answer_json"])
-                except json.JSONDecodeError:
-                    logger.warning(f"Failed to parse user_answer_json for history_id {history_id_to_find}")
-
-                local_ai_study_topics = None
-                try:
-                    if row["local_ai_study_topics_json"]:
-                        local_ai_study_topics = json.loads(row["local_ai_study_topics_json"])
-                except json.JSONDecodeError:
-                    logger.warning(f"Failed to parse local_ai_study_topics_json for history_id {history_id_to_find}")
-                
-                cloud_ai_study_topics = None
-                try:
-                    if row["cloud_ai_study_topics_json"]:
-                        cloud_ai_study_topics = json.loads(row["cloud_ai_study_topics_json"])
-                except json.JSONDecodeError:
-                    logger.warning(f"Failed to parse cloud_ai_study_topics_json for history_id {history_id_to_find}")
-
+            with get_db_session() as session:
+                qr = session.query(QuestionResponse).filter_by(id=question_response_id).first()
+                if not qr:
+                    logger.warning(f"No QuestionResponse found for ID {question_response_id}")
+                    return None
+                exam = qr.exam_result
+                # Try to get cached question info if available
+                cached_question = qr.cached_question
+                # Try to get correct answer from cached_answers if available
+                correct_answer = "N/A"
+                if qr.cached_question_id:
+                    cached_answer_entry = session.query(CachedAnswer).filter(
+                        CachedAnswer.cached_question_unique_key == qr.cached_question_id
+                    ).first()
+                    if cached_answer_entry and cached_answer_entry.answer_content:
+                        answer_obj = cached_answer_entry.answer_content
+                        if isinstance(answer_obj, dict) and "text" in answer_obj:
+                            correct_answer = str(answer_obj["text"])
+                        else:
+                            try:
+                                correct_answer = json.dumps(answer_obj)
+                            except TypeError:
+                                correct_answer = str(answer_obj)
                 report_item_dict = {
-                    "history_id": row["history_id"], 
-                    "user_id": row["user_id"],
-                    "timestamp": row["answer_timestamp"], 
-                    "cached_question_id": row["cached_question_id"], 
-                    "user_answer": user_answer,
-                    "question_text": row["question_text"], 
-                    "question_total_marks": row["question_total_marks"],
-                    "subject": row["cq_subject"], 
-                    "level": row["cq_level"], 
-                    "paper_year": row["cq_paper_year"], 
-                    "paper_number": row["question_number_str"], 
-                    
-                    "has_local_report_data": bool(row["local_ai_grade"] is not None or row["local_ai_rationale"] is not None),
-                    "local_ai_grade": row["local_ai_grade"],
-                    "local_ai_rationale": row["local_ai_rationale"],
-                    "local_ai_study_topics": local_ai_study_topics,
-
-                    "has_cloud_report": bool(row["cloud_report_received"]),
-                    "cloud_report_viewed_timestamp": row["cloud_report_viewed_timestamp"],
-                    "cloud_ai_grade": row["cloud_ai_grade"],
-                    "cloud_ai_rationale": row["cloud_ai_rationale"],
-                    "cloud_ai_study_topics": cloud_ai_study_topics,
-                    
-                    "correct_answer": "N/A" # Default, updated in Step 2
+                    "question_response_id": qr.id,
+                    "exam_result_id": exam.id if exam else None,
+                    "timestamp": exam.exam_date if exam else None,
+                    "question_text": qr.question_text,
+                    "question_total_marks": qr.marks_possible,
+                    "subject": exam.subject if exam else None,
+                    "level": exam.level if exam else None,
+                    "paper_year": exam.exam_date.year if exam and exam.exam_date else None,
+                    "student_answer": qr.student_answer,
+                    "is_correct": qr.is_correct,
+                    "marks_achieved": qr.marks_achieved,
+                    "feedback": qr.feedback,
+                    "cached_question_id": qr.cached_question_id,
+                    "correct_answer": correct_answer,
                 }
-                logger.info(f"Found base report item for history_id {history_id_to_find} (Q_Key: {report_item_dict['cached_question_id']}) from SQLite.")
-            else:
-                logger.warning(f"No base report item found in answer_history for H_ID {history_id_to_find}")
-                return None
-        except sqlite3.Error as e:
-            logger.error(f"SQLite DB error fetching base report item for H_ID {history_id_to_find}: {e}", exc_info=True)
-            return None
         except Exception as e:
-            logger.error(f"Unexpected error fetching base report item for H_ID {history_id_to_find}: {e}", exc_info=True)
+            logger.error(f"Error fetching report item details for question_response_id {question_response_id}: {e}", exc_info=True)
             return None
-        finally:
-            if conn_sqlite:
-                conn_sqlite.close()
-
-        if not report_item_dict:
-            return None
-
-        # Step 2: Fetch correct answer from cached_answers table (main SQLAlchmey DB)
-        try:
-            with get_db_session() as session_main_db: 
-                cached_answer_entry = session_main_db.query(CachedAnswer).filter(
-                    CachedAnswer.cached_question_unique_key == report_item_dict["cached_question_id"]
-                ).first()
-
-                if cached_answer_entry and cached_answer_entry.answer_content:
-                    answer_obj = cached_answer_entry.answer_content 
-                    # Ensure answer_obj (which is already a dict from JSON) is correctly handled
-                    if isinstance(answer_obj, dict) and "text" in answer_obj:
-                         report_item_dict["correct_answer"] = str(answer_obj["text"]) 
-                    else: # If it's a dict but not the expected structure, or not a dict
-                         logger.warning(f"Correct answer content for Q_Key {report_item_dict['cached_question_id']} has unexpected structure or type: {type(answer_obj)}. Displaying as JSON string.")
-                         try:
-                             report_item_dict["correct_answer"] = json.dumps(answer_obj)
-                         except TypeError:
-                             report_item_dict["correct_answer"] = str(answer_obj) # Fallback to string conversion
-                    logger.info(f"Found correct answer for Q_Key {report_item_dict['cached_question_id']} from main DB.")
-                else:
-                    logger.warning(f"No correct answer found in cached_answers for Q_Key {report_item_dict['cached_question_id']}")
-        except Exception as e:
-            logger.error(f"Error fetching correct answer from main DB for Q_Key {report_item_dict['cached_question_id']}: {e}", exc_info=True)
-        
         return report_item_dict
 
     @staticmethod
