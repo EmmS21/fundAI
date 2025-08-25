@@ -184,6 +184,52 @@ def extract_json_from_reasoning_response(response: str) -> str:
     json_part = response[json_start:].strip()
     return json_part
 
+def extract_task_json_from_response(response: str) -> str:
+    """
+    Extract JSON from AI task generation responses with robust brace matching.
+    Specifically designed for task detail extraction.
+    """
+    if not response:
+        return ""
+    
+    # Remove code block markers if present
+    response = response.replace('```json', '').replace('```', '')
+    
+    # Find JSON start
+    json_start = response.find('{')
+    if json_start == -1:
+        # Fallback to original function logic
+        return extract_json_from_reasoning_response(response)
+    
+    # Count braces to find the matching closing brace
+    brace_count = 0
+    json_end = json_start
+    
+    for i in range(json_start, len(response)):
+        if response[i] == '{':
+            brace_count += 1
+        elif response[i] == '}':
+            brace_count -= 1
+            if brace_count == 0:
+                json_end = i + 1
+                break
+    
+    # Extract the balanced JSON
+    if brace_count == 0:  # Found matching closing brace
+        json_part = response[json_start:json_end].strip()
+        
+        # Validate it's valid JSON by trying to parse
+        try:
+            import json
+            json.loads(json_part)
+            return json_part
+        except json.JSONDecodeError:
+            # If invalid, fall back to original logic
+            pass
+    
+    # Fallback to original function logic
+    return extract_json_from_reasoning_response(response)
+
 def create_task_detail_prompt(task_name, task_number, project_description, selected_language, completed_tasks_summary: str = ""):
     """
     Create a story-driven engineering ticket that teaches real software engineering concepts

@@ -729,6 +729,61 @@ class ProjectOperations:
         finally:
             self.db.close_session(session)
     
+    def update_task_status(self, project_id: int, task_number: int, status: str) -> bool:
+        """Update the status of a specific task"""
+        from .models import ProjectTask
+        from datetime import datetime
+        
+        session = self.db.get_session()
+        try:
+            task = session.query(ProjectTask).filter(
+                ProjectTask.project_id == project_id,
+                ProjectTask.task_number == task_number
+            ).first()
+            
+            if task:
+                old_status = task.status
+                task.status = status
+                task.updated_at = datetime.utcnow()
+                
+                # Set completion timestamp if completing
+                if status == 'completed' and old_status != 'completed':
+                    task.completed_at = datetime.utcnow()
+                elif status == 'in_progress' and not task.started_at:
+                    task.started_at = datetime.utcnow()
+                
+                session.commit()
+                logger.info(f"Task {task_number} status updated to: {status}")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Error updating task status: {e}")
+            return False
+        finally:
+            self.db.close_session(session)
+    
+    def is_task_completed(self, project_id: int, task_number: int) -> bool:
+        """Check if a specific task is completed"""
+        from .models import ProjectTask
+        
+        session = self.db.get_session()
+        try:
+            task = session.query(ProjectTask).filter(
+                ProjectTask.project_id == project_id,
+                ProjectTask.task_number == task_number
+            ).first()
+            
+            return task and task.status == 'completed'
+            
+        except Exception as e:
+            logger.error(f"Error checking task completion status: {e}")
+            return False
+        finally:
+            self.db.close_session(session)
+    
     def complete_project(self, project_id: int) -> bool:
         """Mark a project as completed"""
         from .models import Project
