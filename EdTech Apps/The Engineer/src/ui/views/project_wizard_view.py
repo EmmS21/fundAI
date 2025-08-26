@@ -15,6 +15,7 @@ try:
 except ImportError:
     TAB_BAR_AVAILABLE = False
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
+from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFont, QTextCursor
 from core.ai.project_generator import ProjectGenerator
 from ..utils import create_offline_warning_banner
@@ -1913,18 +1914,8 @@ class ProjectWizardView(QWidget):
         prompts_layout = QVBoxLayout(prompts_widget)
         if 'cursor_prompts' in task_data:
             for prompt in task_data['cursor_prompts']:
-                prompt_label = QLabel(prompt)
-                prompt_label.setWordWrap(True)
-                prompt_label.setStyleSheet("""
-                    QLabel {
-                        padding: 10px;
-                        margin: 5px;
-                        background-color: rgba(255, 255, 255, 0.05);
-                        border-radius: 6px;
-                        color: rgba(255, 255, 255, 0.9);
-                    }
-                """)
-                prompts_layout.addWidget(prompt_label)
+                prompt_container = self.create_copyable_prompt_widget(prompt)
+                prompts_layout.addWidget(prompt_container)
         tab_content.addWidget(prompts_widget)
         
         # Tab 2: Test Commands
@@ -1972,6 +1963,95 @@ class ProjectWizardView(QWidget):
         # Add to layout
         layout.addWidget(tab_bar)
         layout.addWidget(tab_content)
+
+    def create_copyable_prompt_widget(self, prompt_text):
+        """Create a hover-reveal copy button widget for cursor prompts"""
+        
+        # Custom widget class for hover detection
+        class HoverCopyWidget(QFrame):
+            def __init__(self, prompt_text, parent=None):
+                super().__init__(parent)
+                self.prompt_text = prompt_text
+                self.copy_button = None
+                self.setup_ui()
+            
+            def setup_ui(self):
+                # Container styling
+                self.setStyleSheet("""
+                    QFrame {
+                        padding: 10px;
+                        margin: 5px;
+                        background-color: rgba(255, 255, 255, 0.05);
+                        border-radius: 6px;
+                        border: 1px solid transparent;
+                    }
+                    QFrame:hover {
+                        background-color: rgba(255, 255, 255, 0.08);
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                    }
+                """)
+                
+                # Layout: text takes most space, button on right
+                layout = QHBoxLayout(self)
+                layout.setContentsMargins(10, 10, 10, 10)
+                
+                # Prompt text
+                self.prompt_label = QLabel(self.prompt_text)
+                self.prompt_label.setWordWrap(True)
+                self.prompt_label.setStyleSheet("""
+                    QLabel {
+                        color: rgba(255, 255, 255, 0.9);
+                        background: transparent;
+                        border: none;
+                        padding: 0px;
+                        margin: 0px;
+                    }
+                """)
+                layout.addWidget(self.prompt_label, 1)  # Take most space
+                
+                # Copy button (initially hidden)
+                try:
+                    from qfluentwidgets import ToolButton
+                    from qfluentwidgets.common.icon import FluentIcon
+                    
+                    self.copy_button = ToolButton(FluentIcon.COPY)
+                    self.copy_button.setToolTip("Copy to clipboard")
+                    self.copy_button.setVisible(False)  
+                    self.copy_button.clicked.connect(self.copy_to_clipboard)
+                    layout.addWidget(self.copy_button, 0)  
+                except ImportError:
+                    # Fallback: regular button
+                    self.copy_button = QPushButton("📋")
+                    self.copy_button.setFixedSize(30, 30)
+                    self.copy_button.setVisible(False)
+                    self.copy_button.clicked.connect(self.copy_to_clipboard)
+                    layout.addWidget(self.copy_button, 0)
+            
+            def enterEvent(self, event):
+                """Show copy button on hover"""
+                if self.copy_button:
+                    self.copy_button.setVisible(True)
+                super().enterEvent(event)
+            
+            def leaveEvent(self, event):
+                """Hide copy button when hover ends"""
+                if self.copy_button:
+                    self.copy_button.setVisible(False)
+                super().leaveEvent(event)
+            
+            def copy_to_clipboard(self):
+                """Copy prompt text to system clipboard"""
+                try:
+                    QApplication.clipboard().setText(self.prompt_text)
+                    # Brief visual feedback
+                    if self.copy_button:
+                        original_text = self.copy_button.toolTip()
+                        self.copy_button.setToolTip("Copied!")
+                        QTimer.singleShot(1000, lambda: self.copy_button.setToolTip(original_text))
+                except Exception as e:
+                    print(f"Copy failed: {e}")
+        
+        return HoverCopyWidget(prompt_text)
 
     def convert_task_detail_to_html(self, task_detail):
         """Convert individual task detail to HTML"""
