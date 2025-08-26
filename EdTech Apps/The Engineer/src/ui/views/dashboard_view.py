@@ -184,22 +184,22 @@ class DashboardView(QWidget):
         # Activity cards
         activities = [
             {
-                'title': '🧩 Logic Puzzles',
+                'title': 'Logic Puzzles',
                 'description': 'Practice problem-solving with fun puzzles',
                 'action': 'Start Puzzles'
             },
             {
-                'title': '🏗️ Project Builder',
+                'title': 'Project Builder',
                 'description': 'Build simple projects step by step',
                 'action': 'Build Projects'
             },
             {
-                'title': '🤖 Code Playground',
+                'title': 'Code Playground',
                 'description': 'Experiment with simple programming concepts',
                 'action': 'Try Coding'
             },
             {
-                'title': '📚 Concept Explorer',
+                'title': 'Concept Explorer',
                 'description': 'Learn engineering concepts interactively',
                 'action': 'Explore Concepts'
             }

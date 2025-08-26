@@ -483,7 +483,7 @@ class DashboardView(QWidget):
         bottom_layout = QHBoxLayout()
         bottom_layout.setSpacing(20)
         
-        logic_label = QLabel("🧩 Logic Puzzles")
+        logic_label = QLabel("Logic Puzzles")
         logic_label.setAlignment(Qt.AlignCenter)
         logic_label.setStyleSheet("""
             QLabel {
@@ -502,7 +502,7 @@ class DashboardView(QWidget):
             }
         """)
         
-        build_label = QPushButton("🏗️ Build Projects")
+        build_label = QPushButton("Build Projects")
         build_label.setStyleSheet("""
             QPushButton {
                 background: rgba(255, 255, 255, 0.05);
@@ -565,7 +565,7 @@ class DashboardView(QWidget):
         in_progress_projects = self.get_in_progress_projects_count()
         total_skills = self.get_total_skills_count()
         
-        stats_text = f"🎯 {completed_projects} Completed  •  🚧 {in_progress_projects} In Progress  •  📊 {total_skills} Skills"
+        stats_text = f"{completed_projects} Completed  •  {in_progress_projects} In Progress  •  {total_skills} Skills"
         stats_label = QLabel(stats_text)
         stats_label.setAlignment(Qt.AlignCenter)
         stats_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)

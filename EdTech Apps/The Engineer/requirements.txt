@@ -1,11 +1,12 @@
 # The Engineer AI Tutor Dependencies
 # Core GUI Framework
 PySide6==6.8.0.2
+PySide6-Fluent-Widgets  # Modern UI components
 
 # AI Inference
 llama-cpp-python==0.3.9  # Optional on ARM64
 groq>=0.5.0
-openai>=1.0.0  # Additional AI provider option
+openai>=1.0.0  
 
 # Database & ORM
 sqlalchemy>=2.0.0

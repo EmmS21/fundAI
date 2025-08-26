@@ -6,8 +6,14 @@ Wizard to guide users through AI-assisted project creation
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QFrame, QScrollArea, QButtonGroup, QRadioButton, QTextEdit, QProgressBar,
-    QTextBrowser
+    QTextBrowser, QToolTip, QStackedWidget
 )
+
+try:
+    from qfluentwidgets import TabBar
+    TAB_BAR_AVAILABLE = True
+except ImportError:
+    TAB_BAR_AVAILABLE = False
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
 from PySide6.QtGui import QFont, QTextCursor
 from core.ai.project_generator import ProjectGenerator
@@ -322,8 +328,8 @@ class ProjectWizardView(QWidget):
         """Show the current task for an existing project"""
         print(f"🔍 DEBUG: show_existing_project_task() called with task number: {getattr(self, 'current_task_number', 'NOT SET')}")
         if not hasattr(self, 'current_task_number') or not self.task_names:
-            print(f"🔍 DEBUG: Missing current_task_number or task_names, showing introduction")
-            self.show_introduction()
+            print(f"🔍 DEBUG: Missing current_task_number or task_names, generating first task")
+            self.generate_and_show_current_task()
             return
         
         current_task_name = self.task_names[self.current_task_number - 1]
@@ -345,10 +351,9 @@ class ProjectWizardView(QWidget):
         
         if current_task_detail:
             self.show_complete_current_task(current_task_name, current_task_detail)
+            self.start_background_task_generation()
         else:
             self.generate_and_show_current_task()
-        
-        self.start_background_task_generation()
     
     def start_background_task_generation(self):
         """Start background generation of remaining empty tasks"""
@@ -422,7 +427,7 @@ class ProjectWizardView(QWidget):
     
     def add_skip_project_button(self, layout):
         """Add a skip project button to allow starting fresh"""
-        skip_button = QPushButton("🔄 Start New Project")
+        skip_button = QPushButton("Start New Project")
         skip_button.setStyleSheet("""
             QPushButton {
                 font-size: 14px;
@@ -687,8 +692,9 @@ class ProjectWizardView(QWidget):
     
     def show_introduction(self):
         """Show introduction step"""
-        self.clear_content()
-        content_layout = QVBoxLayout(self.content_area)
+        # Create fresh scroll widget like all other methods
+        scroll_widget = QWidget()
+        content_layout = QVBoxLayout(scroll_widget)
         
         title = QLabel("How This AI Tutor Works")
         title.setStyleSheet("""
@@ -785,6 +791,9 @@ class ProjectWizardView(QWidget):
             content_layout.addWidget(point_frame)
         
         content_layout.addStretch()
+        
+        # Set the scroll widget as the scroll area content
+        self.scroll_area.setWidget(scroll_widget)
         
         # Initially hide the next button until user scrolls to bottom
         self.next_button.setText("I Understand →")
@@ -1282,8 +1291,7 @@ class ProjectWizardView(QWidget):
             
         if self.current_step == 0:
             # User clicked "I Understand" from introduction
-            if self.current_project_id and hasattr(self, 'task_names') and self.task_names:
-                # User has existing project, show choice between continue or restart
+            if self.current_project_id and not self.project_config.get('is_completed', False) and self.project_config.get('status') != 'skipped':
                 self.show_project_choice()
             else:
                 # No existing project, proceed with project generation
@@ -1361,8 +1369,12 @@ class ProjectWizardView(QWidget):
         scroll_layout.addWidget(title)
         
         # Current project info
-        current_task_name = self.task_names[self.current_task_number - 1] if hasattr(self, 'current_task_number') else "your project"
-        notice_text = QLabel(f"You have an active project in progress.\nCurrently on: {current_task_name}")
+        if self.task_names and hasattr(self, 'current_task_number') and self.current_task_number <= len(self.task_names):
+            current_task_name = self.task_names[self.current_task_number - 1]
+            notice_text = QLabel(f"You have an active project in progress.\nCurrently on: {current_task_name}")
+        else:
+            project_title = self.project_config.get('title', 'Untitled Project')
+            notice_text = QLabel(f"You have an active project: {project_title}\nReady to generate tasks.")
         notice_text.setAlignment(Qt.AlignCenter)
         notice_text.setWordWrap(True)
         notice_text.setStyleSheet("""
@@ -1784,6 +1796,183 @@ class ProjectWizardView(QWidget):
                 f"<span style='color: rgba(255, 100, 100, 0.9);'>❌ Failed to generate details: {error_message}</span>"
             )
     
+    def create_task_card(self, layout, task_detail, task_data=None):
+        """Create a card-style display for task details"""
+        import json
+        
+        try:
+            # Parse the JSON task detail if not already provided
+            if task_data is None:
+                task_data = json.loads(task_detail)
+            
+            # Create card frame
+            card_frame = QFrame()
+            card_frame.setStyleSheet("""
+                QFrame {
+                    background-color: rgba(255, 255, 255, 0.05);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 12px;
+                    margin: 10px 0px;
+                    padding: 20px;
+                }
+            """)
+            
+            card_layout = QVBoxLayout(card_frame)
+            
+            # Description
+            description = task_data.get('description', 'No description available')
+            description_label = QLabel(description)
+            description_label.setWordWrap(True)
+            description_label.setStyleSheet("""
+                QLabel {
+                    font-size: 16px;
+                    line-height: 1.5;
+                    color: rgba(255, 255, 255, 0.9);
+                    margin-bottom: 15px;
+                }
+            """)
+            card_layout.addWidget(description_label)
+            
+            # Add engineering concepts as pill buttons
+            if 'engineering_concepts' in task_data:
+                try:
+                    from qfluentwidgets import PillPushButton
+                    
+                    # Create horizontal layout for pill buttons
+                    pills_layout = QHBoxLayout()
+                    pills_layout.setSpacing(8)
+                    
+                    for concept in task_data['engineering_concepts']:
+                        pill_button = PillPushButton(concept)
+                        pill_button.setMaximumWidth(300)  # Increased width
+                        
+                        font = pill_button.font()
+                        font.setPointSize(9)  # Smaller font size
+                        pill_button.setFont(font)
+                        
+                        pills_layout.addWidget(pill_button)
+                    
+                    pills_layout.addStretch()
+                    card_layout.addLayout(pills_layout)
+                    
+                except ImportError:
+                    # Fallback: show as regular labels if library not available
+                    for concept in task_data['engineering_concepts']:
+                        concept_label = QLabel(f"• {concept}")
+                        concept_label.setStyleSheet("""
+                            QLabel {
+                                font-size: 12px;
+                                color: rgba(255, 255, 255, 0.8);
+                                margin-left: 10px;
+                                margin-bottom: 4px;
+                            }
+                        """)
+                        card_layout.addWidget(concept_label)
+            
+            layout.addWidget(card_frame)
+            
+        except (json.JSONDecodeError, Exception) as e:
+            # Fallback - create a simple card with error info
+            card_frame = QFrame()
+            card_frame.setStyleSheet("""
+                QFrame {
+                    background-color: rgba(255, 255, 255, 0.05);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 12px;
+                    margin: 10px 0px;
+                    padding: 20px;
+                }
+            """)
+            
+            card_layout = QVBoxLayout(card_frame)
+            error_label = QLabel(f"Task Details (JSON Parse Error: {str(e)})")
+            error_label.setStyleSheet("""
+                QLabel {
+                    font-size: 16px;
+                    color: rgba(255, 255, 255, 0.8);
+                }
+            """)
+            card_layout.addWidget(error_label)
+            layout.addWidget(card_frame)
+
+    def create_task_tabs(self, layout, task_data, task_detail):
+        """Create tab bar with cursor prompts, test commands, and practical content"""
+        from qfluentwidgets import TabBar
+        
+        # Create tab bar
+        tab_bar = TabBar()
+        tab_bar.addTab('tab1', 'Cursor Prompts')
+        tab_bar.addTab('tab2', 'Test Commands') 
+        tab_bar.addTab('tab3', 'Practical')
+        
+        # Create stacked widget for tab content
+        tab_content = QStackedWidget()
+        
+        # Tab 1: Cursor Prompts
+        prompts_widget = QWidget()
+        prompts_layout = QVBoxLayout(prompts_widget)
+        if 'cursor_prompts' in task_data:
+            for prompt in task_data['cursor_prompts']:
+                prompt_label = QLabel(prompt)
+                prompt_label.setWordWrap(True)
+                prompt_label.setStyleSheet("""
+                    QLabel {
+                        padding: 10px;
+                        margin: 5px;
+                        background-color: rgba(255, 255, 255, 0.05);
+                        border-radius: 6px;
+                        color: rgba(255, 255, 255, 0.9);
+                    }
+                """)
+                prompts_layout.addWidget(prompt_label)
+        tab_content.addWidget(prompts_widget)
+        
+        # Tab 2: Test Commands
+        commands_widget = QWidget()
+        commands_layout = QVBoxLayout(commands_widget)
+        if 'test_commands' in task_data:
+            for command in task_data['test_commands']:
+                command_label = QLabel(command)
+                command_label.setWordWrap(True)
+                command_label.setStyleSheet("""
+                    QLabel {
+                        padding: 10px;
+                        margin: 5px;
+                        background-color: rgba(255, 255, 255, 0.05);
+                        border-radius: 6px;
+                        color: rgba(255, 255, 255, 0.9);
+                        font-family: 'Courier New', monospace;
+                    }
+                """)
+                commands_layout.addWidget(command_label)
+        tab_content.addWidget(commands_widget)
+        
+        # Tab 3: Practical (Real World Connection)
+        practical_widget = QWidget()
+        practical_layout = QVBoxLayout(practical_widget)
+        if 'real_world_connection' in task_data:
+            practical_label = QLabel(task_data['real_world_connection'])
+            practical_label.setWordWrap(True)
+            practical_label.setStyleSheet("""
+                QLabel {
+                    padding: 15px;
+                    background-color: rgba(255, 255, 255, 0.05);
+                    border-radius: 6px;
+                    color: rgba(255, 255, 255, 0.9);
+                    font-size: 14px;
+                    line-height: 1.5;
+                }
+            """)
+            practical_layout.addWidget(practical_label)
+        tab_content.addWidget(practical_widget)
+        
+        # Connect tab changes
+        tab_bar.currentChanged.connect(tab_content.setCurrentIndex)
+        
+        # Add to layout
+        layout.addWidget(tab_bar)
+        layout.addWidget(tab_content)
+
     def convert_task_detail_to_html(self, task_detail):
         """Convert individual task detail to HTML"""
         # Extract and format the task detail content
@@ -1795,8 +1984,8 @@ class ProjectWizardView(QWidget):
         patterns = [
             r'\*\*What You\'ll Build:\*\*.*',
             r'What You\'ll Build:.*',
-            r'\*\*Task Overview:\*\*.*',  # Fallback
-            r'Task Overview:.*'  # Fallback
+            r'\*\*Task Overview:\*\*.*',  
+            r'Task Overview:.*'  
         ]
         
         for pattern in patterns:
@@ -1825,10 +2014,19 @@ class ProjectWizardView(QWidget):
         self.project_config['task_details'][task_number] = clean_json
         
         logger.info(f"💾 Task detail stored in project_config")
-        logger.info(f"🚀 Calling show_complete_current_task() with clean JSON")
         
+        if self.current_project_id:
+            self.project_ops.update_project_progress(
+                self.current_project_id, 
+                self.current_task_number,
+                self.project_config.get('task_details', {})
+            )
+            logger.info(f"💾 Task saved to database")
+        
+        logger.info(f"🚀 Calling show_complete_current_task() with clean JSON")
         self.show_complete_current_task(task_name, clean_json)
         
+        # Start background job AFTER task is saved and UI updated
         self.start_background_task_generation()
     
     def on_current_task_failed(self, task_number, task_name, error_message):
@@ -1888,19 +2086,102 @@ class ProjectWizardView(QWidget):
         scroll_widget = QWidget()
         scroll_layout = QVBoxLayout(scroll_widget)
         
-        progress_label = QLabel(f"Task {self.current_task_number} of {len(self.task_names)}")
-        progress_label.setAlignment(Qt.AlignCenter)
+        import json
+        ticket_display = f"Task {self.current_task_number} of {len(self.task_names)}" 
+        task_title = task_name  
+        
+        try:
+            task_data = json.loads(task_detail)
+            if 'ticket_number' in task_data:
+                ticket_display = f"Ticket {task_data['ticket_number']}"
+            if 'title' in task_data:
+                task_title = task_data['title']
+        except (json.JSONDecodeError, Exception):
+            pass
+        
+        # Create horizontal layout for ticket info and story points
+        ticket_info_layout = QHBoxLayout()
+        
+        progress_label = QLabel(ticket_display)
         progress_label.setStyleSheet("""
             QLabel {
                 font-size: 14px;
                 color: rgba(255, 255, 255, 0.6);
-                margin-bottom: 10px;
             }
         """)
-        scroll_layout.addWidget(progress_label)
+        ticket_info_layout.addWidget(progress_label)
         
-        # Task header
-        task_header = QLabel(f"Task {self.current_task_number}: {task_name}")
+        try:
+            if 'task_data' in locals() and task_data:
+                # story_points is nested under description
+                story_points = None
+                if 'description' in task_data and isinstance(task_data['description'], dict):
+                    story_points = task_data['description'].get('story_points')
+                elif 'story_points' in task_data:
+                    story_points = task_data['story_points']
+                
+                if story_points:
+                    # Create custom label class with manual tooltip
+                    class StoryPointsLabel(QLabel):
+                        def __init__(self, text, parent=None):
+                            super().__init__(text, parent)
+                            self.tooltip_text = ""
+                            
+                        def set_custom_tooltip(self, text):
+                            self.tooltip_text = text
+                            
+                        def enterEvent(self, event):
+                            print("[DEBUG] Mouse entered story points widget!")
+                            if self.tooltip_text:
+                                # Show tooltip manually at cursor position
+                                QToolTip.showText(event.globalPos(), self.tooltip_text, self)
+                            super().enterEvent(event)
+                            
+                        def leaveEvent(self, event):
+                            print("[DEBUG] Mouse left story points widget!")
+                            QToolTip.hideText()
+                            super().leaveEvent(event)
+                    
+                    story_points_label = StoryPointsLabel(f"⭐ {story_points} Story Points")
+                    
+                    # Set custom tooltip instead of Qt's built-in tooltip
+                    tooltip_text = ("Story Points estimate how much effort this task requires.\n"
+                                  "• 1-2 points: Quick task (15-30 minutes)\n"
+                                  "• 3-5 points: Medium task (30-60 minutes)\n" 
+                                  "• 6+ points: Complex task (1+ hours)")
+                    story_points_label.set_custom_tooltip(tooltip_text)
+                    # Ensure widget can receive mouse events
+                    story_points_label.setEnabled(True)
+                # Simplified styling to avoid mouse event conflicts
+                story_points_label.setStyleSheet("""
+                    QLabel {
+                        background-color: rgba(52, 152, 219, 0.8);
+                        color: white;
+                        padding: 4px 8px;
+                        border-radius: 12px;
+                        font-size: 12px;
+                        font-weight: bold;
+                        margin-left: 10px;
+                    }
+                    QLabel:hover {
+                        background-color: rgba(52, 152, 219, 1.0);
+                    }
+                """)
+                ticket_info_layout.addWidget(story_points_label)
+        except:
+            pass
+        
+        ticket_info_layout.addStretch()
+        ticket_info_layout.setAlignment(Qt.AlignCenter)
+        
+        # Add some margin
+        ticket_widget = QWidget()
+        ticket_widget.setLayout(ticket_info_layout)
+        ticket_widget.setStyleSheet("margin-bottom: 10px;")
+        scroll_layout.addWidget(ticket_widget)
+        
+        # Task header - use the title from JSON
+        task_header = QLabel(task_title)
         task_header.setAlignment(Qt.AlignCenter)
         task_header.setStyleSheet("""
             QLabel {
@@ -1915,45 +2196,35 @@ class ProjectWizardView(QWidget):
         """)
         scroll_layout.addWidget(task_header)
         
-        # Task details
-        task_browser = QTextBrowser()
-        task_browser.setReadOnly(True)
-        task_browser.setOpenExternalLinks(False)
-        task_browser.setStyleSheet("""
-            QTextBrowser {
-                font-size: 14px;
-                line-height: 1.6;
-                color: rgba(255, 255, 255, 0.9);
-                background-color: rgba(255, 255, 255, 0.02);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 8px;
-                padding: 20px;
-                margin-bottom: 20px;
-            }
-            QTextBrowser h3 {
-                color: rgba(255, 255, 255, 1.0);
-                font-size: 16px;
-                margin-top: 20px;
-                margin-bottom: 10px;
-            }
-            QTextBrowser ul {
-                margin-left: 20px;
-            }
-            QTextBrowser li {
-                margin-bottom: 8px;
-            }
-            QTextBrowser code {
-                background-color: rgba(0, 0, 0, 0.3);
-                padding: 2px 6px;
-                border-radius: 4px;
-                font-family: 'Courier New', monospace;
-            }
-        """)
+        # Create task card - pass the already parsed data if available
+        if 'task_data' in locals():
+            self.create_task_card(scroll_layout, task_detail, task_data)
+        else:
+            self.create_task_card(scroll_layout, task_detail)
         
-        # Format and set task details
-        formatted_detail = self.convert_task_detail_to_html(task_detail)
-        task_browser.setHtml(formatted_detail)
-        scroll_layout.addWidget(task_browser)
+        # Create tab bar for task content
+        if TAB_BAR_AVAILABLE and 'task_data' in locals():
+            self.create_task_tabs(scroll_layout, task_data, task_detail)
+        else:
+            # Fallback: original task browser
+            task_browser = QTextBrowser()
+            task_browser.setReadOnly(True)
+            task_browser.setOpenExternalLinks(False)
+            task_browser.setStyleSheet("""
+                QTextBrowser {
+                    font-size: 14px;
+                    line-height: 1.6;
+                    color: rgba(255, 255, 255, 0.9);
+                    background-color: rgba(255, 255, 255, 0.02);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 8px;
+                    padding: 20px;
+                    margin-bottom: 20px;
+                }
+            """)
+            formatted_detail = self.convert_task_detail_to_html(task_detail)
+            task_browser.setHtml(formatted_detail)
+            scroll_layout.addWidget(task_browser)
         
         # Cursor evaluation section
         self.add_cursor_evaluation_section(scroll_layout, task_name)
@@ -1966,6 +2237,7 @@ class ProjectWizardView(QWidget):
         
         # Update navigation - show complete button and control next button
         task_completed = self.project_ops.is_task_completed(self.current_project_id, self.current_task_number) if self.current_project_id else False
+        task_completed = task_completed if task_completed is not None else False
         self.update_task_navigation(task_completed)
         
         if self.current_task_number < len(self.task_names):

@@ -6,6 +6,7 @@ Uses existing AI infrastructure to generate contextual programming projects
 import logging
 from typing import Optional, Dict, Any
 from pathlib import Path
+from datetime import datetime
 
 from .project_prompts import create_project_generation_prompt, create_task_headers_prompt, create_task_detail_prompt
 
@@ -19,8 +20,13 @@ except ImportError:
 try:
     from .groq_client import GroqProgrammingClient
     CLOUD_AI_AVAILABLE = True
-except ImportError:
+    print(f"[DEBUG IMPORT] ✅ Successfully imported GroqProgrammingClient")
+except ImportError as e:
     CLOUD_AI_AVAILABLE = False
+    print(f"[DEBUG IMPORT] ❌ Failed to import GroqProgrammingClient: {e}")
+except Exception as e:
+    CLOUD_AI_AVAILABLE = False
+    print(f"[DEBUG IMPORT] ❌ Other exception importing GroqProgrammingClient: {e}")
 
 logger = logging.getLogger(__name__)
 
@@ -40,11 +46,24 @@ class ProjectGenerator:
                 logger.warning(f"Failed to initialize local AI: {e}")
         
         if CLOUD_AI_AVAILABLE:
+            print(f"[DEBUG GROQ] CLOUD_AI_AVAILABLE is True, attempting to initialize GroqProgrammingClient")
             try:
                 self.cloud_ai = GroqProgrammingClient()
-                logger.info("Cloud AI initialized for project generation")
+                print(f"[DEBUG GROQ] GroqProgrammingClient created, checking if available...")
+                if self.cloud_ai and self.cloud_ai.is_available():
+                    print(f"[DEBUG GROQ] ✅ Cloud AI initialized and available")
+                    logger.info("Cloud AI initialized for project generation")
+                else:
+                    print(f"[DEBUG GROQ] ❌ Cloud AI created but not available")
+                    print(f"[DEBUG GROQ] self.cloud_ai: {self.cloud_ai}")
+                    if self.cloud_ai:
+                        print(f"[DEBUG GROQ] self.cloud_ai.client: {self.cloud_ai.client}")
+                        print(f"[DEBUG GROQ] self.cloud_ai.api_key set: {bool(self.cloud_ai.api_key)}")
             except Exception as e:
+                print(f"[DEBUG GROQ] ❌ Exception during GroqProgrammingClient init: {e}")
                 logger.warning(f"Failed to initialize cloud AI: {e}")
+        else:
+            print(f"[DEBUG GROQ] CLOUD_AI_AVAILABLE is False")
     
     def generate_project(self, user_scores: Dict[str, Any], selected_language: str, 
                         user_data: Dict[str, Any], use_local_only: bool = False, project_theme: str = None) -> Optional[str]:
@@ -115,7 +134,7 @@ class ProjectGenerator:
             return False
         
         # Import here to avoid circular imports
-        from ...utils.network_utils import is_online, can_reach_groq
+        from src.utils.network_utils import is_online, can_reach_groq
         
         try:
             return is_online() and can_reach_groq()
@@ -157,10 +176,29 @@ class ProjectGenerator:
             
             if response and len(response.strip()) > 50:  
                 logger.info(f"✅ Local AI generated response: {len(response)} characters")
+                
+                # Save the full AI response to a file for debugging
+                with open("ai_output_debug.md", "w") as f:
+                    f.write("# Full AI Response Debug Output\n\n")
+                    f.write(f"**Timestamp:** {datetime.now()}\n")
+                    f.write(f"**Response Length:** {len(response)} characters\n\n")
+                    f.write("## Full Response:\n")
+                    f.write("```\n")
+                    f.write(response)
+                    f.write("\n```\n")
+                
                 # Extract only the JSON part for the UI
                 from .project_prompts import extract_json_from_reasoning_response
                 json_only = extract_json_from_reasoning_response(response)
                 logger.info(f"📄 Extracted JSON: {len(json_only)} characters")
+                
+                # Also save the extracted JSON
+                with open("ai_output_debug.md", "a") as f:
+                    f.write("\n## Extracted JSON:\n")
+                    f.write("```json\n")
+                    f.write(json_only)
+                    f.write("\n```\n")
+                
                 return json_only
             else:
                 logger.warning(f"⚠️ Local AI response too short or empty: {len(response) if response else 0} characters")

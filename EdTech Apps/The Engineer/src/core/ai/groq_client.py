@@ -15,8 +15,8 @@ except ImportError:
     GROQ_AVAILABLE = False
 
 from .prompt_examples import get_programming_prompt
-from ...config.secrets import get_groq_api_key
-from ...config.settings import AI_CONFIG
+from config.secrets import get_groq_api_key
+from config.settings import AI_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +27,21 @@ class GroqProgrammingClient:
         self.client = None
         self.api_key = get_groq_api_key()
         
+        print(f"[DEBUG GROQ INIT] GROQ_AVAILABLE: {GROQ_AVAILABLE}")
+        print(f"[DEBUG GROQ INIT] API key present: {bool(self.api_key)}")
+        
         if GROQ_AVAILABLE and self.api_key:
+            print(f"[DEBUG GROQ INIT] Attempting to create Groq client...")
             try:
                 self.client = Groq(api_key=self.api_key)
+                print(f"[DEBUG GROQ INIT] ✅ Groq client created successfully")
                 logger.info("Groq client initialized successfully")
             except Exception as e:
+                print(f"[DEBUG GROQ INIT] ❌ Failed to create Groq client: {e}")
                 logger.error(f"Failed to initialize Groq client: {e}")
                 self.client = None
         else:
+            print(f"[DEBUG GROQ INIT] ❌ Skipping Groq client creation - GROQ_AVAILABLE: {GROQ_AVAILABLE}, API key: {bool(self.api_key)}")
             logger.warning("Groq not available - missing dependency or API key")
     
     def is_available(self) -> bool:

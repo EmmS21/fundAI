@@ -695,7 +695,17 @@ class ProjectOperations:
                             ProjectTask.task_number == task_num
                         ).first()
                         if task:
+                            # Update existing task
                             task.task_content = content
+                        else:
+                            new_task = ProjectTask(
+                                project_id=project_id,
+                                task_number=task_num,
+                                title=f"Task {task_num}",  # Default title
+                                task_content=content,
+                                status='pending'
+                            )
+                            session.add(new_task)
                 
                 session.commit()
                 return True
