@@ -2077,23 +2077,15 @@ class ProjectWizardView(QWidget):
     
     def on_current_task_generated(self, task_number, task_name, task_detail):
         """Handle successful generation of current task details"""
-        logger.info(f"🎉 on_current_task_generated() SIGNAL RECEIVED!")
-        logger.info(f"📥 Signal parameters - task_number: {task_number}, task_name type: {type(task_name)}")
-        logger.info(f"📥 Signal parameters - task_detail type: {type(task_detail)}, length: {len(task_detail) if task_detail else 0}")
         
-        logger.info(f"✅ TASK DETAIL API RESPONSE RECEIVED")
-        logger.info(f"🎯 Task {task_number}: {task_name}")
-        logger.info(f"📄 Full task detail response: {task_detail}")
-        logger.info(f"📏 Task detail length: {len(task_detail)} characters")
+        logger.info(f"TASK DETAIL API RESPONSE RECEIVED")
+        logger.info(f"Task {task_number}: {task_name}")
         
-        # Extract JSON from the full response for clean display
         from src.core.ai.project_prompts import extract_task_json_from_response
         clean_json = extract_task_json_from_response(task_detail)
         
-        # Store the clean JSON detail
         self.project_config['task_details'][task_number] = clean_json
         
-        logger.info(f"💾 Task detail stored in project_config")
         
         if self.current_project_id:
             self.project_ops.update_project_progress(
@@ -2101,9 +2093,6 @@ class ProjectWizardView(QWidget):
                 self.current_task_number,
                 self.project_config.get('task_details', {})
             )
-            logger.info(f"💾 Task saved to database")
-        
-        logger.info(f"🚀 Calling show_complete_current_task() with clean JSON")
         self.show_complete_current_task(task_name, clean_json)
         
         # Start background job AFTER task is saved and UI updated
@@ -2111,11 +2100,7 @@ class ProjectWizardView(QWidget):
     
     def on_current_task_failed(self, task_number, task_name, error_message):
         """Handle failed generation of current task details"""
-        logger.error(f"💥 on_current_task_failed() SIGNAL RECEIVED!")
-        logger.error(f"📥 Signal parameters - task_number: {task_number}, task_name: {task_name}")
-        logger.error(f"📥 Signal parameters - error_message type: {type(error_message)}")
-        
-        logger.error(f"❌ TASK DETAIL GENERATION FAILED")
+
         logger.error(f"🎯 Task {task_number}: {task_name}")
         logger.error(f"💥 Error: {error_message}")
         
