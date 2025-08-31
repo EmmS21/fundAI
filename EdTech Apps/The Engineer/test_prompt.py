@@ -86,8 +86,11 @@ Schema to return exactly:
     {{
       "title": "string",
       "intent": "string",
-      "cursor_prompt": "string (exact text the student pastes into Cursor; AI-to-AI output contract phrased as 'Return'/'Provide' (do not instruct the learner); includes concise scope guardrails inline; use shell commands only for setup/installation when applicable; end with: 'Stop after meeting the acceptance criteria. Ask me for confirmation before proceeding to the next step.')",
-      "acceptance_criteria": ["string", "..."]
+      "cursor_prompt": {{
+        "system_role": "string (role directives: patient teacher for 12–18; return artifacts only; incremental; embed simple 'why' explanations; tailor installs to Recommended Technology Stack)",
+        "prompt": "string (AI-to-AI output contract phrased as 'Return'/'Provide'; do not instruct the learner; include concise scope guardrails; use shell commands only for setup/installation when applicable; end with: 'Stop after meeting the acceptance criteria. Ask me for confirmation before proceeding to the next step.')",
+        "acceptance_criteria": ["string", "..."]
+      }}
     }}
   ]
 }}
@@ -109,10 +112,12 @@ Follow these rules in helping you generate the cursor promtps:
 - Require acceptance_criteria for each step; avoid separate verification and follow-up sections.
 - Also embed acceptance criteria inside the returned artifact as described above.
 - Each steps[i].cursor_prompt must begin with a 'System role:' line, the role of this AI is to act as a patient teacher, teaching 12-18 years olds engineering by guiding them in building projects. This means, it must return not just code to build, but educational content, explaining the code back to the user. 
+- Each steps[i].cursor_prompt must be a JSON object with keys: system_role, prompt, acceptance_criteria.
+- The system_role must define the AI’s role as a patient teacher for 12–18, artifact-return only, incremental, with simple 'why' explanations, tailored to the Recommended Technology Stack.
+- The prompt must be an AI-to-AI output contract using 'Return/Provide' language (no learner imperatives), include concise scope guardrails, and end with: "Stop after meeting the acceptance criteria. Ask me for confirmation before proceeding to the next step."
 - Each step must be doable without assuming unstated prior code.
 - Use shell commands only for environment setup/installation; otherwise prefer natural language that lets Cursor generate code from context.
 - Keep all text concise and child-friendly.
-- Each steps[i].cursor_prompt must end with this exact line: "Stop after meeting the acceptance criteria. Ask me for confirmation before proceeding to the next step."
 
 Project context:
 {project_description}

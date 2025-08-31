@@ -2043,11 +2043,52 @@ class ProjectWizardView(QWidget):
                 """Copy prompt text to system clipboard"""
                 try:
                     QApplication.clipboard().setText(self.prompt_text)
-                    # Brief visual feedback
+                    # Visual feedback - change icon to checkmark with blue background
                     if self.copy_button:
-                        original_text = self.copy_button.toolTip()
-                        self.copy_button.setToolTip("Copied!")
-                        QTimer.singleShot(1000, lambda: self.copy_button.setToolTip(original_text))
+                        try:
+                            from qfluentwidgets.common.icon import FluentIcon
+                            
+                            # Store original state
+                            original_tooltip = self.copy_button.toolTip()
+                            
+                            # Change to success state
+                            self.copy_button.setIcon(FluentIcon.ACCEPT)
+                            self.copy_button.setToolTip("Copied!")
+                            self.copy_button.setStyleSheet("""
+                                QToolButton {
+                                    background-color: #2196F3;
+                                    border-radius: 4px;
+                                    padding: 4px;
+                                }
+                                QToolButton:hover {
+                                    background-color: #1976D2;
+                                }
+                            """)
+                            
+                            # Reset after 1.5 seconds
+                            def reset_button():
+                                if self.copy_button:
+                                    self.copy_button.setIcon(FluentIcon.COPY)
+                                    self.copy_button.setToolTip(original_tooltip)
+                                    self.copy_button.setStyleSheet("")  
+                            
+                            QTimer.singleShot(1500, reset_button)
+                            
+                        except ImportError:
+                            # Fallback for regular button
+                            original_text = self.copy_button.text()
+                            self.copy_button.setText("✓")
+                            self.copy_button.setStyleSheet("""
+                                QPushButton {
+                                    background-color: #2196F3;
+                                    color: white;
+                                    border-radius: 4px;
+                                }
+                            """)
+                            QTimer.singleShot(1500, lambda: (
+                                self.copy_button.setText(original_text),
+                                self.copy_button.setStyleSheet("")
+                            ))
                 except Exception as e:
                     print(f"Copy failed: {e}")
         
@@ -2261,21 +2302,37 @@ class ProjectWizardView(QWidget):
         """)
         scroll_layout.addWidget(task_header)
         
+        rendered_new_cursor_ui = False
+        try:
+            if 'task_data' in locals() and isinstance(task_data, dict) \
+               and 'cursor_system_prompt' in task_data and 'steps' in task_data:
+                self.render_cursor_prompts(scroll_layout, task_data)
+                rendered_new_cursor_ui = True
+                try:
+                    if task_data.get('steps') and isinstance(task_data['steps'], list) and task_data['steps'][0].get('title'):
+                        task_header.setText(task_data['steps'][0]['title'])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        
         # Create task card - pass the already parsed data if available
-        if 'task_data' in locals():
-            self.create_task_card(scroll_layout, task_detail, task_data)
-        else:
-            self.create_task_card(scroll_layout, task_detail)
+        if not rendered_new_cursor_ui:
+            if 'task_data' in locals():
+                self.create_task_card(scroll_layout, task_detail, task_data)
+            else:
+                self.create_task_card(scroll_layout, task_detail)
         
         # Create tab bar for task content
-        if TAB_BAR_AVAILABLE and 'task_data' in locals():
-            self.create_task_tabs(scroll_layout, task_data, task_detail)
-        else:
-            # Fallback: original task browser
-            task_browser = QTextBrowser()
-            task_browser.setReadOnly(True)
-            task_browser.setOpenExternalLinks(False)
-            task_browser.setStyleSheet("""
+        if not rendered_new_cursor_ui:
+            if TAB_BAR_AVAILABLE and 'task_data' in locals():
+                self.create_task_tabs(scroll_layout, task_data, task_detail)
+            else:
+                # Fallback: original task browser
+                task_browser = QTextBrowser()
+                task_browser.setReadOnly(True)
+                task_browser.setOpenExternalLinks(False)
+                task_browser.setStyleSheet("""
                 QTextBrowser {
                     font-size: 14px;
                     line-height: 1.6;
@@ -2287,9 +2344,9 @@ class ProjectWizardView(QWidget):
                     margin-bottom: 20px;
                 }
             """)
-            formatted_detail = self.convert_task_detail_to_html(task_detail)
-            task_browser.setHtml(formatted_detail)
-            scroll_layout.addWidget(task_browser)
+                formatted_detail = self.convert_task_detail_to_html(task_detail)
+                task_browser.setHtml(formatted_detail)
+                scroll_layout.addWidget(task_browser)
         
         # Cursor evaluation section
         self.add_cursor_evaluation_section(scroll_layout, task_name)
@@ -2802,7 +2859,7 @@ Please analyze my files now and give me feedback!"""
         scroll_layout = QVBoxLayout(scroll_widget)
         
         # Simple loading message
-        loading_label = QLabel("🔄 Generating task details...")
+        loading_label = QLabel("Generating task details...")
         loading_label.setAlignment(Qt.AlignCenter)
         loading_label.setStyleSheet("""
             QLabel {
@@ -2821,3 +2878,108 @@ Please analyze my files now and give me feedback!"""
         # Hide navigation during loading
         self.next_button.setVisible(False)
         self.back_button.setEnabled(True)
+
+    def render_cursor_prompts(self, layout, task_data):
+        """Render the new cursor prompt schema: system prompt + steps with system_role, prompt, and acceptance criteria.
+        Also provide a single copy button to copy the entire composed prompt (including section titles)."""
+        try:
+            combined_lines = []
+            
+            # system_prompt = task_data.get('cursor_system_prompt', '')
+            # # Reuse copyable prompt widget for system prompt
+            # sys_prompt_widget = self.create_copyable_prompt_widget(system_prompt)
+            # layout.addWidget(sys_prompt_widget)
+            
+            
+            # Steps
+            steps = task_data.get('steps', [])
+            if isinstance(steps, list):
+                for idx, step in enumerate(steps, start=1):
+                    # Step container
+                    step_frame = QFrame()
+                    step_frame.setStyleSheet("""
+                        QFrame {
+                            background-color: rgba(255, 255, 255, 0.04);
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            border-radius: 10px;
+                            padding: 12px;
+                            margin: 8px 0px;
+                        }
+                    """)
+                    step_layout = QVBoxLayout(step_frame)
+                    step_layout.setSpacing(8)
+                    
+                    # Step title
+                    step_title = step.get('title') or f"Step {idx}"
+                    step_intent = step.get('intent')
+                    title_label = QLabel(f"Step {idx}: {step_title}")
+                    title_label.setStyleSheet("""
+                        QLabel {
+                            font-size: 15px;
+                            font-weight: 600;
+                            color: rgba(255, 255, 255, 0.95);
+                        }
+                    """)
+                    step_layout.addWidget(title_label)
+                    
+                    if step_intent:
+                        intent_label = QLabel(step_intent)
+                        intent_label.setWordWrap(True)
+                        intent_label.setStyleSheet("""
+                            QLabel {
+                                font-size: 13px;
+                                color: rgba(255, 255, 255, 0.75);
+                                margin-left: 4px;
+                            }
+                        """)
+                        step_layout.addWidget(intent_label)
+                    
+                    cp = step.get('cursor_prompt', {}) if isinstance(step, dict) else {}
+                    system_role = cp.get('system_role', '')
+                    step_prompt = cp.get('prompt', '')
+                    ac_list = cp.get('acceptance_criteria', []) or []
+                    
+
+                    
+                    step_combined = "System role: " + (system_role or "") + "\n\n" \
+                                  + "Prompt: " + (step_prompt or "") + "\n\n" \
+                                  + "Acceptance criteria:\n" + "\n".join(f"- {c}" for c in ac_list)
+                    
+                    step_copy_widget = self.create_copyable_prompt_widget(step_combined)
+                    step_layout.addWidget(step_copy_widget)
+                    
+                    combined_lines.append(f"\nStep {idx}: {step_title}")
+                    if step_intent:
+                        combined_lines.append(f"Intent: {step_intent}")
+                    combined_lines.append("System role:")
+                    combined_lines.append(system_role or "")
+                    combined_lines.append("Prompt:")
+                    combined_lines.append(step_prompt or "")
+                    combined_lines.append("Acceptance Criteria:")
+                    if isinstance(ac_list, list) and ac_list:
+                        combined_lines.extend([f"- {c}" for c in ac_list])
+                    else:
+                        combined_lines.append("(none provided)")
+                    
+                    layout.addWidget(step_frame)
+            
+            # Copy entire composed prompt (one go)
+            combined_text = "\n\n".join(combined_lines)
+            # full_copy_btn = QPushButton("📋 Copy Entire Prompt")
+            # full_copy_btn.setStyleSheet("""
+            #     QPushButton {
+            #         font-size: 14px;
+            #         color: white;
+            #         background-color: #2ecc71;
+            #         border: none;
+            #         border-radius: 6px;
+            #         padding: 10px 16px;
+            #         margin-top: 12px;
+            #     }
+            #     QPushButton:hover { background-color: #27ae60; }
+            # """)
+            # full_copy_btn.clicked.connect(lambda checked=False, text=combined_text: self.copy_to_clipboard(text))
+            # layout.addWidget(full_copy_btn)
+        
+        except Exception as e:
+            logger.error(f"Error rendering cursor prompts: {e}")

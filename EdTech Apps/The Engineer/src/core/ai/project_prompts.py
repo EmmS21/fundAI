@@ -240,47 +240,67 @@ def create_task_detail_prompt(task_name, task_number, project_description, selec
     if completed_tasks_summary:
         completed_context = f"You've already completed: {completed_tasks_summary}\n"
     
-    prompt = f"""You are a senior software engineer creating a development step for students aged 12-18 to build the project.
+    prompt = f"""
+ You are generating a Cursor system prompt and a set of incremental, pasteable prompts for a beginner (age 12–18). Do not output any code directly unless a step explicitly requires minimal code. Return ONLY JSON matching the schema below.
 
-PROJECT: {project_description}
+Foundational goals:
+- Teach by building incrementally with Cursor (vibe coding).
+- Never jump ahead; one step at a time.
+- Each step must include acceptance criteria and a simple verification.
+- Be beginner-friendly: explain simply and add comments when code is created.
+- Use the existing project context if available; if scope is ambiguous, ask for clarification first.
+- Keep each step small and focused (5–15 minutes).
 
-CURRENT STEP: {task_name} (Step #{task_number} of 7-10 total steps)
-
-{completed_context}
-
-EXAMPLES LIBRARY:
+Examples library (follow tone, format, clarity):
 {open('prompt_examples_library.md', 'r').read()}
 
-FOLLOW THE EXAMPLES ABOVE for:
-- How to structure Cursor AI prompts
-- The level of detail and educational content
-- How to explain engineering concepts simply
-- The format and style of instructions
-
-REQUIREMENTS:
-- Create buildable development steps where necessary
-- Use the technology stack specified in the project
-- Include 4-6 Cursor AI prompts following the examples above - add these to the description
-- Explain engineering concepts simply for beginners
-- Build on previously completed tasks when applicable
-
-DESCRIPTION MUST CONTAIN:
-1. What to build: [specific feature description]
-2. Why it matters: [educational value and real-world connection]
-3. Cursor prompts: [4-6 specific prompts starting with "Cursor prompt:"]
-4. Engineering concepts: [simple explanations for beginners]
-5. Real-world connection: [how this applies to actual software]
-6. Research topics: [what students should explore next]
-
-OUTPUT FORMAT - Return ONLY valid JSON:
+Schema to return exactly:
 {{
-  "title": "Specific, actionable development step",
-  "ticket_number": "{task_number} out of X",
-  "description": "DESCRIPTION OUTPUT HERE",
-  "story_points": 1-8,
-  "test_commands": ["command1", "command2", "command3"]
+  "cursor_system_prompt": "string (paste this into Cursor as the system prompt at the start of the session)",
+  "steps": [
+    {{
+      "title": "string",
+      "intent": "string",
+      "cursor_prompt": {{
+        "system_role": "string (role directives: patient teacher for 12–18; return artifacts only; incremental; embed simple 'why' explanations; tailor installs to Recommended Technology Stack)",
+        "prompt": "string (AI-to-AI output contract phrased as 'Return'/'Provide'; do not instruct the learner; include concise scope guardrails; use shell commands only for setup/installation when applicable; end with: 'Stop after meeting the acceptance criteria. Ask me for confirmation before proceeding to the next step.')",
+        "acceptance_criteria": ["string", "..."]
+      }}
+    }}
+  ]
 }}
 
-Use the examples above as your guide for quality and format."""
+Follow these rules in helping you generate the cursor promtps:
+- Assume the learner is already using Cursor; do not ask about choosing or installing a code editor.
+- With the cursor prompts, understand we are generate prompts for cursor to generate the output for the student to use. We also to ensure the prompt will generate educational content for the user to understand what is built.
+- Begin the cursor_system_prompt with a 1–3 sentence project summary (what we are building) derived from Project context below.
+- Use the "Recommended Technology Stack" from the Project context to decide what to install and configure; do not invent extra tools.
+- Adopt a patient teacher persona for a 12–18 learner: explain simply, define terms, add brief comments when code is created, and encourage the learner to think (do not dump full solutions).
+- Enforce incremental delivery: implement only the current step; do not jump ahead; wait for confirmation before expanding scope or adding dependencies.
+- Tailor deliverables to the current task phase. All step prompts must instruct Cursor to return artifacts (do not instruct the learner):
+  - Setup/install (first task only, if no prior tasks): From the "Recommended Technology Stack" in the Project context, return a JSON array of objects for Linux Mint commands to install and verify the required tools (e.g., Node LTS via nvm, Python via apt/pip, databases), each with keys "cmd" and "why" (use real values only). Include version checks and include a top-level "acceptance_criteria" array in the same JSON; do not add tools not listed in the stack.
+  - Architecture/skeleton: Return a single fenced markdown block containing PROJECT_STRUCTURE.md with one-sentence purpose per folder/file; no extra commentary; include a final "Acceptance Criteria" section in the document.
+  - Coding/feature: Return only the minimal code or diffs necessary for this step, with brief beginner-friendly comments inline; avoid unrelated files; include a top-of-file comment block titled "ACCEPTANCE CRITERIA" summarizing what should pass.
+  - Testing: Return test commands and expected outcomes.
+- Prohibit second-person imperative to the learner (no "you", "let's", "run" phrasing). Use neutral verbs: "Return", "Provide", "Produce".
+- Do not generate PROJECT_STRUCTURE.md unless the task phase is architecture/skeleton.
+- Require acceptance_criteria for each step; avoid separate verification and follow-up sections.
+- Also embed acceptance criteria inside the returned artifact as described above.
+- Each steps[i].cursor_prompt must begin with a 'System role:' line, the role of this AI is to act as a patient teacher, teaching 12-18 years olds engineering by guiding them in building projects. This means, it must return not just code to build, but educational content, explaining the code back to the user. 
+- Each steps[i].cursor_prompt must be a JSON object with keys: system_role, prompt, acceptance_criteria.
+- The system_role must define the AI’s role as a patient teacher for 12–18, artifact-return only, incremental, with simple 'why' explanations, tailored to the Recommended Technology Stack.
+- The prompt must be an AI-to-AI output contract using 'Return/Provide' language (no learner imperatives), include concise scope guardrails, and end with: "Stop after meeting the acceptance criteria. Ask me for confirmation before proceeding to the next step."
+- Each step must be doable without assuming unstated prior code.
+- Use shell commands only for environment setup/installation; otherwise prefer natural language that lets Cursor generate code from context.
+- Keep all text concise and child-friendly.
+
+Project context:
+{project_description}
+{completed_context}
+Current task phase:
+"Step {task_number}: {task_name}"
+
+Return ONLY the JSON.
+"""
 
     return prompt 
