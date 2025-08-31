@@ -257,6 +257,8 @@ Examples library (follow tone, format, clarity):
 Schema to return exactly:
 {{
   "cursor_system_prompt": "string (paste this into Cursor as the system prompt at the start of the session)",
+  "total_project_tasks": "integer (total number of tasks needed to complete this entire project - minimum 7, maximum 12)",
+  "current_task_number": "integer (which task this is in the sequence - e.g., 1, 2, 3, etc.)",
   "steps": [
     {{
       "title": "string",
@@ -271,6 +273,14 @@ Schema to return exactly:
 }}
 
 Follow these rules in helping you generate the cursor promtps:
+
+CRITICAL: Determine the total number of tasks needed for this complete project:
+- Analyze the project complexity and scope from the Project context
+- Break down the project into logical phases: setup, core features, advanced features, testing, deployment
+- Ensure the project requires MINIMUM 7 tasks and MAXIMUM 12 tasks for completion
+- Set "total_project_tasks" to this number and "current_task_number" to the current task position
+- Each task should represent 1-3 hours of work for a beginner (age 12-18)
+
 - Assume the learner is already using Cursor; do not ask about choosing or installing a code editor.
 - With the cursor prompts, understand we are generate prompts for cursor to generate the output for the student to use. We also to ensure the prompt will generate educational content for the user to understand what is built.
 - Begin the cursor_system_prompt with a 1–3 sentence project summary (what we are building) derived from Project context below.

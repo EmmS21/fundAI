@@ -2125,8 +2125,31 @@ class ProjectWizardView(QWidget):
         from src.core.ai.project_prompts import extract_task_json_from_response
         clean_json = extract_task_json_from_response(task_detail)
         
+        # Debug: Print what AI returned for total_project_tasks
+        try:
+            import json
+            task_data = json.loads(clean_json)
+            total_tasks = task_data.get('total_project_tasks')
+            print(f"🔍 AI returned total_project_tasks: {total_tasks}")
+        except:
+            print("🔍 Could not parse AI response for total_project_tasks")
+        
         self.project_config['task_details'][task_number] = clean_json
         
+        # Extract total project tasks FIRST, before showing the task
+        if not hasattr(self, 'task_names') or not self.task_names:
+            try:
+                import json
+                task_data = json.loads(clean_json)
+                total_tasks = task_data.get('total_project_tasks', 7)
+                if isinstance(total_tasks, int) and 7 <= total_tasks <= 12:
+                    self.task_names = [f"Task {i}" for i in range(1, total_tasks + 1)]
+                    print(f"✅ Created {total_tasks} tasks: {self.task_names}")
+                else:
+                    self.task_names = [f"Task {i}" for i in range(1, 8)]  # 7 tasks fallback
+            except Exception as e:
+                self.task_names = [f"Task {i}" for i in range(1, 8)]  # 7 tasks fallback
+                print(f"❌ Error creating task list: {e}")
         
         if self.current_project_id:
             self.project_ops.update_project_progress(
@@ -2138,6 +2161,78 @@ class ProjectWizardView(QWidget):
         
         # Start background job AFTER task is saved and UI updated
         self.start_background_task_generation()
+    
+    def set_total_tasks_from_json(self, task_json):
+        """Extract total task count from AI response and generate task headers"""
+        try:
+            import json
+            task_data = json.loads(task_json) if isinstance(task_json, str) else task_json
+            
+            # Check if AI provided total_project_tasks
+            if 'total_project_tasks' in task_data:
+                total_tasks = task_data.get('total_project_tasks')
+                
+                # Validate (minimum 7, maximum 12)
+                if isinstance(total_tasks, int) and 7 <= total_tasks <= 12:
+                    logger.info(f"AI specified {total_tasks} total tasks for this project")
+                    # Generate task headers using existing system
+                    self.generate_task_headers_for_total_count(total_tasks)
+                    return
+                else:
+                    logger.warning(f"AI provided invalid total_project_tasks: {total_tasks}")
+            
+            # Fallback: Use default task header generation
+            logger.info("No valid total_project_tasks from AI, using existing task header generation")
+            self.generate_task_headers_for_total_count(7)  # Minimum fallback
+                
+        except Exception as e:
+            logger.error(f"Error extracting total tasks from JSON: {e}")
+            self.generate_task_headers_for_total_count(7)  # Minimum fallback
+    
+    def generate_task_headers_for_total_count(self, total_tasks: int):
+        """Generate task headers using existing AI system for the specified count"""
+        try:
+            # Use existing task header generation but specify the count needed
+            project_description = self.project_config.get('project_description', '')
+            selected_language = self.project_config.get('language', 'Python')
+            
+            # Create modified prompt that asks for specific number of tasks
+            from core.ai.project_prompts import create_task_headers_prompt
+            headers_prompt = create_task_headers_prompt(project_description, selected_language, total_tasks)
+            
+            # Generate headers using existing system
+            generator = ProjectGenerator()
+            task_headers = generator.generate_task_headers_with_prompt(headers_prompt)
+            
+            if task_headers:
+                self.parse_and_set_task_names(task_headers, total_tasks)
+            else:
+                logger.error("Failed to generate task headers, using fallback")
+                self.use_fallback_task_names(total_tasks)
+                
+        except Exception as e:
+            logger.error(f"Error generating task headers: {e}")
+            self.use_fallback_task_names(total_tasks)
+    
+    def use_fallback_task_names(self, total_tasks: int):
+        """Simple fallback task names"""
+        self.task_names = [f"Task {i}" for i in range(1, total_tasks + 1)]
+        self.project_config['task_names'] = self.task_names
+        logger.info(f"Using fallback: {total_tasks} tasks")
+    
+    def parse_and_set_task_names(self, task_headers: str, expected_count: int):
+        """Parse task headers response and extract task names"""
+        # Simple parsing - extract task names from headers response
+        # This will use existing parsing logic for task headers
+        import re
+        tasks = re.findall(r'\*\*Task \d+:\*\*(.*?)(?=\*\*Task|\Z)', task_headers, re.DOTALL)
+        
+        if len(tasks) >= expected_count:
+            self.task_names = [task.strip().split('\n')[0] for task in tasks[:expected_count]]
+            self.project_config['task_names'] = self.task_names
+            logger.info(f"Extracted {len(self.task_names)} task names from headers")
+        else:
+            self.use_fallback_task_names(expected_count)
     
     def on_current_task_failed(self, task_number, task_name, error_message):
         """Handle failed generation of current task details"""
@@ -2193,17 +2288,29 @@ class ProjectWizardView(QWidget):
         scroll_layout = QVBoxLayout(scroll_widget)
         
         import json
-        ticket_display = f"Task {self.current_task_number} of {len(self.task_names)}" 
-        task_title = task_name  
+        print(f"🔍 DEBUG: self.task_names = {getattr(self, 'task_names', 'NOT SET')}")
+        print(f"🔍 DEBUG: len(self.task_names) = {len(getattr(self, 'task_names', []))}")
+        
+        # Get total tasks from AI response instead of task_names array
+        total_tasks_from_ai = len(getattr(self, 'task_names', []))  # fallback
+        task_title = task_name
         
         try:
             task_data = json.loads(task_detail)
+            # Get total tasks directly from AI's response
+            if 'total_project_tasks' in task_data:
+                total_tasks_from_ai = task_data['total_project_tasks']
+                print(f"🔍 DEBUG: Using total_project_tasks from AI: {total_tasks_from_ai}")
+            
             if 'ticket_number' in task_data:
                 ticket_display = f"Ticket {task_data['ticket_number']}"
+            else:
+                ticket_display = f"Task {self.current_task_number} of {total_tasks_from_ai}"
+                
             if 'title' in task_data:
                 task_title = task_data['title']
         except (json.JSONDecodeError, Exception):
-            pass
+            ticket_display = f"Task {self.current_task_number} of {total_tasks_from_ai}"
         
         # Create horizontal layout for ticket info and story points
         ticket_info_layout = QHBoxLayout()
@@ -2510,10 +2617,11 @@ class ProjectWizardView(QWidget):
         """)
         layout.addWidget(instructions)
         
-        # Generate evaluation prompt
+        # Generate evaluation prompt with current task details
         project_description = self.project_config.get('project_description', '')
         selected_language = self.project_config.get('language', 'Python')
-        evaluation_prompt = self.create_cursor_evaluation_prompt(task_name, project_description, selected_language)
+        current_task_detail = self.project_config.get('task_details', {}).get(self.current_task_number, '')
+        evaluation_prompt = self.create_cursor_evaluation_prompt(task_name, project_description, selected_language, current_task_detail)
         
         # Copyable prompt area
         prompt_area = QTextEdit()
@@ -2534,7 +2642,7 @@ class ProjectWizardView(QWidget):
         layout.addWidget(prompt_area)
         
         # Copy button
-        copy_button = QPushButton("📋 Copy Prompt for Cursor")
+        copy_button = QPushButton("Copy Prompt for Cursor")
         copy_button.setStyleSheet("""
             QPushButton {
                 font-size: 14px;
@@ -2552,33 +2660,109 @@ class ProjectWizardView(QWidget):
         copy_button.clicked.connect(lambda: self.copy_to_clipboard(evaluation_prompt))
         layout.addWidget(copy_button)
     
-    def create_cursor_evaluation_prompt(self, task_name, project_description, selected_language):
-        """Create an evaluation prompt for Cursor AI"""
+    def create_cursor_evaluation_prompt(self, task_name, project_description, selected_language, current_task_detail=""):
+        """Create an educational evaluation prompt for Cursor AI with full context"""
+        
+        clean_project_desc = project_description
+        if project_description:
+            import re
+            patterns = [
+                r'1\.\s*\*\*Project Title\*\*:.*', 
+                r'\*\*Project Title\*\*:.*',        
+                r'Project Title:.*'
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, project_description, re.DOTALL | re.IGNORECASE)
+                if match:
+                    clean_project_desc = project_description[match.start():]
+                    break
+        
+        # Parse task details to extract key information
+        task_context = ""
+        if current_task_detail:
+            try:
+                import json
+                task_data = json.loads(current_task_detail)
+                
+                # Extract system prompt and steps if available
+                if 'cursor_system_prompt' in task_data:
+                    task_context += f"\nSYSTEM PROMPT:\n{task_data['cursor_system_prompt']}\n"
+                
+                if 'steps' in task_data and isinstance(task_data['steps'], list):
+                    task_context += "\nTASK STEPS:\n"
+                    for i, step in enumerate(task_data['steps'], 1):
+                        step_title = step.get('title', f'Step {i}')
+                        step_intent = step.get('intent', '')
+                        task_context += f"{i}. {step_title}"
+                        if step_intent:
+                            task_context += f" - {step_intent}"
+                        task_context += "\n"
+                        
+                        # Include acceptance criteria
+                        cursor_prompt = step.get('cursor_prompt', {})
+                        acceptance_criteria = cursor_prompt.get('acceptance_criteria', [])
+                        if acceptance_criteria:
+                            task_context += "   Acceptance Criteria:\n"
+                            for criterion in acceptance_criteria:
+                                task_context += f"   - {criterion}\n"
+                
+            except (json.JSONDecodeError, Exception):
+                # Fallback to raw task detail
+                task_context = f"\nTASK DETAILS:\n{current_task_detail[:500]}..." if len(current_task_detail) > 500 else f"\nTASK DETAILS:\n{current_task_detail}"
+        
         return f"""Please evaluate my progress on this coding task and help me learn:
 
-PROJECT CONTEXT:
-{project_description.split('.')[0] if project_description else 'Learning project'}
+=== PROJECT CONTEXT ===
+{clean_project_desc if clean_project_desc else 'Educational coding project'}
 
-CURRENT TASK: {task_name}
-LANGUAGE: {selected_language}
+=== CURRENT TASK ===
+Task: {task_name}
+Language: {selected_language}
+Task Number: {self.current_task_number} of {len(getattr(self, 'task_names', []))}
+{task_context}
 
-INSTRUCTIONS:
-1. Look at my current code and files
-2. Check if I've completed the task requirements
-3. Rate my progress (0-100%) and explain what I did well
-4. Explain the software engineering concepts I used (explain like I'm 12-18 years old)
-5. Give me a list of things to study next with specific resources
+=== EDUCATIONAL EVALUATION INSTRUCTIONS ===
+As an AI tutor for a student aged 12-18, please:
 
-Please be encouraging and educational. Help me understand not just what I built, but why it works and how it connects to real software engineering.
+1. **Analyze my code and files** to understand what I've built
+2. **Check task completion** against the requirements above
+3. **Rate my progress** (0-100%) with specific reasoning
+4. **Teach me concepts** - Explain the software engineering concepts I used in simple terms
+5. **Provide study resources** - Give me specific websites, tutorials, or topics to study next
+6. **Connect to real-world** - Explain how this code relates to actual software engineering
 
-RESPOND WITH:
-- **Progress Rating:** [0-100%] and why
-- **What You Built:** Summary of my work
-- **Engineering Concepts:** Explain the concepts I used
-- **Next Steps:** 3-4 things to study with resources
-- **Encouragement:** What I did well and how to improve
+=== RESPONSE FORMAT ===
+Please structure your response as follows:
 
-Please analyze my files now and give me feedback!"""
+**Progress Rating:** [0-100%] 
+- What percentage complete am I and why?
+- What specific requirements did I meet or miss?
+
+**What You Built:**
+- Summary of the code/files I created
+- Key functions or components I implemented
+
+**Engineering Concepts You Used:**
+- Explain each concept in simple terms (like I'm 12-18 years old)
+- Why these concepts matter in software engineering
+- How they solve real problems
+
+**Study Next (with specific resources):**
+- 3-4 specific topics to learn next
+- Include links to tutorials, documentation, or learning sites
+- Explain why each topic will help me grow as a developer
+
+**Encouragement & Growth:**
+- What I did well and should be proud of
+- Specific areas where I can improve
+- How this task prepares me for more advanced programming
+
+**🔗 Real-World Connection:**
+- How this type of code is used in actual software companies
+- What kinds of projects use these concepts
+- Career paths that build on these skills
+
+Please analyze my files now and give me detailed educational feedback!"""
     
     def copy_to_clipboard(self, text):
         """Copy text to system clipboard"""

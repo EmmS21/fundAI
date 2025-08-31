@@ -233,7 +233,7 @@ class ProjectGenerator:
         return services
     
     def generate_task_headers(self, project_description: str, selected_language: str, 
-                             use_local_only: bool = False) -> Optional[str]:
+                             use_local_only: bool = False, total_tasks: int = None) -> Optional[str]:
         """
         Generate just the task headers/titles for the given project
         
@@ -252,7 +252,7 @@ class ProjectGenerator:
         
         # Create the simple task headers prompt
         logger.info(f"📝 Creating task headers prompt")
-        prompt = create_task_headers_prompt(project_description, selected_language)
+        prompt = create_task_headers_prompt(project_description, selected_language, total_tasks)
         logger.info(f"Task headers prompt length: {len(prompt)} characters")
         logger.info(f"📄 Prompt content: {prompt[:300]}...")
         
