@@ -233,7 +233,7 @@ class ProjectGenerator:
         return services
     
     def generate_task_headers(self, project_description: str, selected_language: str, 
-                             use_local_only: bool = False) -> Optional[str]:
+                             use_local_only: bool = False, total_tasks: int = None) -> Optional[str]:
         """
         Generate just the task headers/titles for the given project
         
@@ -252,7 +252,7 @@ class ProjectGenerator:
         
         # Create the simple task headers prompt
         logger.info(f"📝 Creating task headers prompt")
-        prompt = create_task_headers_prompt(project_description, selected_language)
+        prompt = create_task_headers_prompt(project_description, selected_language, total_tasks)
         logger.info(f"Task headers prompt length: {len(prompt)} characters")
         logger.info(f"📄 Prompt content: {prompt[:300]}...")
         
@@ -300,11 +300,26 @@ class ProjectGenerator:
         """
         from .project_prompts import extract_json_from_reasoning_response
         prompt = create_task_detail_prompt(task_name, task_number, project_description, selected_language, completed_tasks_summary)
+        
+        # Log the full prompt being sent
+        print("\n" + "="*80)
+        print(f"🔧 TASK DETAIL GENERATION - Task {task_number}: {task_name}")
+        print("="*80)
+        print("📤 FULL PROMPT BEING SENT:")
+        print("-"*40)
+        print(prompt)
+        print("-"*40)
+        
         logger.info(f"Task detail prompt length: {len(prompt)} characters")
         
         if use_local_only:
             task_detail = self._try_local_generation(prompt, getattr(self, '_streaming_callback', None))
             if task_detail:
+                print("\n📥 FULL AI RESPONSE (LOCAL):")
+                print("-"*40)
+                print(task_detail)
+                print("-"*40)
+                print("="*80 + "\n")
                 logger.info(f"Task {task_number} details generated successfully using local AI")
                 return task_detail
             logger.error(f"Failed to generate task {task_number} details using local AI")
@@ -314,6 +329,11 @@ class ProjectGenerator:
         if self._should_use_cloud_first():
             task_detail = self._try_cloud_generation(prompt)
             if task_detail:
+                print("\n📥 FULL AI RESPONSE (CLOUD):")
+                print("-"*40)
+                print(task_detail)
+                print("-"*40)
+                print("="*80 + "\n")
                 logger.info(f"Task {task_number} details generated successfully using cloud AI")
                 return task_detail
             logger.info(f"Task {task_number} cloud AI failed, falling back to local AI")
@@ -321,6 +341,11 @@ class ProjectGenerator:
         # Fallback to local AI
         task_detail = self._try_local_generation(prompt, getattr(self, '_streaming_callback', None))
         if task_detail:
+            print("\n📥 FULL AI RESPONSE (LOCAL FALLBACK):")
+            print("-"*40)
+            print(task_detail)
+            print("-"*40)
+            print("="*80 + "\n")
             logger.info(f"Task {task_number} details generated successfully using local AI")
             return task_detail
         

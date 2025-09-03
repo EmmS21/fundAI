@@ -15,6 +15,7 @@ try:
 except ImportError:
     TAB_BAR_AVAILABLE = False
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
+from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFont, QTextCursor
 from core.ai.project_generator import ProjectGenerator
 from ..utils import create_offline_warning_banner
@@ -227,7 +228,7 @@ class BackgroundTaskGenerator(QThread):
     task_generated = Signal(int, str) 
     all_tasks_complete = Signal()
     
-    def __init__(self, task_names, existing_task_details, project_description, selected_language, current_task_number, project_id, project_ops):
+    def __init__(self, task_names, existing_task_details, project_description, selected_language, current_task_number, project_id, project_ops, total_tasks=None):
         super().__init__()
         self.task_names = task_names
         self.existing_task_details = existing_task_details
@@ -236,32 +237,52 @@ class BackgroundTaskGenerator(QThread):
         self.current_task_number = current_task_number
         self.project_id = project_id
         self.project_ops = project_ops
+        self.total_tasks = total_tasks
     
     def run(self):
         """Generate remaining empty tasks sequentially"""
+        print(f"🔴 BackgroundTaskGenerator.run() started")
+        print(f"🔴 total_tasks: {self.total_tasks}")
+        print(f"🔴 current_task_number: {self.current_task_number}")
+        print(f"🔴 existing_task_details: {list(self.existing_task_details.keys())}")
+        
         try:
             generator = ProjectGenerator()
             
             if not generator.is_available():
+                print(f"🔴 Generator not available, exiting")
                 return
             
-            for i, task_name in enumerate(self.task_names, 1):
-                if i == self.current_task_number or self.existing_task_details.get(i):
+            # Use total_tasks from AI response instead of task_names length
+            total_to_generate = self.total_tasks or len(self.task_names)
+            print(f"🔴 Will generate tasks 1 to {total_to_generate}")
+            
+            for task_number in range(1, total_to_generate + 1):
+                if task_number == self.current_task_number or self.existing_task_details.get(task_number):
+                    print(f"🔴 Skipping task {task_number} (current or already exists)")
                     continue
                 
+                print(f"🔴 Generating task {task_number}")
+                task_name = f"Task {task_number}"
+                
                 task_detail = generator.generate_task_detail(
-                    task_name, i, self.project_description, self.selected_language, use_local_only=False
+                    task_name, task_number, self.project_description, self.selected_language, use_local_only=False
                 )
                 
                 if task_detail:
+                    print(f"🔴 Successfully generated task {task_number}, saving to database")
                     self.project_ops.update_project_progress(
-                        self.project_id, self.current_task_number, {i: task_detail}
+                        self.project_id, self.current_task_number, {task_number: task_detail}
                     )
-                    self.task_generated.emit(i, task_detail)
+                    self.task_generated.emit(task_number, task_detail)
+                else:
+                    print(f"🔴 Failed to generate task {task_number}")
             
+            print(f"🔴 Background generation complete")
             self.all_tasks_complete.emit()
             
         except Exception as e:
+            print(f"🔴 Background task generation failed: {e}")
             logger.error(f"Background task generation failed: {e}")
 
 class ProjectWizardView(QWidget):
@@ -306,29 +327,36 @@ class ProjectWizardView(QWidget):
     
     def find_first_uncompleted_task(self):
         """Find the first task that hasn't been completed"""
+        print(f"🟡 find_first_uncompleted_task() called")
+        print(f"🟡 current_project_id: {getattr(self, 'current_project_id', 'NOT SET')}")
+        print(f"🟡 task_names: {getattr(self, 'task_names', 'NOT SET')}")
+        
         if not self.current_project_id or not self.task_names:
-            print(f"🔍 DEBUG: No project ID or task names, returning 1")
+            print(f"🟡 No project ID or task names, returning 1")
             return 1
         
-        print(f"🔍 DEBUG: Checking completion status for {len(self.task_names)} tasks...")
+        print(f"🟡 Checking completion status for {len(self.task_names)} tasks...")
         
         # Check each task in order
         for task_number in range(1, len(self.task_names) + 1):
             is_completed = self.project_ops.is_task_completed(self.current_project_id, task_number)
-            print(f"🔍 DEBUG: Task {task_number}: completed = {is_completed}")
+            print(f"🟡 Task {task_number}: completed = {is_completed}")
             if not is_completed:
-                print(f"🔍 DEBUG: Found first uncompleted task: {task_number}")
+                print(f"🟡 Found first uncompleted task: {task_number}")
                 return task_number
         
         # If all tasks are completed, return the last task
-        print(f"🔍 DEBUG: All tasks completed, returning last task: {len(self.task_names)}")
+        print(f"🟡 All tasks completed, returning last task: {len(self.task_names)}")
         return len(self.task_names)
     
     def show_existing_project_task(self):
         """Show the current task for an existing project"""
-        print(f"🔍 DEBUG: show_existing_project_task() called with task number: {getattr(self, 'current_task_number', 'NOT SET')}")
+        print(f"🟠 show_existing_project_task() called")
+        print(f"🟠 current_task_number: {getattr(self, 'current_task_number', 'NOT SET')}")
+        print(f"🟠 task_names: {getattr(self, 'task_names', 'NOT SET')}")
+        
         if not hasattr(self, 'current_task_number') or not self.task_names:
-            print(f"🔍 DEBUG: Missing current_task_number or task_names, generating first task")
+            print(f"🟠 Missing current_task_number or task_names, generating first task")
             self.generate_and_show_current_task()
             return
         
@@ -1440,6 +1468,9 @@ class ProjectWizardView(QWidget):
     
     def continue_existing_project(self):
         """Continue with existing project by showing cached content"""
+        print(f"🟢 continue_existing_project() called")
+        print(f"🟢 current_task_number before: {getattr(self, 'current_task_number', 'NOT SET')}")
+        
         # Set state to track that we're viewing continued project
         self.viewing_continued_project = True
         self.continuing_existing_project = True
@@ -1913,18 +1944,8 @@ class ProjectWizardView(QWidget):
         prompts_layout = QVBoxLayout(prompts_widget)
         if 'cursor_prompts' in task_data:
             for prompt in task_data['cursor_prompts']:
-                prompt_label = QLabel(prompt)
-                prompt_label.setWordWrap(True)
-                prompt_label.setStyleSheet("""
-                    QLabel {
-                        padding: 10px;
-                        margin: 5px;
-                        background-color: rgba(255, 255, 255, 0.05);
-                        border-radius: 6px;
-                        color: rgba(255, 255, 255, 0.9);
-                    }
-                """)
-                prompts_layout.addWidget(prompt_label)
+                prompt_container = self.create_copyable_prompt_widget(prompt)
+                prompts_layout.addWidget(prompt_container)
         tab_content.addWidget(prompts_widget)
         
         # Tab 2: Test Commands
@@ -1973,6 +1994,136 @@ class ProjectWizardView(QWidget):
         layout.addWidget(tab_bar)
         layout.addWidget(tab_content)
 
+    def create_copyable_prompt_widget(self, prompt_text):
+        """Create a hover-reveal copy button widget for cursor prompts"""
+        
+        # Custom widget class for hover detection
+        class HoverCopyWidget(QFrame):
+            def __init__(self, prompt_text, parent=None):
+                super().__init__(parent)
+                self.prompt_text = prompt_text
+                self.copy_button = None
+                self.setup_ui()
+            
+            def setup_ui(self):
+                # Container styling
+                self.setStyleSheet("""
+                    QFrame {
+                        padding: 10px;
+                        margin: 5px;
+                        background-color: rgba(255, 255, 255, 0.05);
+                        border-radius: 6px;
+                        border: 1px solid transparent;
+                    }
+                    QFrame:hover {
+                        background-color: rgba(255, 255, 255, 0.08);
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                    }
+                """)
+                
+                # Layout: text takes most space, button on right
+                layout = QHBoxLayout(self)
+                layout.setContentsMargins(10, 10, 10, 10)
+                
+                # Prompt text
+                self.prompt_label = QLabel(self.prompt_text)
+                self.prompt_label.setWordWrap(True)
+                self.prompt_label.setStyleSheet("""
+                    QLabel {
+                        color: rgba(255, 255, 255, 0.9);
+                        background: transparent;
+                        border: none;
+                        padding: 0px;
+                        margin: 0px;
+                    }
+                """)
+                layout.addWidget(self.prompt_label, 1)  # Take most space
+                
+                # Copy button (initially hidden)
+                try:
+                    from qfluentwidgets import ToolButton
+                    from qfluentwidgets.common.icon import FluentIcon
+                    
+                    self.copy_button = ToolButton(FluentIcon.COPY)
+                    self.copy_button.setToolTip("Copy to clipboard")
+                    self.copy_button.setVisible(False)  
+                    self.copy_button.clicked.connect(self.copy_to_clipboard)
+                    layout.addWidget(self.copy_button, 0)  
+                except ImportError:
+                    # Fallback: regular button
+                    self.copy_button = QPushButton("📋")
+                    self.copy_button.setFixedSize(30, 30)
+                    self.copy_button.setVisible(False)
+                    self.copy_button.clicked.connect(self.copy_to_clipboard)
+                    layout.addWidget(self.copy_button, 0)
+            
+            def enterEvent(self, event):
+                """Show copy button on hover"""
+                if self.copy_button:
+                    self.copy_button.setVisible(True)
+                super().enterEvent(event)
+            
+            def leaveEvent(self, event):
+                """Hide copy button when hover ends"""
+                if self.copy_button:
+                    self.copy_button.setVisible(False)
+                super().leaveEvent(event)
+            
+            def copy_to_clipboard(self):
+                """Copy prompt text to system clipboard"""
+                try:
+                    QApplication.clipboard().setText(self.prompt_text)
+                    # Visual feedback - change icon to checkmark with blue background
+                    if self.copy_button:
+                        try:
+                            from qfluentwidgets.common.icon import FluentIcon
+                            
+                            # Store original state
+                            original_tooltip = self.copy_button.toolTip()
+                            
+                            # Change to success state
+                            self.copy_button.setIcon(FluentIcon.ACCEPT)
+                            self.copy_button.setToolTip("Copied!")
+                            self.copy_button.setStyleSheet("""
+                                QToolButton {
+                                    background-color: #2196F3;
+                                    border-radius: 4px;
+                                    padding: 4px;
+                                }
+                                QToolButton:hover {
+                                    background-color: #1976D2;
+                                }
+                            """)
+                            
+                            # Reset after 1.5 seconds
+                            def reset_button():
+                                if self.copy_button:
+                                    self.copy_button.setIcon(FluentIcon.COPY)
+                                    self.copy_button.setToolTip(original_tooltip)
+                                    self.copy_button.setStyleSheet("")  
+                            
+                            QTimer.singleShot(1500, reset_button)
+                            
+                        except ImportError:
+                            # Fallback for regular button
+                            original_text = self.copy_button.text()
+                            self.copy_button.setText("✓")
+                            self.copy_button.setStyleSheet("""
+                                QPushButton {
+                                    background-color: #2196F3;
+                                    color: white;
+                                    border-radius: 4px;
+                                }
+                            """)
+                            QTimer.singleShot(1500, lambda: (
+                                self.copy_button.setText(original_text),
+                                self.copy_button.setStyleSheet("")
+                            ))
+                except Exception as e:
+                    print(f"Copy failed: {e}")
+        
+        return HoverCopyWidget(prompt_text)
+
     def convert_task_detail_to_html(self, task_detail):
         """Convert individual task detail to HTML"""
         # Extract and format the task detail content
@@ -1997,23 +2148,38 @@ class ProjectWizardView(QWidget):
     
     def on_current_task_generated(self, task_number, task_name, task_detail):
         """Handle successful generation of current task details"""
-        logger.info(f"🎉 on_current_task_generated() SIGNAL RECEIVED!")
-        logger.info(f"📥 Signal parameters - task_number: {task_number}, task_name type: {type(task_name)}")
-        logger.info(f"📥 Signal parameters - task_detail type: {type(task_detail)}, length: {len(task_detail) if task_detail else 0}")
         
-        logger.info(f"✅ TASK DETAIL API RESPONSE RECEIVED")
-        logger.info(f"🎯 Task {task_number}: {task_name}")
-        logger.info(f"📄 Full task detail response: {task_detail}")
-        logger.info(f"📏 Task detail length: {len(task_detail)} characters")
+        logger.info(f"TASK DETAIL API RESPONSE RECEIVED")
+        logger.info(f"Task {task_number}: {task_name}")
         
-        # Extract JSON from the full response for clean display
         from src.core.ai.project_prompts import extract_task_json_from_response
         clean_json = extract_task_json_from_response(task_detail)
         
-        # Store the clean JSON detail
+        # Debug: Print what AI returned for total_project_tasks
+        try:
+            import json
+            task_data = json.loads(clean_json)
+            total_tasks = task_data.get('total_project_tasks')
+            print(f"🔍 AI returned total_project_tasks: {total_tasks}")
+        except:
+            print("🔍 Could not parse AI response for total_project_tasks")
+        
         self.project_config['task_details'][task_number] = clean_json
         
-        logger.info(f"💾 Task detail stored in project_config")
+        # Extract total project tasks FIRST, before showing the task
+        if not hasattr(self, 'task_names') or not self.task_names:
+            try:
+                import json
+                task_data = json.loads(clean_json)
+                total_tasks = task_data.get('total_project_tasks', 7)
+                if isinstance(total_tasks, int) and 7 <= total_tasks <= 12:
+                    self.task_names = [f"Task {i}" for i in range(1, total_tasks + 1)]
+                    print(f"✅ Created {total_tasks} tasks: {self.task_names}")
+                else:
+                    self.task_names = [f"Task {i}" for i in range(1, 8)]  # 7 tasks fallback
+            except Exception as e:
+                self.task_names = [f"Task {i}" for i in range(1, 8)]  # 7 tasks fallback
+                print(f"❌ Error creating task list: {e}")
         
         if self.current_project_id:
             self.project_ops.update_project_progress(
@@ -2021,21 +2187,86 @@ class ProjectWizardView(QWidget):
                 self.current_task_number,
                 self.project_config.get('task_details', {})
             )
-            logger.info(f"💾 Task saved to database")
-        
-        logger.info(f"🚀 Calling show_complete_current_task() with clean JSON")
         self.show_complete_current_task(task_name, clean_json)
         
         # Start background job AFTER task is saved and UI updated
         self.start_background_task_generation()
     
+    def set_total_tasks_from_json(self, task_json):
+        """Extract total task count from AI response and generate task headers"""
+        try:
+            import json
+            task_data = json.loads(task_json) if isinstance(task_json, str) else task_json
+            
+            # Check if AI provided total_project_tasks
+            if 'total_project_tasks' in task_data:
+                total_tasks = task_data.get('total_project_tasks')
+                
+                # Validate (minimum 7, maximum 12)
+                if isinstance(total_tasks, int) and 7 <= total_tasks <= 12:
+                    logger.info(f"AI specified {total_tasks} total tasks for this project")
+                    # Generate task headers using existing system
+                    self.generate_task_headers_for_total_count(total_tasks)
+                    return
+                else:
+                    logger.warning(f"AI provided invalid total_project_tasks: {total_tasks}")
+            
+            # Fallback: Use default task header generation
+            logger.info("No valid total_project_tasks from AI, using existing task header generation")
+            self.generate_task_headers_for_total_count(7)  # Minimum fallback
+                
+        except Exception as e:
+            logger.error(f"Error extracting total tasks from JSON: {e}")
+            self.generate_task_headers_for_total_count(7)  # Minimum fallback
+    
+    def generate_task_headers_for_total_count(self, total_tasks: int):
+        """Generate task headers using existing AI system for the specified count"""
+        try:
+            # Use existing task header generation but specify the count needed
+            project_description = self.project_config.get('project_description', '')
+            selected_language = self.project_config.get('language', 'Python')
+            
+            # Create modified prompt that asks for specific number of tasks
+            from core.ai.project_prompts import create_task_headers_prompt
+            headers_prompt = create_task_headers_prompt(project_description, selected_language, total_tasks)
+            
+            # Generate headers using existing system
+            generator = ProjectGenerator()
+            task_headers = generator.generate_task_headers_with_prompt(headers_prompt)
+            
+            if task_headers:
+                self.parse_and_set_task_names(task_headers, total_tasks)
+            else:
+                logger.error("Failed to generate task headers, using fallback")
+                self.use_fallback_task_names(total_tasks)
+                
+        except Exception as e:
+            logger.error(f"Error generating task headers: {e}")
+            self.use_fallback_task_names(total_tasks)
+    
+    def use_fallback_task_names(self, total_tasks: int):
+        """Simple fallback task names"""
+        self.task_names = [f"Task {i}" for i in range(1, total_tasks + 1)]
+        self.project_config['task_names'] = self.task_names
+        logger.info(f"Using fallback: {total_tasks} tasks")
+    
+    def parse_and_set_task_names(self, task_headers: str, expected_count: int):
+        """Parse task headers response and extract task names"""
+        # Simple parsing - extract task names from headers response
+        # This will use existing parsing logic for task headers
+        import re
+        tasks = re.findall(r'\*\*Task \d+:\*\*(.*?)(?=\*\*Task|\Z)', task_headers, re.DOTALL)
+        
+        if len(tasks) >= expected_count:
+            self.task_names = [task.strip().split('\n')[0] for task in tasks[:expected_count]]
+            self.project_config['task_names'] = self.task_names
+            logger.info(f"Extracted {len(self.task_names)} task names from headers")
+        else:
+            self.use_fallback_task_names(expected_count)
+    
     def on_current_task_failed(self, task_number, task_name, error_message):
         """Handle failed generation of current task details"""
-        logger.error(f"💥 on_current_task_failed() SIGNAL RECEIVED!")
-        logger.error(f"📥 Signal parameters - task_number: {task_number}, task_name: {task_name}")
-        logger.error(f"📥 Signal parameters - error_message type: {type(error_message)}")
-        
-        logger.error(f"❌ TASK DETAIL GENERATION FAILED")
+
         logger.error(f"🎯 Task {task_number}: {task_name}")
         logger.error(f"💥 Error: {error_message}")
         
@@ -2087,17 +2318,29 @@ class ProjectWizardView(QWidget):
         scroll_layout = QVBoxLayout(scroll_widget)
         
         import json
-        ticket_display = f"Task {self.current_task_number} of {len(self.task_names)}" 
-        task_title = task_name  
+        print(f"🔍 DEBUG: self.task_names = {getattr(self, 'task_names', 'NOT SET')}")
+        print(f"🔍 DEBUG: len(self.task_names) = {len(getattr(self, 'task_names', []))}")
+        
+        # Get total tasks from AI response instead of task_names array
+        total_tasks_from_ai = len(getattr(self, 'task_names', []))  # fallback
+        task_title = task_name
         
         try:
             task_data = json.loads(task_detail)
+            # Get total tasks directly from AI's response
+            if 'total_project_tasks' in task_data:
+                total_tasks_from_ai = task_data['total_project_tasks']
+                print(f"🔍 DEBUG: Using total_project_tasks from AI: {total_tasks_from_ai}")
+            
             if 'ticket_number' in task_data:
                 ticket_display = f"Ticket {task_data['ticket_number']}"
+            else:
+                ticket_display = f"Task {self.current_task_number} of {total_tasks_from_ai}"
+                
             if 'title' in task_data:
                 task_title = task_data['title']
         except (json.JSONDecodeError, Exception):
-            pass
+            ticket_display = f"Task {self.current_task_number} of {total_tasks_from_ai}"
         
         # Create horizontal layout for ticket info and story points
         ticket_info_layout = QHBoxLayout()
@@ -2196,21 +2439,37 @@ class ProjectWizardView(QWidget):
         """)
         scroll_layout.addWidget(task_header)
         
+        rendered_new_cursor_ui = False
+        try:
+            if 'task_data' in locals() and isinstance(task_data, dict) \
+               and 'cursor_system_prompt' in task_data and 'steps' in task_data:
+                self.render_cursor_prompts(scroll_layout, task_data)
+                rendered_new_cursor_ui = True
+                try:
+                    if task_data.get('steps') and isinstance(task_data['steps'], list) and task_data['steps'][0].get('title'):
+                        task_header.setText(task_data['steps'][0]['title'])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        
         # Create task card - pass the already parsed data if available
-        if 'task_data' in locals():
-            self.create_task_card(scroll_layout, task_detail, task_data)
-        else:
-            self.create_task_card(scroll_layout, task_detail)
+        if not rendered_new_cursor_ui:
+            if 'task_data' in locals():
+                self.create_task_card(scroll_layout, task_detail, task_data)
+            else:
+                self.create_task_card(scroll_layout, task_detail)
         
         # Create tab bar for task content
-        if TAB_BAR_AVAILABLE and 'task_data' in locals():
-            self.create_task_tabs(scroll_layout, task_data, task_detail)
-        else:
-            # Fallback: original task browser
-            task_browser = QTextBrowser()
-            task_browser.setReadOnly(True)
-            task_browser.setOpenExternalLinks(False)
-            task_browser.setStyleSheet("""
+        if not rendered_new_cursor_ui:
+            if TAB_BAR_AVAILABLE and 'task_data' in locals():
+                self.create_task_tabs(scroll_layout, task_data, task_detail)
+            else:
+                # Fallback: original task browser
+                task_browser = QTextBrowser()
+                task_browser.setReadOnly(True)
+                task_browser.setOpenExternalLinks(False)
+                task_browser.setStyleSheet("""
                 QTextBrowser {
                     font-size: 14px;
                     line-height: 1.6;
@@ -2222,9 +2481,9 @@ class ProjectWizardView(QWidget):
                     margin-bottom: 20px;
                 }
             """)
-            formatted_detail = self.convert_task_detail_to_html(task_detail)
-            task_browser.setHtml(formatted_detail)
-            scroll_layout.addWidget(task_browser)
+                formatted_detail = self.convert_task_detail_to_html(task_detail)
+                task_browser.setHtml(formatted_detail)
+                scroll_layout.addWidget(task_browser)
         
         # Cursor evaluation section
         self.add_cursor_evaluation_section(scroll_layout, task_name)
@@ -2240,8 +2499,9 @@ class ProjectWizardView(QWidget):
         task_completed = task_completed if task_completed is not None else False
         self.update_task_navigation(task_completed)
         
-        if self.current_task_number < len(self.task_names):
+        if self.current_task_number < total_tasks_from_ai:
             next_step = self.current_task_number + 1
+            # self.next_button.setText(f"Next Task ({next_step}) →")
             self.next_button.setText(f"Step {next_step} →")
         else:
             self.next_button.setText("Complete Project →")
@@ -2388,10 +2648,11 @@ class ProjectWizardView(QWidget):
         """)
         layout.addWidget(instructions)
         
-        # Generate evaluation prompt
+        # Generate evaluation prompt with current task details
         project_description = self.project_config.get('project_description', '')
         selected_language = self.project_config.get('language', 'Python')
-        evaluation_prompt = self.create_cursor_evaluation_prompt(task_name, project_description, selected_language)
+        current_task_detail = self.project_config.get('task_details', {}).get(self.current_task_number, '')
+        evaluation_prompt = self.create_cursor_evaluation_prompt(task_name, project_description, selected_language, current_task_detail)
         
         # Copyable prompt area
         prompt_area = QTextEdit()
@@ -2412,7 +2673,7 @@ class ProjectWizardView(QWidget):
         layout.addWidget(prompt_area)
         
         # Copy button
-        copy_button = QPushButton("📋 Copy Prompt for Cursor")
+        copy_button = QPushButton("Copy Prompt for Cursor")
         copy_button.setStyleSheet("""
             QPushButton {
                 font-size: 14px;
@@ -2430,33 +2691,109 @@ class ProjectWizardView(QWidget):
         copy_button.clicked.connect(lambda: self.copy_to_clipboard(evaluation_prompt))
         layout.addWidget(copy_button)
     
-    def create_cursor_evaluation_prompt(self, task_name, project_description, selected_language):
-        """Create an evaluation prompt for Cursor AI"""
+    def create_cursor_evaluation_prompt(self, task_name, project_description, selected_language, current_task_detail=""):
+        """Create an educational evaluation prompt for Cursor AI with full context"""
+        
+        clean_project_desc = project_description
+        if project_description:
+            import re
+            patterns = [
+                r'1\.\s*\*\*Project Title\*\*:.*', 
+                r'\*\*Project Title\*\*:.*',        
+                r'Project Title:.*'
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, project_description, re.DOTALL | re.IGNORECASE)
+                if match:
+                    clean_project_desc = project_description[match.start():]
+                    break
+        
+        # Parse task details to extract key information
+        task_context = ""
+        if current_task_detail:
+            try:
+                import json
+                task_data = json.loads(current_task_detail)
+                
+                # Extract system prompt and steps if available
+                if 'cursor_system_prompt' in task_data:
+                    task_context += f"\nSYSTEM PROMPT:\n{task_data['cursor_system_prompt']}\n"
+                
+                if 'steps' in task_data and isinstance(task_data['steps'], list):
+                    task_context += "\nTASK STEPS:\n"
+                    for i, step in enumerate(task_data['steps'], 1):
+                        step_title = step.get('title', f'Step {i}')
+                        step_intent = step.get('intent', '')
+                        task_context += f"{i}. {step_title}"
+                        if step_intent:
+                            task_context += f" - {step_intent}"
+                        task_context += "\n"
+                        
+                        # Include acceptance criteria
+                        cursor_prompt = step.get('cursor_prompt', {})
+                        acceptance_criteria = cursor_prompt.get('acceptance_criteria', [])
+                        if acceptance_criteria:
+                            task_context += "   Acceptance Criteria:\n"
+                            for criterion in acceptance_criteria:
+                                task_context += f"   - {criterion}\n"
+                
+            except (json.JSONDecodeError, Exception):
+                # Fallback to raw task detail
+                task_context = f"\nTASK DETAILS:\n{current_task_detail[:500]}..." if len(current_task_detail) > 500 else f"\nTASK DETAILS:\n{current_task_detail}"
+        
         return f"""Please evaluate my progress on this coding task and help me learn:
 
-PROJECT CONTEXT:
-{project_description.split('.')[0] if project_description else 'Learning project'}
+=== PROJECT CONTEXT ===
+{clean_project_desc if clean_project_desc else 'Educational coding project'}
 
-CURRENT TASK: {task_name}
-LANGUAGE: {selected_language}
+=== CURRENT TASK ===
+Task: {task_name}
+Language: {selected_language}
+Task Number: {self.current_task_number} of {len(getattr(self, 'task_names', []))}
+{task_context}
 
-INSTRUCTIONS:
-1. Look at my current code and files
-2. Check if I've completed the task requirements
-3. Rate my progress (0-100%) and explain what I did well
-4. Explain the software engineering concepts I used (explain like I'm 12-18 years old)
-5. Give me a list of things to study next with specific resources
+=== EDUCATIONAL EVALUATION INSTRUCTIONS ===
+As an AI tutor for a student aged 12-18, please:
 
-Please be encouraging and educational. Help me understand not just what I built, but why it works and how it connects to real software engineering.
+1. **Analyze my code and files** to understand what I've built
+2. **Check task completion** against the requirements above
+3. **Rate my progress** (0-100%) with specific reasoning
+4. **Teach me concepts** - Explain the software engineering concepts I used in simple terms
+5. **Provide study resources** - Give me specific websites, tutorials, or topics to study next
+6. **Connect to real-world** - Explain how this code relates to actual software engineering
 
-RESPOND WITH:
-- **Progress Rating:** [0-100%] and why
-- **What You Built:** Summary of my work
-- **Engineering Concepts:** Explain the concepts I used
-- **Next Steps:** 3-4 things to study with resources
-- **Encouragement:** What I did well and how to improve
+=== RESPONSE FORMAT ===
+Please structure your response as follows:
 
-Please analyze my files now and give me feedback!"""
+**Progress Rating:** [0-100%] 
+- What percentage complete am I and why?
+- What specific requirements did I meet or miss?
+
+**What You Built:**
+- Summary of the code/files I created
+- Key functions or components I implemented
+
+**Engineering Concepts You Used:**
+- Explain each concept in simple terms (like I'm 12-18 years old)
+- Why these concepts matter in software engineering
+- How they solve real problems
+
+**Study Next (with specific resources):**
+- 3-4 specific topics to learn next
+- Include links to tutorials, documentation, or learning sites
+- Explain why each topic will help me grow as a developer
+
+**Encouragement & Growth:**
+- What I did well and should be proud of
+- Specific areas where I can improve
+- How this task prepares me for more advanced programming
+
+**🔗 Real-World Connection:**
+- How this type of code is used in actual software companies
+- What kinds of projects use these concepts
+- Career paths that build on these skills
+
+Please analyze my files now and give me detailed educational feedback!"""
     
     def copy_to_clipboard(self, text):
         """Copy text to system clipboard"""
@@ -2622,6 +2959,18 @@ Please analyze my files now and give me feedback!"""
         if hasattr(self, 'background_generator') and self.background_generator.isRunning():
             return 
         
+        # Get total tasks from current task's AI response
+        total_tasks = len(self.task_names)  # fallback
+        current_task_detail = self.project_config.get('task_details', {}).get(self.current_task_number, '')
+        try:
+            import json
+            task_data = json.loads(current_task_detail)
+            if 'total_project_tasks' in task_data:
+                total_tasks = task_data['total_project_tasks']
+                print(f"🔴 Using total_project_tasks from AI: {total_tasks}")
+        except:
+            pass
+        
         self.background_generator = BackgroundTaskGenerator(
             self.task_names,
             self.project_config.get('task_details', {}),
@@ -2629,7 +2978,8 @@ Please analyze my files now and give me feedback!"""
             self.project_config.get('language', 'Python'),
             self.current_task_number,
             self.current_project_id,
-            self.project_ops
+            self.project_ops,
+            total_tasks
         )
         self.background_generator.task_generated.connect(self.on_background_task_generated)
         self.background_generator.start() 
@@ -2737,7 +3087,7 @@ Please analyze my files now and give me feedback!"""
         scroll_layout = QVBoxLayout(scroll_widget)
         
         # Simple loading message
-        loading_label = QLabel("🔄 Generating task details...")
+        loading_label = QLabel("Generating task details...")
         loading_label.setAlignment(Qt.AlignCenter)
         loading_label.setStyleSheet("""
             QLabel {
@@ -2756,3 +3106,108 @@ Please analyze my files now and give me feedback!"""
         # Hide navigation during loading
         self.next_button.setVisible(False)
         self.back_button.setEnabled(True)
+
+    def render_cursor_prompts(self, layout, task_data):
+        """Render the new cursor prompt schema: system prompt + steps with system_role, prompt, and acceptance criteria.
+        Also provide a single copy button to copy the entire composed prompt (including section titles)."""
+        try:
+            combined_lines = []
+            
+            # system_prompt = task_data.get('cursor_system_prompt', '')
+            # # Reuse copyable prompt widget for system prompt
+            # sys_prompt_widget = self.create_copyable_prompt_widget(system_prompt)
+            # layout.addWidget(sys_prompt_widget)
+            
+            
+            # Steps
+            steps = task_data.get('steps', [])
+            if isinstance(steps, list):
+                for idx, step in enumerate(steps, start=1):
+                    # Step container
+                    step_frame = QFrame()
+                    step_frame.setStyleSheet("""
+                        QFrame {
+                            background-color: rgba(255, 255, 255, 0.04);
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            border-radius: 10px;
+                            padding: 12px;
+                            margin: 8px 0px;
+                        }
+                    """)
+                    step_layout = QVBoxLayout(step_frame)
+                    step_layout.setSpacing(8)
+                    
+                    # Step title
+                    step_title = step.get('title') or f"Step {idx}"
+                    step_intent = step.get('intent')
+                    title_label = QLabel(f"Step {idx}: {step_title}")
+                    title_label.setStyleSheet("""
+                        QLabel {
+                            font-size: 15px;
+                            font-weight: 600;
+                            color: rgba(255, 255, 255, 0.95);
+                        }
+                    """)
+                    step_layout.addWidget(title_label)
+                    
+                    if step_intent:
+                        intent_label = QLabel(step_intent)
+                        intent_label.setWordWrap(True)
+                        intent_label.setStyleSheet("""
+                            QLabel {
+                                font-size: 13px;
+                                color: rgba(255, 255, 255, 0.75);
+                                margin-left: 4px;
+                            }
+                        """)
+                        step_layout.addWidget(intent_label)
+                    
+                    cp = step.get('cursor_prompt', {}) if isinstance(step, dict) else {}
+                    system_role = cp.get('system_role', '')
+                    step_prompt = cp.get('prompt', '')
+                    ac_list = cp.get('acceptance_criteria', []) or []
+                    
+
+                    
+                    step_combined = "System role: " + (system_role or "") + "\n\n" \
+                                  + "Prompt: " + (step_prompt or "") + "\n\n" \
+                                  + "Acceptance criteria:\n" + "\n".join(f"- {c}" for c in ac_list)
+                    
+                    step_copy_widget = self.create_copyable_prompt_widget(step_combined)
+                    step_layout.addWidget(step_copy_widget)
+                    
+                    combined_lines.append(f"\nStep {idx}: {step_title}")
+                    if step_intent:
+                        combined_lines.append(f"Intent: {step_intent}")
+                    combined_lines.append("System role:")
+                    combined_lines.append(system_role or "")
+                    combined_lines.append("Prompt:")
+                    combined_lines.append(step_prompt or "")
+                    combined_lines.append("Acceptance Criteria:")
+                    if isinstance(ac_list, list) and ac_list:
+                        combined_lines.extend([f"- {c}" for c in ac_list])
+                    else:
+                        combined_lines.append("(none provided)")
+                    
+                    layout.addWidget(step_frame)
+            
+            # Copy entire composed prompt (one go)
+            combined_text = "\n\n".join(combined_lines)
+            # full_copy_btn = QPushButton("📋 Copy Entire Prompt")
+            # full_copy_btn.setStyleSheet("""
+            #     QPushButton {
+            #         font-size: 14px;
+            #         color: white;
+            #         background-color: #2ecc71;
+            #         border: none;
+            #         border-radius: 6px;
+            #         padding: 10px 16px;
+            #         margin-top: 12px;
+            #     }
+            #     QPushButton:hover { background-color: #27ae60; }
+            # """)
+            # full_copy_btn.clicked.connect(lambda checked=False, text=combined_text: self.copy_to_clipboard(text))
+            # layout.addWidget(full_copy_btn)
+        
+        except Exception as e:
+            logger.error(f"Error rendering cursor prompts: {e}")
