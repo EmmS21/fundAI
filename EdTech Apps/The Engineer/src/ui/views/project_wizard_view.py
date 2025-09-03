@@ -228,7 +228,7 @@ class BackgroundTaskGenerator(QThread):
     task_generated = Signal(int, str) 
     all_tasks_complete = Signal()
     
-    def __init__(self, task_names, existing_task_details, project_description, selected_language, current_task_number, project_id, project_ops):
+    def __init__(self, task_names, existing_task_details, project_description, selected_language, current_task_number, project_id, project_ops, total_tasks=None):
         super().__init__()
         self.task_names = task_names
         self.existing_task_details = existing_task_details
@@ -237,32 +237,52 @@ class BackgroundTaskGenerator(QThread):
         self.current_task_number = current_task_number
         self.project_id = project_id
         self.project_ops = project_ops
+        self.total_tasks = total_tasks
     
     def run(self):
         """Generate remaining empty tasks sequentially"""
+        print(f"🔴 BackgroundTaskGenerator.run() started")
+        print(f"🔴 total_tasks: {self.total_tasks}")
+        print(f"🔴 current_task_number: {self.current_task_number}")
+        print(f"🔴 existing_task_details: {list(self.existing_task_details.keys())}")
+        
         try:
             generator = ProjectGenerator()
             
             if not generator.is_available():
+                print(f"🔴 Generator not available, exiting")
                 return
             
-            for i, task_name in enumerate(self.task_names, 1):
-                if i == self.current_task_number or self.existing_task_details.get(i):
+            # Use total_tasks from AI response instead of task_names length
+            total_to_generate = self.total_tasks or len(self.task_names)
+            print(f"🔴 Will generate tasks 1 to {total_to_generate}")
+            
+            for task_number in range(1, total_to_generate + 1):
+                if task_number == self.current_task_number or self.existing_task_details.get(task_number):
+                    print(f"🔴 Skipping task {task_number} (current or already exists)")
                     continue
                 
+                print(f"🔴 Generating task {task_number}")
+                task_name = f"Task {task_number}"
+                
                 task_detail = generator.generate_task_detail(
-                    task_name, i, self.project_description, self.selected_language, use_local_only=False
+                    task_name, task_number, self.project_description, self.selected_language, use_local_only=False
                 )
                 
                 if task_detail:
+                    print(f"🔴 Successfully generated task {task_number}, saving to database")
                     self.project_ops.update_project_progress(
-                        self.project_id, self.current_task_number, {i: task_detail}
+                        self.project_id, self.current_task_number, {task_number: task_detail}
                     )
-                    self.task_generated.emit(i, task_detail)
+                    self.task_generated.emit(task_number, task_detail)
+                else:
+                    print(f"🔴 Failed to generate task {task_number}")
             
+            print(f"🔴 Background generation complete")
             self.all_tasks_complete.emit()
             
         except Exception as e:
+            print(f"🔴 Background task generation failed: {e}")
             logger.error(f"Background task generation failed: {e}")
 
 class ProjectWizardView(QWidget):
@@ -307,29 +327,36 @@ class ProjectWizardView(QWidget):
     
     def find_first_uncompleted_task(self):
         """Find the first task that hasn't been completed"""
+        print(f"🟡 find_first_uncompleted_task() called")
+        print(f"🟡 current_project_id: {getattr(self, 'current_project_id', 'NOT SET')}")
+        print(f"🟡 task_names: {getattr(self, 'task_names', 'NOT SET')}")
+        
         if not self.current_project_id or not self.task_names:
-            print(f"🔍 DEBUG: No project ID or task names, returning 1")
+            print(f"🟡 No project ID or task names, returning 1")
             return 1
         
-        print(f"🔍 DEBUG: Checking completion status for {len(self.task_names)} tasks...")
+        print(f"🟡 Checking completion status for {len(self.task_names)} tasks...")
         
         # Check each task in order
         for task_number in range(1, len(self.task_names) + 1):
             is_completed = self.project_ops.is_task_completed(self.current_project_id, task_number)
-            print(f"🔍 DEBUG: Task {task_number}: completed = {is_completed}")
+            print(f"🟡 Task {task_number}: completed = {is_completed}")
             if not is_completed:
-                print(f"🔍 DEBUG: Found first uncompleted task: {task_number}")
+                print(f"🟡 Found first uncompleted task: {task_number}")
                 return task_number
         
         # If all tasks are completed, return the last task
-        print(f"🔍 DEBUG: All tasks completed, returning last task: {len(self.task_names)}")
+        print(f"🟡 All tasks completed, returning last task: {len(self.task_names)}")
         return len(self.task_names)
     
     def show_existing_project_task(self):
         """Show the current task for an existing project"""
-        print(f"🔍 DEBUG: show_existing_project_task() called with task number: {getattr(self, 'current_task_number', 'NOT SET')}")
+        print(f"🟠 show_existing_project_task() called")
+        print(f"🟠 current_task_number: {getattr(self, 'current_task_number', 'NOT SET')}")
+        print(f"🟠 task_names: {getattr(self, 'task_names', 'NOT SET')}")
+        
         if not hasattr(self, 'current_task_number') or not self.task_names:
-            print(f"🔍 DEBUG: Missing current_task_number or task_names, generating first task")
+            print(f"🟠 Missing current_task_number or task_names, generating first task")
             self.generate_and_show_current_task()
             return
         
@@ -1441,6 +1468,9 @@ class ProjectWizardView(QWidget):
     
     def continue_existing_project(self):
         """Continue with existing project by showing cached content"""
+        print(f"🟢 continue_existing_project() called")
+        print(f"🟢 current_task_number before: {getattr(self, 'current_task_number', 'NOT SET')}")
+        
         # Set state to track that we're viewing continued project
         self.viewing_continued_project = True
         self.continuing_existing_project = True
@@ -2469,8 +2499,9 @@ class ProjectWizardView(QWidget):
         task_completed = task_completed if task_completed is not None else False
         self.update_task_navigation(task_completed)
         
-        if self.current_task_number < len(self.task_names):
+        if self.current_task_number < total_tasks_from_ai:
             next_step = self.current_task_number + 1
+            # self.next_button.setText(f"Next Task ({next_step}) →")
             self.next_button.setText(f"Step {next_step} →")
         else:
             self.next_button.setText("Complete Project →")
@@ -2928,6 +2959,18 @@ Please analyze my files now and give me detailed educational feedback!"""
         if hasattr(self, 'background_generator') and self.background_generator.isRunning():
             return 
         
+        # Get total tasks from current task's AI response
+        total_tasks = len(self.task_names)  # fallback
+        current_task_detail = self.project_config.get('task_details', {}).get(self.current_task_number, '')
+        try:
+            import json
+            task_data = json.loads(current_task_detail)
+            if 'total_project_tasks' in task_data:
+                total_tasks = task_data['total_project_tasks']
+                print(f"🔴 Using total_project_tasks from AI: {total_tasks}")
+        except:
+            pass
+        
         self.background_generator = BackgroundTaskGenerator(
             self.task_names,
             self.project_config.get('task_details', {}),
@@ -2935,7 +2978,8 @@ Please analyze my files now and give me detailed educational feedback!"""
             self.project_config.get('language', 'Python'),
             self.current_task_number,
             self.current_project_id,
-            self.project_ops
+            self.project_ops,
+            total_tasks
         )
         self.background_generator.task_generated.connect(self.on_background_task_generated)
         self.background_generator.start() 
