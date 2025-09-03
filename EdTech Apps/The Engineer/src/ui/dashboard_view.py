@@ -6,8 +6,11 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QRect, QSize, QPoint
 from PySide6.QtGui import QFont, QPixmap, QPainter, QPainterPath
 import shutil
+import logging
 from pathlib import Path
 from .views.project_wizard_view import ProjectWizardView
+
+logger = logging.getLogger(__name__)
 
 class FlowLayout(QLayout):
     def __init__(self, parent=None, margin=0, hSpacing=-1, vSpacing=-1):
@@ -566,11 +569,11 @@ class DashboardView(QWidget):
         total_skills = self.get_total_skills_count()
         
         stats_text = f"{completed_projects} Completed  •  {in_progress_projects} In Progress  •  {total_skills} Skills"
-        stats_label = QLabel(stats_text)
-        stats_label.setAlignment(Qt.AlignCenter)
-        stats_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        stats_label.setWordWrap(True)
-        stats_label.setStyleSheet("""
+        self.stats_label = QLabel(stats_text)  # Store as instance variable for refreshing
+        self.stats_label.setAlignment(Qt.AlignCenter)
+        self.stats_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.stats_label.setWordWrap(True)
+        self.stats_label.setStyleSheet("""
             QLabel {
                 font-size: 13px;
                 font-weight: 500;
@@ -580,7 +583,7 @@ class DashboardView(QWidget):
                 min-height: 20px;
             }
         """)
-        layout.addWidget(stats_label)
+        layout.addWidget(self.stats_label)
         
         # Skills grid (no container)
         skills_grid = QGridLayout()
@@ -897,9 +900,19 @@ class DashboardView(QWidget):
                 SELECT COUNT(*) FROM github_projects 
                 WHERE user_id = ? AND completed_at IS NOT NULL
             """, (self.user_data['id'],))
-            result = cursor.fetchone()
-            return result[0] if result else 0
-        except Exception:
+            github_result = cursor.fetchone()
+            github_count = github_result[0] if github_result else 0
+            
+            cursor.execute("""
+                SELECT COUNT(*) FROM projects 
+                WHERE user_id = ? AND is_completed = 1
+            """, (self.user_data['id'],))
+            ai_result = cursor.fetchone()
+            ai_count = ai_result[0] if ai_result else 0
+            
+            return github_count + ai_count
+        except Exception as e:
+            logger.error(f"Error getting completed projects count: {e}")
             return 0
     
     def get_in_progress_projects_count(self):
@@ -907,14 +920,24 @@ class DashboardView(QWidget):
             return 0
         
         try:
-            cursor = self.main_window.database.connection.cursor()
+            cursor = self.main_window.database.connection.cursor()            
             cursor.execute("""
                 SELECT COUNT(*) FROM github_projects 
                 WHERE user_id = ? AND completed_at IS NULL
             """, (self.user_data['id'],))
-            result = cursor.fetchone()
-            return result[0] if result else 0
-        except Exception:
+            github_result = cursor.fetchone()
+            github_count = github_result[0] if github_result else 0
+            
+            cursor.execute("""
+                SELECT COUNT(*) FROM projects 
+                WHERE user_id = ? AND is_completed = 0 AND status = 'active'
+            """, (self.user_data['id'],))
+            ai_result = cursor.fetchone()
+            ai_count = ai_result[0] if ai_result else 0
+            
+            return github_count + ai_count
+        except Exception as e:
+            logger.error(f"Error getting in-progress projects count: {e}")
             return 0
     
     def get_total_skills_count(self):
@@ -930,6 +953,17 @@ class DashboardView(QWidget):
             return result[0] if result else 0
         except Exception:
             return 0
+    
+    def refresh_project_stats(self):
+        """Refresh the project statistics display"""
+        if hasattr(self, 'stats_label'):
+            completed_projects = self.get_completed_projects_count()
+            in_progress_projects = self.get_in_progress_projects_count()
+            total_skills = self.get_total_skills_count()
+            
+            stats_text = f"{completed_projects} Completed  •  {in_progress_projects} In Progress  •  {total_skills} Skills"
+            self.stats_label.setText(stats_text)
+            logger.info(f"Dashboard stats refreshed: {stats_text}")
     
     def create_stat_widget(self, title, value, icon):
         stat_widget = QWidget()
