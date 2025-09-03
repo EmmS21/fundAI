@@ -10,10 +10,12 @@ from PySide6.QtWidgets import (
 )
 
 try:
-    from qfluentwidgets import TabBar
+    from qfluentwidgets import TabBar, InfoBar, InfoBarPosition
     TAB_BAR_AVAILABLE = True
+    FLYOUT_AVAILABLE = True
 except ImportError:
     TAB_BAR_AVAILABLE = False
+    FLYOUT_AVAILABLE = False
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFont, QTextCursor
@@ -250,28 +252,21 @@ class BackgroundTaskGenerator(QThread):
             generator = ProjectGenerator()
             
             if not generator.is_available():
-                print(f"🔴 Generator not available, exiting")
                 return
             
             # Use total_tasks from AI response instead of task_names length
             total_to_generate = self.total_tasks or len(self.task_names)
-            print(f"🔴 Will generate tasks 1 to {total_to_generate}")
             
             for task_number in range(1, total_to_generate + 1):
                 if task_number == self.current_task_number or self.existing_task_details.get(task_number):
-                    print(f"🔴 Skipping task {task_number} (current or already exists)")
                     continue
                 
-                print(f"🔴 Generating task {task_number}")
-                task_name = f"Task {task_number}"
-                
+                task_name = f"Task {task_number}"                
                 task_detail = generator.generate_task_detail(
                     task_name, task_number, self.project_description, self.selected_language, use_local_only=False
                 )
                 
                 if task_detail:
-                    print(f"🔴 Successfully generated task {task_number}, extracting JSON and saving to database")
-                    # Extract JSON from AI response before storing (same as main UI flow)
                     from src.core.ai.project_prompts import extract_task_json_from_response
                     clean_json = extract_task_json_from_response(task_detail)
                     
@@ -286,7 +281,6 @@ class BackgroundTaskGenerator(QThread):
             self.all_tasks_complete.emit()
             
         except Exception as e:
-            print(f"🔴 Background task generation failed: {e}")
             logger.error(f"Background task generation failed: {e}")
 
 class ProjectWizardView(QWidget):
@@ -1344,24 +1338,15 @@ class ProjectWizardView(QWidget):
             except:
                 print(f"🚀 Could not get total_project_tasks from AI, using fallback: {total_tasks_from_ai}")
             
-            print(f"🚀 Checking condition: current_task_number ({self.current_task_number}) < total_tasks_from_ai ({total_tasks_from_ai})")
             if hasattr(self, 'current_task_number') and self.current_task_number < total_tasks_from_ai:
-                print(f"🚀 Branch 4a: Moving to next task")
                 self.current_task_number += 1
-                print(f"🚀 Updated current_task_number to: {self.current_task_number}")
-                # Save progress to database
                 if self.current_project_id:
-                    print(f"🚀 Calling update_project_progress with project_id: {self.current_project_id}, task: {self.current_task_number}")
                     self.project_ops.update_project_progress(
                         self.current_project_id, 
                         self.current_task_number
                     )
-                # Load existing task or generate new one
-                print(f"🚀 Calling show_existing_project_task()")
                 self.show_existing_project_task()
             else:
-                print(f"🚀 Branch 4b: All tasks completed - mark project as complete")
-                # All tasks completed - mark project as complete
                 if self.current_project_id:
                     self.project_ops.complete_project(self.current_project_id)
                 self.complete_wizard()
@@ -1370,9 +1355,7 @@ class ProjectWizardView(QWidget):
     
     def show_project_generation(self):
         """Show timer in existing QScrollArea, then replace with AI output"""
-        # Check if we have an existing project first
         if self.current_project_id and self.project_config.get('project_description'):
-            # We have a cached project, show choice
             self.show_project_choice()
             return
         
@@ -2962,17 +2945,36 @@ Please analyze my files now and give me detailed educational feedback!"""
             self.next_button.setVisible(at_bottom)
     
     def complete_wizard(self):
-        """Complete the wizard and start project"""
-        # Add user scores to project config
-        if self.user_data:
-            self.project_config['user_scores'] = {
-                'initial_assessment_score': self.user_data.get('overall_score', 0),
-                'section_scores': self.user_data.get('section_scores', {}),
-                'user_id': self.user_data.get('id'),
-                'username': self.user_data.get('username')
-            }
+        """Complete the wizard - redirect to dashboard and show success flyout"""
         
-        self.project_started.emit(self.project_config) 
+        # Show success flyout
+        if FLYOUT_AVAILABLE:
+            try:
+                InfoBar.success(
+                    title='Project Completed!',
+                    content="Congratulations! You've successfully completed your project. Great work!",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP_RIGHT,
+                    duration=4000,  # 4 seconds
+                    parent=self.main_window
+                )
+            except Exception as e:
+                logger.error(f"Failed to show success flyout: {e}")
+        
+        if hasattr(self.main_window, 'show_dashboard'):
+            QTimer.singleShot(100, self._redirect_and_refresh_dashboard)
+        else:
+            logger.error("Main window doesn't have show_dashboard method")
+            
+        logger.info("Project completed successfully - redirected to dashboard")
+    
+    def _redirect_and_refresh_dashboard(self):
+        """Redirect to dashboard and refresh the project stats"""
+        self.main_window.show_dashboard()
+        
+        if hasattr(self.main_window, 'dashboard_view') and hasattr(self.main_window.dashboard_view, 'refresh_project_stats'):
+            QTimer.singleShot(200, self.main_window.dashboard_view.refresh_project_stats) 
     def start_background_task_generation(self):
         """Start background generation of remaining empty tasks"""
         if not hasattr(self, 'current_project_id') or not self.current_project_id:
