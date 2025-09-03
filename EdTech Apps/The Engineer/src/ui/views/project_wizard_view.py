@@ -270,11 +270,15 @@ class BackgroundTaskGenerator(QThread):
                 )
                 
                 if task_detail:
-                    print(f"🔴 Successfully generated task {task_number}, saving to database")
+                    print(f"🔴 Successfully generated task {task_number}, extracting JSON and saving to database")
+                    # Extract JSON from AI response before storing (same as main UI flow)
+                    from src.core.ai.project_prompts import extract_task_json_from_response
+                    clean_json = extract_task_json_from_response(task_detail)
+                    
                     self.project_ops.update_project_progress(
-                        self.project_id, self.current_task_number, {task_number: task_detail}
+                        self.project_id, self.current_task_number, {task_number: clean_json}
                     )
-                    self.task_generated.emit(task_number, task_detail)
+                    self.task_generated.emit(task_number, clean_json)
                 else:
                     print(f"🔴 Failed to generate task {task_number}")
             
@@ -327,47 +331,29 @@ class ProjectWizardView(QWidget):
     
     def find_first_uncompleted_task(self):
         """Find the first task that hasn't been completed"""
-        print(f"🟡 find_first_uncompleted_task() called")
-        print(f"🟡 current_project_id: {getattr(self, 'current_project_id', 'NOT SET')}")
-        print(f"🟡 task_names: {getattr(self, 'task_names', 'NOT SET')}")
         
         if not self.current_project_id or not self.task_names:
-            print(f"🟡 No project ID or task names, returning 1")
             return 1
         
-        print(f"🟡 Checking completion status for {len(self.task_names)} tasks...")
         
         # Check each task in order
         for task_number in range(1, len(self.task_names) + 1):
             is_completed = self.project_ops.is_task_completed(self.current_project_id, task_number)
-            print(f"🟡 Task {task_number}: completed = {is_completed}")
             if not is_completed:
-                print(f"🟡 Found first uncompleted task: {task_number}")
                 return task_number
         
-        # If all tasks are completed, return the last task
-        print(f"🟡 All tasks completed, returning last task: {len(self.task_names)}")
         return len(self.task_names)
     
     def show_existing_project_task(self):
         """Show the current task for an existing project"""
-        print(f"🟠 show_existing_project_task() called")
-        print(f"🟠 current_task_number: {getattr(self, 'current_task_number', 'NOT SET')}")
-        print(f"🟠 task_names: {getattr(self, 'task_names', 'NOT SET')}")
         
         if not hasattr(self, 'current_task_number') or not self.task_names:
-            print(f"🟠 Missing current_task_number or task_names, generating first task")
             self.generate_and_show_current_task()
             return
         
         current_task_name = self.task_names[self.current_task_number - 1]
         current_task_detail = self.project_config.get('task_details', {}).get(self.current_task_number)
         
-        print(f"🔍 DEBUG: Showing task {self.current_task_number}")
-        print(f"🔍 DEBUG: Task name: {current_task_name}")
-        print(f"🔍 DEBUG: Has task detail: {current_task_detail is not None}")
-        if current_task_detail:
-            print(f"🔍 DEBUG: Task detail preview: {current_task_detail[:100]}...")
         
         # Mark task as in_progress when user starts viewing it
         if self.current_project_id:
@@ -1082,7 +1068,8 @@ class ProjectWizardView(QWidget):
         self.project_config['language'] = language
         self.project_config['project_description'] = project_description
         
-        self.next_button.setText("Step 1 →")
+        # For new projects, start with Task 1
+        self.next_button.setText("Task 1 →")
         self.next_button.setVisible(True)
         self.next_button.setEnabled(True)
         self.back_button.setEnabled(True)
@@ -1312,40 +1299,74 @@ class ProjectWizardView(QWidget):
     
     def next_step(self):
         """Go to next step"""
+        print(f"🚀 NEXT_STEP BUTTON CLICKED!")
+        print(f"🚀 continuing_existing_project: {getattr(self, 'continuing_existing_project', 'NOT SET')}")
+        print(f"🚀 current_step: {getattr(self, 'current_step', 'NOT SET')}")
+        print(f"🚀 current_task_number: {getattr(self, 'current_task_number', 'NOT SET')}")
+        print(f"🚀 task_names: {getattr(self, 'task_names', 'NOT SET')}")
+        print(f"🚀 len(task_names): {len(getattr(self, 'task_names', []))}")
+        
         if getattr(self, 'continuing_existing_project', False):
+            print(f"🚀 Branch 1: continuing_existing_project = True")
             self.show_existing_project_task()
             self.continuing_existing_project = False  
             return
             
         if self.current_step == 0:
+            print(f"🚀 Branch 2: current_step = 0")
             # User clicked "I Understand" from introduction
             if self.current_project_id and not self.project_config.get('is_completed', False) and self.project_config.get('status') != 'skipped':
+                print(f"🚀 Branch 2a: show_project_choice")
                 self.show_project_choice()
             else:
+                print(f"🚀 Branch 2b: show_project_generation")
                 # No existing project, proceed with project generation
                 self.current_step = 1
                 self.show_project_generation()
         elif self.current_step == 1:
+            print(f"🚀 Branch 3: current_step = 1")
             # Go from project generation to task breakdown
             self.current_step = 2
             self.show_task_breakdown()
         elif self.current_step == 2:
+            print(f"🚀 Branch 4: current_step = 2")
             # Move to next task or complete project
-            if hasattr(self, 'current_task_number') and self.current_task_number < len(self.task_names):
+            
+            total_tasks_from_ai = len(self.task_names)  
+            try:
+                import json
+                current_task_detail = self.project_config.get('task_details', {}).get(self.current_task_number, '')
+                if current_task_detail:
+                    task_data = json.loads(current_task_detail)
+                    if 'total_project_tasks' in task_data:
+                        total_tasks_from_ai = task_data['total_project_tasks']
+                        print(f"🚀 Using total_project_tasks from AI: {total_tasks_from_ai}")
+            except:
+                print(f"🚀 Could not get total_project_tasks from AI, using fallback: {total_tasks_from_ai}")
+            
+            print(f"🚀 Checking condition: current_task_number ({self.current_task_number}) < total_tasks_from_ai ({total_tasks_from_ai})")
+            if hasattr(self, 'current_task_number') and self.current_task_number < total_tasks_from_ai:
+                print(f"🚀 Branch 4a: Moving to next task")
                 self.current_task_number += 1
+                print(f"🚀 Updated current_task_number to: {self.current_task_number}")
                 # Save progress to database
                 if self.current_project_id:
+                    print(f"🚀 Calling update_project_progress with project_id: {self.current_project_id}, task: {self.current_task_number}")
                     self.project_ops.update_project_progress(
                         self.current_project_id, 
                         self.current_task_number
                     )
                 # Load existing task or generate new one
+                print(f"🚀 Calling show_existing_project_task()")
                 self.show_existing_project_task()
             else:
+                print(f"🚀 Branch 4b: All tasks completed - mark project as complete")
                 # All tasks completed - mark project as complete
                 if self.current_project_id:
                     self.project_ops.complete_project(self.current_project_id)
                 self.complete_wizard()
+        else:
+            print(f"🚀 Branch 5: Unknown current_step = {self.current_step}")
     
     def show_project_generation(self):
         """Show timer in existing QScrollArea, then replace with AI output"""
@@ -1534,7 +1555,9 @@ class ProjectWizardView(QWidget):
         # Set current step to 2 so next_step() will proceed to task breakdown
         self.current_step = 2
         
-        self.next_button.setText("Step 1 →")
+        # Set button to show the current incomplete task number
+        task_number = getattr(self, 'current_task_number', 1)
+        self.next_button.setText(f"Task {task_number} →")
         self.next_button.setVisible(True)
         self.next_button.setEnabled(True)
         self.back_button.setEnabled(True)
@@ -2500,9 +2523,8 @@ class ProjectWizardView(QWidget):
         self.update_task_navigation(task_completed)
         
         if self.current_task_number < total_tasks_from_ai:
-            next_step = self.current_task_number + 1
-            # self.next_button.setText(f"Next Task ({next_step}) →")
-            self.next_button.setText(f"Step {next_step} →")
+            next_task = self.current_task_number + 1
+            self.next_button.setText(f"Task {next_task} →")
         else:
             self.next_button.setText("Complete Project →")
         
@@ -2959,16 +2981,18 @@ Please analyze my files now and give me detailed educational feedback!"""
         if hasattr(self, 'background_generator') and self.background_generator.isRunning():
             return 
         
-        # Get total tasks from current task's AI response
         total_tasks = len(self.task_names)  # fallback
-        current_task_detail = self.project_config.get('task_details', {}).get(self.current_task_number, '')
+        task_1_detail = self.project_config.get('task_details', {}).get(1, '')
         try:
             import json
-            task_data = json.loads(current_task_detail)
+            task_data = json.loads(task_1_detail)
             if 'total_project_tasks' in task_data:
                 total_tasks = task_data['total_project_tasks']
-                print(f"🔴 Using total_project_tasks from AI: {total_tasks}")
-        except:
+                print(f"🔴 Using total_project_tasks from Task 1: {total_tasks}")
+            else:
+                print(f"🔴 No total_project_tasks in Task 1, using fallback: {total_tasks}")
+        except Exception as e:
+            print(f"🔴 Could not parse Task 1 for total_project_tasks: {e}")
             pass
         
         self.background_generator = BackgroundTaskGenerator(

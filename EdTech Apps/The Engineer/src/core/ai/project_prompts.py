@@ -240,6 +240,9 @@ def create_task_detail_prompt(task_name, task_number, project_description, selec
     if completed_tasks_summary:
         completed_context = f"You've already completed: {completed_tasks_summary}\n"
     
+    # Determine if we should ask for total_project_tasks (only for first task)
+    is_first_task = task_number == 1
+    
     prompt = f"""
  You are generating a Cursor system prompt and a set of incremental, pasteable prompts for a beginner (age 12–18). Do not output any code directly unless a step explicitly requires minimal code. Return ONLY JSON matching the schema below.
 
@@ -256,8 +259,7 @@ Examples library (follow tone, format, clarity):
 
 Schema to return exactly:
 {{
-  "cursor_system_prompt": "string (paste this into Cursor as the system prompt at the start of the session)",
-  "total_project_tasks": "integer (total number of tasks needed to complete this entire project - minimum 7, maximum 12)",
+  "cursor_system_prompt": "string (paste this into Cursor as the system prompt at the start of the session)",{' "total_project_tasks": "integer (total number of tasks needed to complete this entire project - minimum 7, maximum 12)",' if is_first_task else ''}
   "current_task_number": "integer (which task this is in the sequence - e.g., 1, 2, 3, etc.)",
   "steps": [
     {{
@@ -274,12 +276,15 @@ Schema to return exactly:
 
 Follow these rules in helping you generate the cursor promtps:
 
-CRITICAL: Determine the total number of tasks needed for this complete project:
-- Analyze the project complexity and scope from the Project context
+{'CRITICAL: Determine the total number of tasks needed for this complete project:' if is_first_task else 'TASK SEQUENCE:'}
+{'''- Analyze the project complexity and scope from the Project context
 - Break down the project into logical phases: setup, core features, advanced features, testing, deployment
 - Ensure the project requires MINIMUM 7 tasks and MAXIMUM 12 tasks for completion
 - Set "total_project_tasks" to this number and "current_task_number" to the current task position
-- Each task should represent 1-3 hours of work for a beginner (age 12-18)
+- Each task should represent 1-3 hours of work for a beginner (age 12-18)''' if is_first_task else '''- This is task {task_number} in an existing project sequence
+- Set "current_task_number" to {task_number}
+- Do NOT include "total_project_tasks" in your response (already determined in Task 1)
+- Focus on this specific task within the overall project flow'''}
 
 - Assume the learner is already using Cursor; do not ask about choosing or installing a code editor.
 - With the cursor prompts, understand we are generate prompts for cursor to generate the output for the student to use. We also to ensure the prompt will generate educational content for the user to understand what is built.
