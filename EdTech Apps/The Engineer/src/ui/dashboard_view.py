@@ -486,10 +486,9 @@ class DashboardView(QWidget):
         bottom_layout = QHBoxLayout()
         bottom_layout.setSpacing(20)
         
-        logic_label = QLabel("Logic Puzzles")
-        logic_label.setAlignment(Qt.AlignCenter)
+        logic_label = QPushButton("Logic Puzzles")
         logic_label.setStyleSheet("""
-            QLabel {
+            QPushButton {
                 background: rgba(255, 255, 255, 0.05);
                 border: 1px solid rgba(255, 255, 255, 0.1);
                 border-radius: 10px;
@@ -498,12 +497,17 @@ class DashboardView(QWidget):
                 font-weight: 600;
                 color: rgba(255, 255, 255, 0.9);
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                text-align: center;
             }
-            QLabel:hover {
+            QPushButton:hover {
                 background: rgba(255, 255, 255, 0.1);
                 border-color: rgba(255, 255, 255, 0.2);
             }
+            QPushButton:pressed {
+                background: rgba(255, 255, 255, 0.15);
+            }
         """)
+        logic_label.clicked.connect(self.start_logic_puzzles)
         
         build_label = QPushButton("Build Projects")
         build_label.setStyleSheet("""
@@ -1004,6 +1008,12 @@ class DashboardView(QWidget):
         wizard = ProjectWizardView(self.user_data, self.main_window)
         wizard.project_started.connect(self.on_project_started)
         self.main_window.setCentralWidget(wizard)
+    
+    def start_logic_puzzles(self):
+        """Start Logic Puzzles session"""
+        from .views.logic_puzzles_view import LogicPuzzlesView
+        logic_puzzles = LogicPuzzlesView(self.user_data, self.main_window)
+        self.main_window.setCentralWidget(logic_puzzles)
     
     def on_project_started(self, project_config):
         """Handle project started event"""
