@@ -101,6 +101,8 @@ QUESTION REQUIREMENTS:
    - Best practices: "Which approach is better and why?"
 
 4. **Code Examples**:
+   - Include Python code snippets ONLY when relevant to the question
+   - For pure theory questions, leave code_snippet empty or use simple examples
    - Keep code snippets short (1-10 lines maximum)
    - Use clear variable names
    - Include common beginner mistakes as wrong options
@@ -123,9 +125,9 @@ Return ONLY a valid JSON array with exactly {batch_size} questions. Each questio
 
 ```json
 [
-  {{
+  {  {
     "question_text": "Clear question asking about Python code or concept",
-    "code_snippet": "# Python code example (if applicable)\nprint('Hello, World!')",
+    "code_snippet": "# MUST be actual Python code for example: \nprint('Hello, World!')",
     "question_type": "mcq",
     "difficulty_level": {difficulty_level},
     "option_a": "First possible answer",
@@ -146,7 +148,8 @@ IMPORTANT RULES:
 - Return ONLY the JSON array, no other text
 - Ensure all JSON is valid and properly escaped
 - All questions must be unique and non-repetitive
-- Code snippets should be syntactically correct Python
+- Code snippets should be actual Python code when included, never additional question text. This should be a code snippet relevant to the question. You can include a "fill in the blank"
+- For theory questions, code_snippet can be empty or contain simple relevant examples
 - Options should be similar in length and plausibility
 - Test a variety of concepts within the category
 - Make questions that help students learn, not trick them

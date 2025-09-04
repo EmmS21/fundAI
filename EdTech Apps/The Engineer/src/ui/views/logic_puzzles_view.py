@@ -6,7 +6,7 @@ Handles Python MCQ question sessions with progressive clues
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QFrame, QProgressBar, QTextEdit, QButtonGroup, QRadioButton,
-    QScrollArea, QGroupBox, QGridLayout, QMessageBox
+    QScrollArea, QGroupBox, QGridLayout, QMessageBox, QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal, QTimer, QThread
 from PySide6.QtGui import QFont, QPixmap, QPainter, QPainterPath
@@ -133,7 +133,7 @@ class QuestionGenerationWorker(QThread):
         return response
 
 class QuestionWidget(QWidget):
-    """Widget for displaying a single MCQ question with clues"""
+    """Simplified widget for displaying MCQ questions"""
     
     answer_submitted = Signal(str, int, list) 
     
@@ -143,17 +143,16 @@ class QuestionWidget(QWidget):
         self.question_number = question_number
         self.total_questions = total_questions
         self.start_time = time.time()
-        self.clues_revealed = []
         
-        # Debug: Log the question data being rendered
-        print(f"[DEBUG] Rendering Question {question_number}:")
-        print(f"[DEBUG] Question text: {question_data.get('question_text', 'MISSING')}")
-        print(f"[DEBUG] Options: A={question_data.get('option_a', 'MISSING')}")
-        print(f"[DEBUG] Code snippet: {question_data.get('code_snippet', 'MISSING')}")
+        print(f"[DEBUG] Rendering Question {question_number}: {question_data.get('question_text', 'MISSING')[:50]}...")
         
         self.setup_ui()
         
     def setup_ui(self):
+        # Ensure the widget expands properly
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setMinimumHeight(400)
+        
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
@@ -277,7 +276,6 @@ class QuestionWidget(QWidget):
             option_text = self.question_data[f'option_{option.lower()}']
             
             radio_button = QRadioButton(f"{option}. {option_text}")
-            radio_button.setWordWrap(True)
             radio_button.setStyleSheet("""
                 QRadioButton {
                     font-size: 14px;
@@ -631,19 +629,58 @@ class LogicPuzzlesView(QWidget):
                 'questions_correct': 0
             }
             
-            # Get existing questions for this category (to avoid duplicates)
-            existing_questions = self.get_existing_questions(category['id'])
+            # Check for unused questions in database first
+            unused_questions = self.get_unused_questions(category['id'])
             
-            # Start background question generation
-            self.start_question_generation(category, existing_questions)
-            
-            # Show loading screen
-            self.show_loading_screen()
+            if len(unused_questions) >= 5:
+                # Use database questions (saves tokens!)
+                logger.info(f"Found {len(unused_questions)} unused questions in database")
+                self.load_database_questions(unused_questions)
+            else:
+                # Generate new questions with AI
+                logger.info(f"Only {len(unused_questions)} unused questions, generating new ones")
+                existing_questions = self.get_existing_questions(category['id'])
+                self.start_question_generation(category, existing_questions)
+                self.show_loading_screen()
             
         except Exception as e:
             logger.error(f"Error starting session: {e}")
             QMessageBox.critical(self, "Error", f"Failed to start session: {str(e)}")
     
+    def get_unused_questions(self, category_id):
+        """Get questions this user hasn't answered yet"""
+        try:
+            cursor = self.main_window.database.connection.cursor()
+            hardware_id = HardwareIdentifier.get_hardware_id()
+            cursor.execute("""
+                SELECT id, question_text, code_snippet, option_a, option_b, option_c, option_d, 
+                       correct_answer, clue_1, clue_2, clue_3
+                FROM logic_questions 
+                WHERE category_id = ? AND is_active = 1
+                AND id NOT IN (
+                    SELECT question_id FROM question_responses WHERE hardware_id = ?
+                )
+                LIMIT 10
+            """, (category_id, hardware_id))
+            
+            questions = []
+            for row in cursor.fetchall():
+                questions.append({
+                    'id': row[0], 'question_text': row[1], 'code_snippet': row[2],
+                    'option_a': row[3], 'option_b': row[4], 'option_c': row[5], 'option_d': row[6],
+                    'correct_answer': row[7], 'clue_1': row[8], 'clue_2': row[9], 'clue_3': row[10]
+                })
+            return questions
+        except Exception as e:
+            logger.error(f"Error fetching unused questions: {e}")
+            return []
+
+    def load_database_questions(self, questions):
+        """Load questions from database and start quiz"""
+        self.current_session['questions'] = questions
+        self.current_session['current_index'] = 0
+        self.show_next_question()
+
     def get_existing_questions(self, category_id):
         """Get existing questions for a category to avoid duplicates"""
         try:
@@ -787,7 +824,8 @@ class LogicPuzzlesView(QWidget):
         question_data = self.current_questions[self.current_question_index]
         print(f"[DEBUG] Creating QuestionWidget for question {self.current_question_index + 1}")
         
-        question_widget = QuestionWidget(
+        from .simple_question_widget import SimpleQuestionWidget
+        question_widget = SimpleQuestionWidget(
             question_data, 
             self.current_question_index + 1, 
             len(self.current_questions)
