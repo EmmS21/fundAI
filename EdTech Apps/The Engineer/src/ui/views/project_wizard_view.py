@@ -2918,7 +2918,6 @@ Please analyze my files now and give me detailed educational feedback!"""
             self.viewing_continued_project = False
             self.show_project_choice()
         elif self.current_step == 1:
-            # Don't go back to introduction/terms - go back to dashboard instead
             self.main_window.show_dashboard()
         elif self.current_step == 2:
             # Go back to previous task or project view
