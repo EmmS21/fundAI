@@ -254,4 +254,102 @@ class Database:
                 return user_data
             return None
         except Exception:
+            return None
+
+    def calculate_evolved_scores(self, user_id):
+        """Calculate evolved scores combining onboarding (25%) + logic puzzle performance (75%)"""
+        if not self.connection:
+            return None
+        
+        try:
+            # Category to assessment section mapping
+            category_mapping = {
+                'testing': 'Problem Solving & Debugging',
+                'performance_optimization': 'Problem Solving & Debugging', 
+                'git_workflow': 'Planning & Collaboration',
+                'clean_code': 'Planning & Collaboration',
+                'database_design': 'Data & Systems Thinking',
+                'api_development': 'Data & Systems Thinking'
+            }
+            
+            # Get onboarding scores
+            user_data = self.get_user_by_id(user_id)
+            if not user_data:
+                return None
+                
+            onboarding_overall = user_data.get('overall_score', 0)
+            onboarding_sections = user_data.get('section_scores', {})
+            
+            # Get logic puzzle performance
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT skill_name, current_score 
+                FROM user_skills 
+                WHERE user_id = ? AND current_score > 0
+            """, (user_id,))
+            
+            logic_performance = dict(cursor.fetchall())
+            
+            # If no logic puzzle data yet, return onboarding scores
+            if not logic_performance:
+                return {
+                    'evolved_overall_score': onboarding_overall,
+                    'evolved_section_scores': onboarding_sections,
+                    'has_logic_data': False
+                }
+            
+            # Map logic categories to assessment sections
+            section_performances = {
+                'Problem Solving & Debugging': [],
+                'Planning & Collaboration': [],
+                'Data & Systems Thinking': []
+            }
+            
+            for category, score in logic_performance.items():
+                if category in category_mapping:
+                    section = category_mapping[category]
+                    # Convert score (0-1 range) to percentage (0-100)
+                    percentage_score = max(0, min(100, score * 100))
+                    section_performances[section].append(percentage_score)
+            
+            # Calculate section averages (fallback to onboarding if no data)
+            evolved_section_scores = {}
+            for section in section_performances.keys():
+                scores = section_performances[section]
+                if scores:
+                    # Average the logic puzzle scores for this section
+                    logic_avg = sum(scores) / len(scores)
+                    # Get onboarding score for this section
+                    onboarding_section = onboarding_sections.get(section, {})
+                    if isinstance(onboarding_section, dict) and 'correct' in onboarding_section:
+                        onboarding_pct = (onboarding_section['correct'] / onboarding_section['total']) * 100 if onboarding_section['total'] > 0 else 0
+                    else:
+                        onboarding_pct = 0
+                    
+                    # Weighted combination: 25% onboarding + 75% logic puzzles
+                    evolved_section_scores[section] = (onboarding_pct * 0.25) + (logic_avg * 0.75)
+                else:
+                    # No logic data for this section, use onboarding
+                    onboarding_section = onboarding_sections.get(section, {})
+                    if isinstance(onboarding_section, dict) and 'correct' in onboarding_section:
+                        evolved_section_scores[section] = (onboarding_section['correct'] / onboarding_section['total']) * 100 if onboarding_section['total'] > 0 else 0
+                    else:
+                        evolved_section_scores[section] = 0
+            
+            # Calculate overall evolved score
+            if evolved_section_scores:
+                logic_overall = sum(evolved_section_scores.values()) / len(evolved_section_scores)
+                evolved_overall = (onboarding_overall * 0.25) + (logic_overall * 0.75)
+            else:
+                evolved_overall = onboarding_overall
+            
+            return {
+                'evolved_overall_score': evolved_overall,
+                'evolved_section_scores': evolved_section_scores,
+                'has_logic_data': True,
+                'logic_categories': logic_performance
+            }
+            
+        except Exception as e:
+            print(f"Error calculating evolved scores: {e}")
             return None 

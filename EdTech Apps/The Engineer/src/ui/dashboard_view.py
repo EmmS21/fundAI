@@ -448,7 +448,7 @@ class DashboardView(QWidget):
         self.name_value = QLabel(self.user_data.get('username', 'Student'))
         self.name_value.setWordWrap(True)
         self.name_value.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.name_value.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Preferred)
+        self.name_value.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.name_value.setStyleSheet("""
             QLabel {
                 color: rgba(255, 255, 255, 0.95);
@@ -466,7 +466,10 @@ class DashboardView(QWidget):
         self.name_value.mousePressEvent = self.start_editing_name
         self.profile_layout.addWidget(self.name_value)
         
-        score_value = f"{self.user_data.get('overall_score', 0):.1f}%"
+        # Get evolved score that combines onboarding + logic puzzle performance
+        evolved_scores = self.get_evolved_score()
+        score_value = f"{evolved_scores['overall']:.1f}%"
+        
         self.score_value = QLabel(score_value)
         self.score_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.score_value.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred)
@@ -478,6 +481,12 @@ class DashboardView(QWidget):
                 font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
             }
         """)
+        # Add tooltip to show score composition
+        if evolved_scores['has_logic_data']:
+            self.score_value.setToolTip("Combined score: 25% initial assessment + 75% logic puzzle performance")
+        else:
+            self.score_value.setToolTip("Score from initial assessment (complete logic puzzles to see evolved score)")
+        
         self.profile_layout.addWidget(self.score_value)
         
         layout.addWidget(profile_frame)
@@ -1020,3 +1029,40 @@ class DashboardView(QWidget):
         # For now, just print the configuration
         print(f"Project started with config: {project_config}")
         # TODO: Implement AI project generation logic here 
+
+    def get_evolved_score(self):
+        """Get evolved score combining onboarding + logic puzzle performance"""
+        try:
+            user_id = self.user_data.get('id')
+            if not user_id or not self.main_window.database:
+                # Fallback to onboarding score
+                return {
+                    'overall': self.user_data.get('overall_score', 0),
+                    'sections': self.user_data.get('section_scores', {}),
+                    'has_logic_data': False
+                }
+            
+            evolved_data = self.main_window.database.calculate_evolved_scores(user_id)
+            
+            if evolved_data:
+                return {
+                    'overall': evolved_data['evolved_overall_score'],
+                    'sections': evolved_data['evolved_section_scores'],
+                    'has_logic_data': evolved_data['has_logic_data']
+                }
+            else:
+                # Fallback to onboarding score
+                return {
+                    'overall': self.user_data.get('overall_score', 0),
+                    'sections': self.user_data.get('section_scores', {}),
+                    'has_logic_data': False
+                }
+                
+        except Exception as e:
+            logger.error(f"Error getting evolved score: {e}")
+            # Fallback to onboarding score
+            return {
+                'overall': self.user_data.get('overall_score', 0),
+                'sections': self.user_data.get('section_scores', {}),
+                'has_logic_data': False
+            } 

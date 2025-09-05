@@ -903,6 +903,18 @@ class LogicPuzzlesView(QWidget):
         correct_answer = question_data['correct_answer']
         is_correct = selected_answer == correct_answer
         
+        # Calculate score based on marking schema
+        if is_correct:
+            num_clues = len(clues_used)
+            if num_clues == 0:
+                score = 1.0  # Full points - no clues
+            elif num_clues == 1:
+                score = 0.75  # 1 clue used
+            else:  # 2 clues used
+                score = 0.5  # Half points
+        else:
+            score = -0.5  # Incorrect answer penalty
+        
         # Record the answer
         answer_record = {
             'question_data': question_data,
@@ -910,9 +922,13 @@ class LogicPuzzlesView(QWidget):
             'correct_answer': correct_answer,
             'is_correct': is_correct,
             'time_taken': time_taken,
-            'clues_used': clues_used
+            'clues_used': clues_used,
+            'score': score
         }
         self.session_answers.append(answer_record)
+        
+        # Update user's skill score for this category
+        self.update_category_score(score)
         
         # Save to database
         self.save_answer_to_db(answer_record)
@@ -927,6 +943,38 @@ class LogicPuzzlesView(QWidget):
         
         # Show feedback briefly then continue
         self.show_answer_feedback(is_correct, correct_answer, question_data)
+    
+    def update_category_score(self, score):
+        """Update user's skill score for the current question category"""
+        try:
+            category_name = self.current_session['category']['name']
+            user_id = self.user_data.get('id')
+            
+            if user_id and category_name:
+                # Get current skill score
+                cursor = self.main_window.database.connection.cursor()
+                cursor.execute("""
+                    SELECT current_score, total_evaluations 
+                    FROM user_skills 
+                    WHERE user_id = ? AND skill_name = ?
+                """, (user_id, category_name))
+                
+                result = cursor.fetchone()
+                if result:
+                    current_score, total_evaluations = result
+                    # Calculate new running average
+                    new_total = total_evaluations + 1
+                    new_score = ((current_score * total_evaluations) + score) / new_total
+                else:
+                    # First evaluation for this skill
+                    new_score = max(0, score)  # Don't let first score be negative
+                    new_total = 1
+                
+                # Update the skill score
+                self.main_window.database.update_skill_score(user_id, category_name, new_score)
+                
+        except Exception as e:
+            logger.error(f"Error updating category score: {e}")
     
     def save_answer_to_db(self, answer_record):
         """Save user's answer to database"""
@@ -951,8 +999,8 @@ class LogicPuzzlesView(QWidget):
                     INSERT INTO question_responses (
                         session_id, user_id, question_id, selected_answer,
                         is_correct, time_taken, clues_used, clues_revealed,
-                        question_order
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        question_order, score
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     self.current_session['id'],
                     self.user_data.get('id'),
@@ -962,7 +1010,8 @@ class LogicPuzzlesView(QWidget):
                     answer_record['time_taken'],
                     len(answer_record['clues_used']),
                     json.dumps(answer_record['clues_used']),
-                    self.current_question_index
+                    self.current_question_index,
+                    answer_record['score']
                 ))
                 
                 self.main_window.database.connection.commit()
