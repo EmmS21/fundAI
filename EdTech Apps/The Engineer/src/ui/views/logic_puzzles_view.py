@@ -534,14 +534,23 @@ class LogicPuzzlesView(QWidget):
         self.setup_ui()
         
     def setup_ui(self):
+        # Create main layout with consistent margins
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
         
-        # Header with back button
-        header_layout = QHBoxLayout()
+        # Create a content container that manages all content consistently
+        content_container = QWidget()
+        content_layout = QVBoxLayout(content_container)
+        content_layout.setContentsMargins(10, 0, 10, 0)  # Inner margins for content alignment
+        content_layout.setSpacing(15)
         
-        back_button = QPushButton("← Back to Dashboard")
+        # Back button - now managed by the same layout system as content
+        header_container = QWidget()
+        header_layout = QHBoxLayout(header_container)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        
+        back_button = QPushButton("Back to Dashboard")
         back_button.setStyleSheet("""
             QPushButton {
                 font-size: 14px;
@@ -556,15 +565,32 @@ class LogicPuzzlesView(QWidget):
             }
         """)
         back_button.clicked.connect(self.go_back_to_dashboard)
+        
         header_layout.addWidget(back_button)
-        header_layout.addStretch()
+        header_layout.addStretch()  # Push clue status to the right
         
-        layout.addLayout(header_layout)
+        # Clue status label (will be updated by question widget)
+        self.clue_status_label = QLabel("")
+        self.clue_status_label.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                color: rgba(255, 255, 255, 0.7);
+                padding: 8px 15px;
+            }
+        """)
+        self.clue_status_label.hide()  # Hidden until question starts
+        header_layout.addWidget(self.clue_status_label)
         
-        # Main content area (will be replaced with questions)
+        content_layout.addWidget(header_container)
+        
+        # Main content area - now uses the same layout management
         self.content_area = QWidget()
         self.content_layout = QVBoxLayout(self.content_area)
-        layout.addWidget(self.content_area)
+        self.content_layout.setContentsMargins(0, 0, 0, 0)  # No margins - parent handles it
+        content_layout.addWidget(self.content_area)
+        
+        # Add the content container to main layout
+        layout.addWidget(content_container)
         
         # Start with category selection
         self.show_category_selection()
@@ -658,18 +684,37 @@ class LogicPuzzlesView(QWidget):
                 FROM logic_questions 
                 WHERE category_id = ? AND is_active = 1
                 AND id NOT IN (
-                    SELECT question_id FROM question_responses WHERE hardware_id = ?
+                    SELECT qr.question_id 
+                    FROM question_responses qr
+                    JOIN question_sessions qs ON qr.session_id = qs.id
+                    WHERE qs.hardware_id = ?
                 )
                 LIMIT 10
             """, (category_id, hardware_id))
             
             questions = []
             for row in cursor.fetchall():
-                questions.append({
+                question = {
                     'id': row[0], 'question_text': row[1], 'code_snippet': row[2],
                     'option_a': row[3], 'option_b': row[4], 'option_c': row[5], 'option_d': row[6],
                     'correct_answer': row[7], 'clue_1': row[8], 'clue_2': row[9], 'clue_3': row[10]
-                })
+                }
+                questions.append(question)
+            
+            # Log the retrieved questions for debugging
+            print(f"[DEBUG] Retrieved {len(questions)} unused questions for category {category_id}")
+            for i, q in enumerate(questions):
+                print(f"[DEBUG] Question {i+1}:")
+                print(f"  ID: {q['id']}")
+                print(f"  Text: {q['question_text'][:100]}{'...' if len(q['question_text']) > 100 else ''}")
+                print(f"  Code snippet: {q['code_snippet'][:50] if q['code_snippet'] else 'None'}{'...' if q['code_snippet'] and len(q['code_snippet']) > 50 else ''}")
+                print(f"  Option A: {q['option_a'][:50]}{'...' if len(q['option_a']) > 50 else ''}")
+                print(f"  Option B: {q['option_b'][:50]}{'...' if len(q['option_b']) > 50 else ''}")
+                print(f"  Option C: {q['option_c'][:50]}{'...' if len(q['option_c']) > 50 else ''}")
+                print(f"  Option D: {q['option_d'][:50]}{'...' if len(q['option_d']) > 50 else ''}")
+                print(f"  Correct: {q['correct_answer']}")
+                print("---")
+            
             return questions
         except Exception as e:
             logger.error(f"Error fetching unused questions: {e}")
@@ -677,8 +722,15 @@ class LogicPuzzlesView(QWidget):
 
     def load_database_questions(self, questions):
         """Load questions from database and start quiz"""
+        print(f"[DEBUG] Loading {len(questions)} questions from database")
+        print(f"[DEBUG] First question preview: {questions[0]['question_text'][:100] if questions else 'NO QUESTIONS'}")
+        
+        # Store questions in both places for consistency
         self.current_session['questions'] = questions
         self.current_session['current_index'] = 0
+        self.current_questions = questions  
+        self.current_question_index = 0
+        self.session_answers = []
         self.show_next_question()
 
     def get_existing_questions(self, category_id):
@@ -823,12 +875,22 @@ class LogicPuzzlesView(QWidget):
         
         question_data = self.current_questions[self.current_question_index]
         print(f"[DEBUG] Creating QuestionWidget for question {self.current_question_index + 1}")
+        print(f"[DEBUG] Question data being passed to widget:")
+        print(f"  ID: {question_data.get('id', 'MISSING')}")
+        print(f"  Text: {question_data.get('question_text', 'MISSING')}")
+        print(f"  Code snippet: {question_data.get('code_snippet', 'MISSING')}")
+        print(f"  Option A: {question_data.get('option_a', 'MISSING')}")
+        print(f"  Option B: {question_data.get('option_b', 'MISSING')}")
+        print(f"  Option C: {question_data.get('option_c', 'MISSING')}")
+        print(f"  Option D: {question_data.get('option_d', 'MISSING')}")
+        print(f"  Correct answer: {question_data.get('correct_answer', 'MISSING')}")
         
         from .simple_question_widget import SimpleQuestionWidget
         question_widget = SimpleQuestionWidget(
             question_data, 
             self.current_question_index + 1, 
-            len(self.current_questions)
+            len(self.current_questions),
+            parent_view=self  # Pass reference to update clue status
         )
         question_widget.answer_submitted.connect(self.on_answer_submitted)
         
@@ -927,7 +989,7 @@ class LogicPuzzlesView(QWidget):
         
         # Result emoji and text
         if is_correct:
-            result_text = "🎉 Correct!"
+            result_text = "Correct!"
             result_color = "rgba(46, 204, 113, 1.0)"
         else:
             result_text = "❌ Not quite right"
