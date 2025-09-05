@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QIcon
-from qfluentwidgets import RadioButton, FluentIcon
+from qfluentwidgets import RadioButton, FluentIcon, setCustomStyleSheet
 import time
 
 class SimpleQuestionWidget(QWidget):
@@ -105,7 +105,6 @@ class SimpleQuestionWidget(QWidget):
             
             # Create QFluentWidgets RadioButton
             radio_button = RadioButton(f"{option}. {option_text}")
-            radio_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
             radio_button.setStyleSheet("""
                 RadioButton {
                     font-size: 13px;
@@ -114,7 +113,7 @@ class SimpleQuestionWidget(QWidget):
                     min-height: 25px;
                 }
             """)
-            radio_button.setStyleSheet("margin-left: 5px;")  # Small text alignment tweak
+            setCustomStyleSheet(radio_button, "margin-left: 5px;", "margin-left: 5px;")
             
             self.answer_group.addButton(radio_button, ord(option) - ord('A'))
             options_layout.addWidget(radio_button)
