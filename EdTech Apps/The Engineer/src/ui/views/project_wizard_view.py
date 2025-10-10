@@ -19,7 +19,7 @@ except ImportError:
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFont, QTextCursor
-from core.ai.project_generator import ProjectGenerator
+from src.core.ai.project_generator import ProjectGenerator
 from ..utils import create_offline_warning_banner
 import re
 import logging
@@ -27,7 +27,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Import database operations
-from data.database.operations import db_manager, ProjectOperations
+from src.data.database.operations import db_manager, ProjectOperations
 
 class ProjectGenerationWorker(QThread):
     """Worker thread for generating projects using AI"""
@@ -416,6 +416,10 @@ class ProjectWizardView(QWidget):
             'current_task_number': self.current_task_number if hasattr(self, 'current_task_number') else 1,
             'user_scores': self.project_config.get('user_scores', {})
         }
+        
+        print(f"🔴 DEBUG save_project_data: task_names in data = {project_data['task_names']}")
+        print(f"🔴 DEBUG save_project_data: self.task_names = {getattr(self, 'task_names', 'NOT_SET')}")
+        print(f"🔴 DEBUG save_project_data: hasattr(self, 'task_names') = {hasattr(self, 'task_names')}")
         
         if self.current_project_id:
             # Update existing project
@@ -1308,6 +1312,9 @@ class ProjectWizardView(QWidget):
             
         if self.current_step == 0:
             print(f"🚀 Branch 2: current_step = 0")
+            print(f"🚀 DEBUG: current_project_id = {self.current_project_id}")
+            print(f"🚀 DEBUG: is_completed = {self.project_config.get('is_completed', False)}")
+            print(f"🚀 DEBUG: status = {self.project_config.get('status')}")
             # User clicked "I Understand" from introduction
             if self.current_project_id and not self.project_config.get('is_completed', False) and self.project_config.get('status') != 'skipped':
                 print(f"🚀 Branch 2a: show_project_choice")
@@ -2170,6 +2177,9 @@ class ProjectWizardView(QWidget):
         except:
             print("🔍 Could not parse AI response for total_project_tasks")
         
+        # Ensure task_details exists
+        if 'task_details' not in self.project_config:
+            self.project_config['task_details'] = {}
         self.project_config['task_details'][task_number] = clean_json
         
         # Extract total project tasks FIRST, before showing the task
@@ -2602,11 +2612,18 @@ class ProjectWizardView(QWidget):
             complete_button.clicked.connect(self.complete_current_task)
             button_layout.addWidget(complete_button)
         
+        # Store reference to the button container so we can refresh it
+        self.task_complete_container = button_container
         layout.addWidget(button_container)
     
     def complete_current_task(self):
         """Mark the current task as completed"""
+        print(f"🔴 DEBUG: complete_current_task called")
+        print(f"🔴 DEBUG: current_project_id = {self.current_project_id}")
+        print(f"🔴 DEBUG: current_task_number = {getattr(self, 'current_task_number', 'NOT_SET')}")
+        
         if self.current_project_id and hasattr(self, 'current_task_number'):
+            print(f"🔴 DEBUG: Calling update_task_status with project_id={self.current_project_id}, task_number={self.current_task_number}")
             # Update task status to completed
             success = self.project_ops.update_task_status(
                 self.current_project_id, 
@@ -2614,11 +2631,22 @@ class ProjectWizardView(QWidget):
                 'completed'
             )
             
+            print(f"🔴 DEBUG: update_task_status returned: {success}")
+            
             if success:
+                print(f"🔴 DEBUG: Task marked as complete, updating UI")
                 # Update navigation to show completed status and enable next button
                 self.update_task_navigation(task_completed=True)
                 self.next_button.setEnabled(True)
+                
+                # Force refresh the complete button to show "Task Completed"
+                print(f"🔴 DEBUG: Task successfully marked as complete!")
+            else:
+                print(f"🔴 DEBUG: Failed to mark task as complete")
+        else:
+            print(f"🔴 DEBUG: Missing required data - current_project_id or current_task_number")
     
+
     def add_cursor_evaluation_section(self, layout, task_name):
         """Add the Cursor AI evaluation section"""
         # Section header

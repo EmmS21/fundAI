@@ -165,6 +165,7 @@ class SimpleQuestionWidget(QWidget):
         options = ['A', 'B', 'C', 'D']
         for option in options:
             option_text = self.question_data[f'option_{option.lower()}']
+            option_text = option_text.replace('\n', ' ')
             
             # Create QFluentWidgets RadioButton
             radio_button = RadioButton(f"{option}. {option_text}")
@@ -259,8 +260,13 @@ class SimpleQuestionWidget(QWidget):
         clue_key = f'clue_{self.clues_used + 1}'
         clue_text = self.question_data.get(clue_key, '')
         
+        print(f"[DEBUG] Looking for clue: {clue_key}")
+        print(f"[DEBUG] Clue text found: '{clue_text}'")
+        print(f"[DEBUG] Available clue keys: {[k for k in self.question_data.keys() if 'clue' in k]}")
+        
         if not clue_text:
             # No more clues available
+            print(f"[DEBUG] No clue found for {clue_key}")
             return
         
         # Add clue to revealed list

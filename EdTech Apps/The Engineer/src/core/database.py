@@ -1,13 +1,22 @@
 import sqlite3
+import sys
 from pathlib import Path
 import json
-from utils.hardware_identifier import HardwareIdentifier
+from src.utils.hardware_identifier import HardwareIdentifier
 
 
 class Database:
     def __init__(self):
-        self.db_path = Path("data/engineer.db")
-        self.db_path.parent.mkdir(exist_ok=True)
+        # Use user's home directory for database in bundled app
+        if getattr(sys, 'frozen', False):
+            # Running in PyInstaller bundle
+            app_data_dir = Path.home() / ".engineer" / "data"
+        else:
+            # Running in development
+            app_data_dir = Path(__file__).parent.parent.parent / "data"
+        
+        app_data_dir.mkdir(parents=True, exist_ok=True)
+        self.db_path = app_data_dir / "engineer.db"
         self.connection = None
         self._connect()
         self._create_tables()

@@ -3,10 +3,12 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QFrame, QGridLayout, QDialog, QScrollArea, QInputDialog
 )
 from PySide6.QtCore import Qt
-from core.ai_manager import AIManager
-from core.database import Database
-from ui.assessment_view import AssessmentView
-from ui.dashboard_view import DashboardView
+from PySide6.QtGui import QIcon
+from pathlib import Path
+from src.core.ai_manager import AIManager
+from src.core.database import Database
+from src.ui.assessment_view import AssessmentView
+from src.ui.dashboard_view import DashboardView
 
 class ScoreDetailDialog(QDialog):
     def __init__(self, section_name, percentage, parent=None):
@@ -155,6 +157,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("The Engineer - AI Tutor")
         self.setMinimumSize(900, 700)
+        
+        icon_path = Path(__file__).parent.parent.parent / "assets" / "icons" / "engineer.png"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
         
         self.ai_manager = AIManager()
         self.database = Database()

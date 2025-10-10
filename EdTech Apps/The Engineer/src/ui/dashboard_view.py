@@ -581,8 +581,8 @@ class DashboardView(QWidget):
         in_progress_projects = self.get_in_progress_projects_count()
         total_skills = self.get_total_skills_count()
         
-        stats_text = f"{completed_projects} Completed  •  {in_progress_projects} In Progress  •  {total_skills} Skills"
-        self.stats_label = QLabel(stats_text)  # Store as instance variable for refreshing
+        stats_text = f"{completed_projects} Completed  •  {in_progress_projects} In Progress"
+        self.stats_label = QLabel(stats_text)  
         self.stats_label.setAlignment(Qt.AlignCenter)
         self.stats_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.stats_label.setWordWrap(True)

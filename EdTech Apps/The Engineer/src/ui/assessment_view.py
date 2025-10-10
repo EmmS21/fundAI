@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 
-from core.questions import ENGINEERING_QUESTIONS, QUESTION_SECTIONS, get_random_questions
+from src.core.questions import ENGINEERING_QUESTIONS, QUESTION_SECTIONS, get_random_questions
 
 class AssessmentView(QWidget):
     assessment_completed = Signal(dict)
