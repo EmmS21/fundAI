@@ -2,7 +2,7 @@
 
 > **Turning self-driven 12-18 year old Africans into globally competitive software engineers through AI-powered education**
 
-## 🏫 The FundaAI Approach
+## The FundaAI Approach
 
 Our educational model operates on a **two-fold approach**:
 
