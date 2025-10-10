@@ -16,7 +16,7 @@ except ImportError:
     LLAMA_AVAILABLE = False
 
 from .project_prompts import create_project_generation_prompt
-from config.settings import AI_CONFIG
+from src.config.settings import AI_CONFIG
 
 logger = logging.getLogger(__name__)
 

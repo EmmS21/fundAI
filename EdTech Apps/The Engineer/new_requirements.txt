@@ -1,0 +1,113 @@
+# The Engineer AI Tutor - Build Requirements
+# Comprehensive dependency list with locked versions for reproducible builds
+
+# Core GUI Framework - Qt6
+PySide6==6.8.0.2
+
+# AI Inference - Local and Cloud
+llama-cpp-python==0.3.9  # Local AI models (optional on ARM64)
+groq>=0.5.0              # Cloud AI API
+openai>=1.0.0            # Alternative cloud AI
+
+# Database & ORM
+SQLAlchemy>=2.0.0,<3.0.0
+sqlite3  # Built into Python
+
+# Cloud Integration & Backend Services
+firebase-admin>=6.1.0
+pymongo>=4.3.3
+supabase>=1.0.3
+
+# HTTP Client Libraries
+requests>=2.31.0,<3.0.0
+aiohttp>=3.8.0,<4.0.0
+urllib3>=1.26.0
+
+# Environment & Configuration
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+
+# Development & Code Analysis Tools
+black>=23.0.0
+pylint>=3.0.0
+mypy>=1.0.0
+ast  # Built into Python
+
+# Logging & Monitoring
+loguru>=0.7.0
+sentry-sdk>=1.32.0
+
+# Utilities & Helpers
+pathlib  # Built into Python
+typing-extensions>=4.0.0
+click>=8.0.0  # CLI utilities
+tqdm>=4.64.0  # Progress bars
+
+# Testing Framework (for development)
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-qt>=4.2.0
+
+# Build & Packaging
+PyInstaller>=5.7.0,<6.0.0
+setuptools>=65.0.0
+wheel>=0.38.0
+build>=0.10.0
+
+# Image Processing (for assets)
+Pillow>=10.0.0
+
+# JSON & Data Processing
+json5>=0.9.0  # Enhanced JSON support
+
+# Networking & Security
+cryptography>=41.0.0
+certifi>=2023.0.0
+
+# System Information
+psutil>=5.9.0  # System monitoring
+platform  # Built into Python
+
+# Async Programming
+asyncio  # Built into Python
+concurrent.futures  # Built into Python
+
+# Additional Qt6 Components (bundled with PySide6 but explicitly listed)
+# PySide6-Addons  # Additional widgets
+# PySide6-Fluent-Widgets  # Modern UI components
+
+# Math & Scientific (minimal set)
+numpy>=1.24.0,<2.0.0  # Only if needed for AI computations
+
+# File System Operations
+watchdog>=3.0.0  # File system monitoring
+
+# Date & Time
+python-dateutil>=2.8.0
+
+# Regular Expressions (built-in but listing for completeness)
+re  # Built into Python
+
+# UUID Generation
+uuid  # Built into Python
+
+# Operating System Interface
+os  # Built into Python
+sys  # Built into Python
+subprocess  # Built into Python
+
+# Threading & Multiprocessing
+threading  # Built into Python
+multiprocessing  # Built into Python
+
+# Debugging & Error Handling
+traceback  # Built into Python
+pdb  # Built into Python
+
+# Development Dependencies (only needed for builds)
+pyinstaller-hooks-contrib>=2023.8
+
+# Platform-specific dependencies (handled by conditional imports)
+# Windows: pywin32 (not needed for Linux)
+# macOS: py2app (not needed for Linux)
+# Linux: No additional platform-specific deps required 

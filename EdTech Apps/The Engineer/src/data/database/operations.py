@@ -16,7 +16,7 @@ from .models import (
     CodeAnalysis, LearningPath, UserProgress,
     DifficultyLevel, ProgrammingLanguage, EngineeringDomain
 )
-from config.settings import DATABASE_CONFIG
+from src.config.settings import DATABASE_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,10 @@ class DatabaseManager:
         """Initialize database connection and create tables"""
         try:
             # Construct SQLite database path from config
-            db_path = os.path.join(DATABASE_CONFIG["path"], DATABASE_CONFIG["name"])
+            db_dir = DATABASE_CONFIG["path"]
+            # Ensure directory exists
+            os.makedirs(db_dir, exist_ok=True)
+            db_path = os.path.join(db_dir, DATABASE_CONFIG["name"])
             db_url = f"sqlite:///{db_path}"
             
             self.engine = create_engine(
@@ -562,7 +565,12 @@ class ProjectOperations:
             task_names = project_data.get('task_names', [])
             task_details = project_data.get('task_details', {})
             
+            print(f"🔴 DEBUG save_project: task_names = {task_names}")
+            print(f"🔴 DEBUG save_project: len(task_names) = {len(task_names)}")
+            print(f"🔴 DEBUG save_project: task_details keys = {list(task_details.keys())}")
+            
             for i, task_name in enumerate(task_names, 1):
+                print(f"🔴 DEBUG save_project: Creating task {i}: {task_name}")
                 task = ProjectTask(
                     project_id=project.id,
                     task_number=i,
@@ -756,7 +764,6 @@ class ProjectOperations:
                 task.status = status
                 task.updated_at = datetime.utcnow()
                 
-                # Set completion timestamp if completing
                 if status == 'completed' and old_status != 'completed':
                     task.completed_at = datetime.utcnow()
                 elif status == 'in_progress' and not task.started_at:

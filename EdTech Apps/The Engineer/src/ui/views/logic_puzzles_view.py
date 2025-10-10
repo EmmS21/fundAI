@@ -18,9 +18,9 @@ from pathlib import Path
 import sys
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from core.ai.logic_puzzles_prompts import create_question_generation_prompt, validate_generated_questions
-from core.ai.groq_client import GroqProgrammingClient
-from utils.hardware_identifier import HardwareIdentifier
+from src.core.ai.logic_puzzles_prompts import create_question_generation_prompt, validate_generated_questions
+from src.core.ai.groq_client import GroqProgrammingClient
+from src.utils.hardware_identifier import HardwareIdentifier
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +50,18 @@ class QuestionGenerationWorker(QThread):
             # Add context about existing questions to avoid duplicates
             if self.existing_questions:
                 existing_context = "\n\nEXISTING QUESTIONS TO AVOID DUPLICATING:\n"
-                for i, q in enumerate(self.existing_questions[-5:]):  # Show last 5 questions
-                    existing_context += f"{i+1}. {q.get('question_text', '')[:100]}...\n"
+                # Show more questions for better context (up to 15)
+                sample_questions = self.existing_questions[:15] if len(self.existing_questions) > 15 else self.existing_questions
+                for i, q in enumerate(sample_questions):
+                    question_text = q.get('question_text', '')[:80]
+                    code_snippet = q.get('code_snippet', '')
+                    if code_snippet and code_snippet.strip():
+                        existing_context += f"{i+1}. {question_text}... [with code]\n"
+                    else:
+                        existing_context += f"{i+1}. {question_text}...\n"
+                
                 prompt += existing_context
-                prompt += "\nEnsure your new questions are completely different from the existing ones above."
+                prompt += f"\nEnsure your new questions are completely different from ALL {len(sample_questions)} existing questions above. Focus on new concepts, different code examples, and unique scenarios."
             
             # Debug: Log the prompt being sent
             print(f"[DEBUG] Prompt length: {len(prompt)}")
@@ -444,9 +452,8 @@ class CategorySelectionWidget(QWidget):
     def setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
-        
-        # Title
+        layout.setSpacing(15)        
+        layout.addStretch(1)
         title = QLabel("Choose Your Programming Challenge")
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet("""
@@ -460,7 +467,6 @@ class CategorySelectionWidget(QWidget):
         """)
         layout.addWidget(title)
         
-        # Description
         desc = QLabel("Select a category to start your Python logic puzzles journey!")
         desc.setAlignment(Qt.AlignCenter)
         desc.setStyleSheet("""
@@ -473,16 +479,12 @@ class CategorySelectionWidget(QWidget):
         """)
         layout.addWidget(desc)
         
-        # Categories grid
         categories_widget = QWidget()
         categories_layout = QGridLayout(categories_widget)
         categories_layout.setSpacing(15)
-        
         for i, category in enumerate(self.categories):
             button = QPushButton()
             button.setMinimumHeight(100)
-            
-            # Add to button (we'll set the text and handle styling)
             button.setText(f"{category['display_name']}\n{category['description']}")
             button.setStyleSheet("""
                 QPushButton {
@@ -513,7 +515,8 @@ class CategorySelectionWidget(QWidget):
             col = i % 3
             categories_layout.addWidget(button, row, col)
         
-        layout.addWidget(categories_widget)
+        layout.addWidget(categories_widget)        
+        layout.addStretch(1)
         
     def select_category(self, category):
         """Handle category selection"""
@@ -534,18 +537,15 @@ class LogicPuzzlesView(QWidget):
         self.setup_ui()
         
     def setup_ui(self):
-        # Create main layout with consistent margins
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
         
-        # Create a content container that manages all content consistently
         content_container = QWidget()
         content_layout = QVBoxLayout(content_container)
-        content_layout.setContentsMargins(10, 0, 10, 0)  # Inner margins for content alignment
+        content_layout.setContentsMargins(10, 0, 10, 0)  
         content_layout.setSpacing(15)
         
-        # Back button - now managed by the same layout system as content
         header_container = QWidget()
         header_layout = QHBoxLayout(header_container)
         header_layout.setContentsMargins(0, 0, 0, 0)
@@ -674,23 +674,38 @@ class LogicPuzzlesView(QWidget):
             QMessageBox.critical(self, "Error", f"Failed to start session: {str(e)}")
     
     def get_unused_questions(self, category_id):
-        """Get questions this user hasn't answered yet"""
+        """Get questions this user hasn't answered correctly yet (includes retries for wrong answers)"""
         try:
             cursor = self.main_window.database.connection.cursor()
             hardware_id = HardwareIdentifier.get_hardware_id()
             cursor.execute("""
-                SELECT id, question_text, code_snippet, option_a, option_b, option_c, option_d, 
-                       correct_answer, clue_1, clue_2, clue_3
-                FROM logic_questions 
-                WHERE category_id = ? AND is_active = 1
-                AND id NOT IN (
-                    SELECT qr.question_id 
-                    FROM question_responses qr
-                    JOIN question_sessions qs ON qr.session_id = qs.id
-                    WHERE qs.hardware_id = ?
+                SELECT DISTINCT lq.id, lq.question_text, lq.code_snippet, lq.option_a, lq.option_b, lq.option_c, lq.option_d, 
+                       lq.correct_answer, lq.clue_1, lq.clue_2, lq.clue_3
+                FROM logic_questions lq
+                WHERE lq.category_id = ? AND lq.is_active = 1
+                AND (
+                    -- Questions never attempted
+                    lq.id NOT IN (
+                        SELECT qr.question_id 
+                        FROM question_responses qr
+                        JOIN question_sessions qs ON qr.session_id = qs.id
+                        WHERE qs.hardware_id = ?
+                    )
+                    OR
+                    -- Questions answered incorrectly with < 2 attempts and no correct answer yet
+                    lq.id IN (
+                        SELECT qr.question_id
+                        FROM question_responses qr
+                        JOIN question_sessions qs ON qr.session_id = qs.id
+                        WHERE qs.hardware_id = ? 
+                        AND qr.question_id = lq.id
+                        GROUP BY qr.question_id
+                        HAVING COUNT(*) < 2 
+                        AND SUM(qr.is_correct) = 0  -- No correct answers yet
+                    )
                 )
                 LIMIT 10
-            """, (category_id, hardware_id))
+            """, (category_id, hardware_id, hardware_id))
             
             questions = []
             for row in cursor.fetchall():
@@ -701,8 +716,7 @@ class LogicPuzzlesView(QWidget):
                 }
                 questions.append(question)
             
-            # Log the retrieved questions for debugging
-            print(f"[DEBUG] Retrieved {len(questions)} unused questions for category {category_id}")
+            print(f"[DEBUG] Retrieved {len(questions)} questions (including retries) for category {category_id}")
             for i, q in enumerate(questions):
                 print(f"[DEBUG] Question {i+1}:")
                 print(f"  ID: {q['id']}")
@@ -717,7 +731,7 @@ class LogicPuzzlesView(QWidget):
             
             return questions
         except Exception as e:
-            logger.error(f"Error fetching unused questions: {e}")
+            logger.error(f"Error fetching questions with retries: {e}")
             return []
 
     def load_database_questions(self, questions):
@@ -737,11 +751,22 @@ class LogicPuzzlesView(QWidget):
         """Get existing questions for a category to avoid duplicates"""
         try:
             cursor = self.main_window.database.connection.cursor()
+            # Get a diverse sample: some recent, some random, to give AI better context
             cursor.execute("""
-                SELECT question_text, code_snippet FROM logic_questions 
-                WHERE category_id = ? AND is_active = 1
-                ORDER BY created_at DESC LIMIT 20
-            """, (category_id,))
+                SELECT question_text, code_snippet FROM (
+                    -- Get 10 most recent questions
+                    SELECT question_text, code_snippet FROM logic_questions 
+                    WHERE category_id = ? AND is_active = 1
+                    ORDER BY created_at DESC LIMIT 10
+                    
+                    UNION
+                    
+                    -- Get 15 random questions for diversity
+                    SELECT question_text, code_snippet FROM logic_questions 
+                    WHERE category_id = ? AND is_active = 1
+                    ORDER BY RANDOM() LIMIT 15
+                ) ORDER BY RANDOM()
+            """, (category_id, category_id))
             
             rows = cursor.fetchall()
             existing = []
@@ -829,10 +854,24 @@ class LogicPuzzlesView(QWidget):
         self.go_back_to_dashboard()
     
     def save_questions_to_db(self, questions):
-        """Save generated questions to database"""
+        """Save generated questions to database and update question data with IDs"""
         cursor = self.main_window.database.connection.cursor()
+        saved_count = 0
+        skipped_count = 0
         
         for question in questions:
+            cursor.execute("""
+                SELECT COUNT(*) FROM logic_questions 
+                WHERE category_id = ? AND question_text = ? AND is_active = 1
+            """, (self.current_session['category']['id'], question['question_text']))
+            
+            exists = cursor.fetchone()[0] > 0
+            
+            if exists:
+                logger.warning(f"Skipping duplicate question: {question['question_text'][:50]}...")
+                skipped_count += 1
+                continue
+            
             cursor.execute("""
                 INSERT INTO logic_questions (
                     category_id, question_text, code_snippet, question_type,
@@ -859,8 +898,15 @@ class LogicPuzzlesView(QWidget):
                 f"session_{self.current_session['id']}",
                 True
             ))
+            
+            # Get the ID of the inserted question and add it to the question data
+            question_id = cursor.lastrowid
+            question['id'] = question_id
+            logger.info(f"Saved AI-generated question with ID {question_id}: {question['question_text'][:50]}...")
+            saved_count += 1
         
         self.main_window.database.connection.commit()
+        logger.info(f"Question generation complete: {saved_count} saved, {skipped_count} duplicates skipped")
     
     def show_next_question(self):
         """Show the next question in the session"""
@@ -898,10 +944,43 @@ class LogicPuzzlesView(QWidget):
         print(f"[DEBUG] QuestionWidget added to layout")
     
     def on_answer_submitted(self, selected_answer, time_taken, clues_used):
-        """Handle answer submission"""
+        """Handle answer submission with retry logic"""
         question_data = self.current_questions[self.current_question_index]
         correct_answer = question_data['correct_answer']
         is_correct = selected_answer == correct_answer
+        
+        cursor = self.main_window.database.connection.cursor()
+        hardware_id = HardwareIdentifier.get_hardware_id()
+        cursor.execute("""
+            SELECT COUNT(*), SUM(is_correct) 
+            FROM question_responses qr
+            JOIN question_sessions qs ON qr.session_id = qs.id
+            WHERE qr.question_id = ? AND qs.hardware_id = ?
+        """, (question_data['id'], hardware_id))
+        
+        result = cursor.fetchone()
+        attempt_count = result[0] if result and result[0] is not None else 0
+        correct_count = result[1] if result and result[1] is not None else 0
+        attempt_number = attempt_count + 1  
+        has_been_correct = correct_count > 0
+        
+        if is_correct:
+            num_clues = len(clues_used)
+            if attempt_number == 1:
+                if num_clues == 0:
+                    score = 1.0  
+                elif num_clues == 1:
+                    score = 0.75  
+                else:  
+                    score = 0.5  
+            else:
+                base_score = 1.0 if num_clues == 0 else (0.75 if num_clues == 1 else 0.5)
+                score = base_score * 0.5  
+        else:
+            if attempt_number == 1:
+                score = -0.5  
+            else:
+                score = -2.0  
         
         # Record the answer
         answer_record = {
@@ -910,9 +989,13 @@ class LogicPuzzlesView(QWidget):
             'correct_answer': correct_answer,
             'is_correct': is_correct,
             'time_taken': time_taken,
-            'clues_used': clues_used
+            'clues_used': clues_used,
+            'score': score,
+            'attempt_number': attempt_number
         }
         self.session_answers.append(answer_record)
+        
+        self.update_category_score(score)
         
         # Save to database
         self.save_answer_to_db(answer_record)
@@ -922,11 +1005,46 @@ class LogicPuzzlesView(QWidget):
             self.current_session['questions_correct'] += 1
         self.current_session['questions_answered'] += 1
         
-        # Move to next question
-        self.current_question_index += 1
-        
-        # Show feedback briefly then continue
-        self.show_answer_feedback(is_correct, correct_answer, question_data)
+        if is_correct or attempt_number >= 2:
+            self.current_question_index += 1
+            if attempt_number >= 2 and not is_correct:
+                self.show_answer_feedback(is_correct, correct_answer, question_data, is_final_attempt=True)
+            else:
+                self.show_answer_feedback(is_correct, correct_answer, question_data)
+        else:
+            self.show_retry_feedback(correct_answer, question_data, attempt_number)
+    
+    def update_category_score(self, score):
+        """Update user's skill score for the current question category"""
+        try:
+            category_name = self.current_session['category']['name']
+            user_id = self.user_data.get('id')
+            
+            if user_id and category_name:
+                # Get current skill score
+                cursor = self.main_window.database.connection.cursor()
+                cursor.execute("""
+                    SELECT current_score, total_evaluations 
+                    FROM user_skills 
+                    WHERE user_id = ? AND skill_name = ?
+                """, (user_id, category_name))
+                
+                result = cursor.fetchone()
+                if result:
+                    current_score, total_evaluations = result
+                    # Calculate new running average
+                    new_total = total_evaluations + 1
+                    new_score = ((current_score * total_evaluations) + score) / new_total
+                else:
+                    # First evaluation for this skill
+                    new_score = max(0, score)  # Don't let first score be negative
+                    new_total = 1
+                
+                # Update the skill score
+                self.main_window.database.update_skill_score(user_id, category_name, new_score)
+                
+        except Exception as e:
+            logger.error(f"Error updating category score: {e}")
     
     def save_answer_to_db(self, answer_record):
         """Save user's answer to database"""
@@ -951,8 +1069,8 @@ class LogicPuzzlesView(QWidget):
                     INSERT INTO question_responses (
                         session_id, user_id, question_id, selected_answer,
                         is_correct, time_taken, clues_used, clues_revealed,
-                        question_order
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        question_order, score
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     self.current_session['id'],
                     self.user_data.get('id'),
@@ -962,7 +1080,8 @@ class LogicPuzzlesView(QWidget):
                     answer_record['time_taken'],
                     len(answer_record['clues_used']),
                     json.dumps(answer_record['clues_used']),
-                    self.current_question_index
+                    self.current_question_index,
+                    answer_record['score']
                 ))
                 
                 self.main_window.database.connection.commit()
@@ -970,7 +1089,7 @@ class LogicPuzzlesView(QWidget):
         except Exception as e:
             logger.error(f"Error saving answer: {e}")
     
-    def show_answer_feedback(self, is_correct, correct_answer, question_data):
+    def show_answer_feedback(self, is_correct, correct_answer, question_data, is_final_attempt=False):
         """Show brief feedback before next question"""
         self.clear_content_area()
         
@@ -1044,6 +1163,105 @@ class LogicPuzzlesView(QWidget):
         
         # Auto-continue after 3 seconds
         QTimer.singleShot(3000, self.show_next_question)
+    
+    def show_retry_feedback(self, correct_answer, question_data, attempt_number):
+        """Show feedback for a retry attempt and restart the same question"""
+        self.clear_content_area()
+        
+        # Feedback container
+        feedback_container = QFrame()
+        feedback_container.setStyleSheet("""
+            QFrame {
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
+                padding: 30px;
+                margin: 50px;
+            }
+        """)
+        feedback_layout = QVBoxLayout(feedback_container)
+        
+        # Result text
+        retry_text = f"Attempt {attempt_number} - Incorrect"
+        result_label = QLabel(retry_text)
+        result_label.setAlignment(Qt.AlignCenter)
+        result_label.setStyleSheet("""
+            QLabel {
+                font-size: 24px;
+                font-weight: bold;
+                color: rgba(231, 76, 60, 1.0);
+                margin-bottom: 15px;
+            }
+        """)
+        feedback_layout.addWidget(result_label)
+        
+        # Show correct answer
+        correct_text = f"The correct answer is: {correct_answer}"
+        correct_label = QLabel(correct_text)
+        correct_label.setAlignment(Qt.AlignCenter)
+        correct_label.setStyleSheet("""
+            QLabel {
+                font-size: 16px;
+                color: rgba(255, 255, 255, 0.8);
+                margin-bottom: 10px;
+            }
+        """)
+        feedback_layout.addWidget(correct_label)
+        
+        # Retry message
+        retry_message = QLabel("You have 1 more attempt. Try again!")
+        retry_message.setAlignment(Qt.AlignCenter)
+        retry_message.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                color: rgba(100, 210, 255, 0.9);
+                margin-bottom: 20px;
+            }
+        """)
+        feedback_layout.addWidget(retry_message)
+        
+        # Continue button
+        continue_button = QPushButton("Try Again")
+        continue_button.setStyleSheet("""
+            QPushButton {
+                font-size: 16px;
+                font-weight: 600;
+                padding: 12px 30px;
+                border: none;
+                border-radius: 8px;
+                background-color: rgba(100, 210, 255, 0.8);
+                color: white;
+                margin-top: 20px;
+            }
+            QPushButton:hover {
+                background-color: rgba(100, 210, 255, 1.0);
+            }
+        """)
+        continue_button.clicked.connect(lambda: self.restart_current_question())
+        feedback_layout.addWidget(continue_button)
+        
+        self.content_layout.addWidget(feedback_container)
+        
+        # Auto-restart after 3 seconds
+        QTimer.singleShot(3000, self.restart_current_question)
+    
+    def restart_current_question(self):
+        """Restart the current question for a retry attempt"""
+        self.clear_content_area()
+        
+        question_data = self.current_questions[self.current_question_index]
+        print(f"[DEBUG] Restarting question {self.current_question_index + 1} for retry")
+        
+        from .simple_question_widget import SimpleQuestionWidget
+        question_widget = SimpleQuestionWidget(
+            question_data, 
+            self.current_question_index + 1, 
+            len(self.current_questions),
+            parent_view=self  # Pass reference to update clue status
+        )
+        question_widget.answer_submitted.connect(self.on_answer_submitted)
+        
+        self.content_layout.addWidget(question_widget)
     
     def show_session_results(self):
         """Show final results of the session"""

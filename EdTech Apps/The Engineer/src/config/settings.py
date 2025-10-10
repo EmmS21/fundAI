@@ -3,6 +3,9 @@ Configuration settings for The Engineer AI Tutor
 Contains AI model configurations and other settings
 """
 
+import sys
+from pathlib import Path
+
 # AI Configuration
 AI_CONFIG = {
     "local": {
@@ -20,9 +23,18 @@ AI_CONFIG = {
 }
 
 # Database Configuration
+def get_database_path():
+    """Get appropriate database path for bundled or development environment"""
+    if getattr(sys, 'frozen', False):
+        # Running in PyInstaller bundle
+        return str(Path.home() / ".engineer" / "data")
+    else:
+        # Running in development
+        return "data/"
+
 DATABASE_CONFIG = {
     "name": "engineer.db",
-    "path": "data/",
+    "path": get_database_path(),
 }
 
 # UI Configuration
