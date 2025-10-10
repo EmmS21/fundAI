@@ -96,7 +96,7 @@ fundAI/
 | **Book Management** | Python, Firebase, Modal | Educational content |
 | **Store Frontend** | React/TypeScript, Electron | Desktop store interface |
 
-## 🚀 Getting Started
+## Getting Started
 
 ### For Students
 1. **Purchase**: Get a FundaAI laptop with pre-installed AI brain
@@ -111,7 +111,7 @@ fundAI/
 3. **Contribute**: Join our mission to build Africa's next wave of software engineers
 4. **Build**: Create new AI tutoring applications
 
-## 📖 Documentation
+## Documentation
 
 - 📋 [Architecture Overview](./architecture.md) - Complete system architecture
 - 🔧 [Service Documentation](./EdTech%20Apps/) - Individual app documentation
