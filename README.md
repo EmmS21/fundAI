@@ -16,7 +16,7 @@ Students receive a laptop, running on Linux OS with an "offline AI brain" and an
 - **Systems Thinking**: Understanding how components work together
 - **Software Engineering Fundamentals**: Best practices and methodologies
 
-### 2. 👥 Virtual Apprenticeship
+### 2. Virtual Apprenticeship
 **Real-World Engineering Experience**
 
 Students work alongside experienced engineers in a simulated engineering team environment, building and debugging their own AI Tutors. This hands-on approach provides:
