@@ -1,0 +1,39 @@
+# MoneyWise Academy Configuration
+# Copy this file to .env and fill in your actual values
+# DO NOT commit .env file to version control!
+
+# ===== AI Configuration =====
+# Groq API Key (for cloud AI fallback)
+# Get your key from: https://console.groq.com
+GROQ_API_KEY=your_groq_api_key_here
+
+# ===== Database Configuration =====
+# MongoDB Connection URI (for cloud sync)
+# Format: mongodb+srv://username:password@cluster.mongodb.net/dbname
+MONGODB_URI=your_mongodb_connection_uri_here
+
+# ===== Firebase Configuration =====
+# Firebase credentials for authentication and sync
+# Download service account JSON from Firebase Console
+FIREBASE_API_KEY=your_firebase_api_key_here
+FIREBASE_PROJECT_ID=your_firebase_project_id_here
+FIREBASE_STORAGE_BUCKET=your_firebase_storage_bucket_here
+FIREBASE_CREDENTIALS_PATH=/path/to/firebase-credentials.json
+
+# ===== Application Settings =====
+# Environment: development, staging, production
+ENVIRONMENT=development
+
+# Enable debug mode (more verbose logging)
+DEBUG=true
+
+# ===== Local AI Settings =====
+# Path to local LLM model (GGUF format)
+# Default: ~/Documents/models/llama/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf
+# LOCAL_MODEL_PATH=/custom/path/to/model.gguf
+
+# ===== Feature Flags =====
+# Enable/disable features (true/false)
+ENABLE_CLOUD_SYNC=true
+ENABLE_LOCAL_AI=true
+

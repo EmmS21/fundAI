@@ -1,0 +1,115 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# Poetry
+.poetry/
+
+# Note: poetry.lock should be committed to ensure reproducible builds
+
+# PyInstaller
+*.spec
+*.manifest
+*.spec
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# Secrets
+src/config/secrets.py
+config.local
+*.key
+*.pem
+firebase-credentials.json
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Cache
+.cache/
+*.cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Application Data
+.moneywise/
+.ai_tutors/
+
+# Models (large files)
+*.gguf
+*.bin
+models/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+.directory
+
+# Thumbnails
+._*
+
+# Build artifacts
+dist/
+build/
+*.dmg
+*.tar.gz
+*.zip
+*.AppImage
+
+# Test coverage
+.coverage
+htmlcov/
+coverage.xml
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
